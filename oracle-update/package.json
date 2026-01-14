@@ -1,0 +1,33 @@
+{
+  "name": "oracle-updater",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "dev": "tsx dev.ts",
+    "prebuild": "rm -rf dist",
+    "build": "esbuild index.ts --bundle --minify --sourcemap --platform=node --target=es2020 --outfile=dist/index.js",
+    "postbuild": "cd dist && zip -r index.zip index.js*"
+  },
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.12",
+    "esbuild": "^0.25.4",
+    "esbuild-register": "^3.6.0",
+    "nodemon": "^3.1.10",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.936.0",
+    "@aws-sdk/client-ssm": "^3.936.0",
+    "@sinclair/typebox": "^0.34.33",
+    "ajv": "^8.17.1",
+    "dotenv": "^16.5.0",
+    "pino": "^9.6.0",
+    "viem": "^2.28.4"
+  }
+}
