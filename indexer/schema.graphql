@@ -1,0 +1,37 @@
+type HashrateOracle @entity(immutable: false) {
+  id: Int8!
+  initializedBlockNumber: BigInt!
+  initializeTimestamp: BigInt!
+}
+
+# HashrateOracle Timeseries Entities
+type HashrateIndex @entity(timeseries: true) {
+  id: Int8!
+  hashesForBTC: BigInt!
+  hashesForToken: BigInt!
+  updatedAt: BigInt! # deprecated, use timestamp instead
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+}
+
+type HashesForBTCCandle @aggregation(intervals: ["hour", "day"], source: "HashrateIndex") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "hashesForBTC")
+  low: BigInt! @aggregate(fn: "min", arg: "hashesForBTC")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashesForBTC")
+  count: BigInt! @aggregate(fn: "count", arg: "hashesForBTC")
+
+  timestamp: Timestamp!
+}
+
+type HashesForTokenCandle @aggregation(intervals: ["hour", "day"], source: "HashrateIndex") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "hashesForToken")
+  low: BigInt! @aggregate(fn: "min", arg: "hashesForToken")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashesForToken")
+  count: BigInt! @aggregate(fn: "count", arg: "hashesForToken")
+
+  timestamp: Timestamp!
+}
