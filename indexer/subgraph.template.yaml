@@ -31,6 +31,28 @@ dataSources:
             kind: polling
             every: ${HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL}
       file: ./src/hashrate-oracle.ts
+  - kind: ethereum
+    name: BtcTokenOracle
+    network: "${NETWORK}"
+    source:
+      address: "${BTC_TOKEN_ORACLE_ADDRESS}"
+      startBlock: ${START_BLOCK_BTC_TOKEN_ORACLE}
+      abi: AggregatorV3Interface
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - BtcPriceIndex
+      abis:
+        - name: AggregatorV3Interface
+          file: ../contracts/abi/AggregatorV3Interface.json
+      blockHandlers:
+        - handler: handleBlock
+          filter:
+            kind: polling
+            every: ${BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL}
+      file: ./src/btc-token-oracle.ts
 # features:
 #   - grafting
 # graft:
