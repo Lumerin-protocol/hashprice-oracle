@@ -21,7 +21,7 @@ dataSources:
         - HashrateIndex
       abis:
         - name: HashrateOracle
-          file: ../abi/HashrateOracle.json
+          file: ../contracts/abi/HashrateOracle.json
       eventHandlers:
         - event: Initialized(uint64)
           handler: handleInitialized
