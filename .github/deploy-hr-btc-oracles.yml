@@ -1,0 +1,500 @@
+name: Update Hashrate and BTC Token Oracles
+
+on:
+  push:
+    branches:
+      - dev
+      - stg
+      - main
+      - 'cicd/**'
+    paths:
+      - 'indexer/**'
+      - '.github/workflows/deploy-hr-btc-oracles.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (dev=DEV, stg=STG, main=LMN/PROD)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stg
+          - main
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: write   # Required for creating git tags
+
+env:
+  SERVICE_NAME: hashrate-and-btc-token-oracles
+
+jobs:
+  # First job to determine environment and version (runs without environment protection)
+  setup:
+    name: 🔧 Setup
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      is_cicd_branch: ${{ steps.env.outputs.is_cicd_branch }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine environment
+        id: env
+        run: |
+          IS_CICD="false"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" == "main" ]; then
+              ENV="main"
+            elif [ "$BRANCH" == "stg" ]; then
+              ENV="stg"
+            elif [[ "$BRANCH" == cicd/* ]]; then
+              ENV="dev"
+              IS_CICD="true"
+              echo "🔧 CI/CD test branch - will skip build/deploy"
+            else
+              ENV="dev"
+            fi
+          fi
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "is_cicd_branch=${IS_CICD}" >> $GITHUB_OUTPUT
+          echo "🎯 Target environment: ${ENV}"
+
+      - name: Generate version tag
+        id: version
+        run: |
+          LAST_TAG=$(git tag -l "subgraph-v*" | sort -V | tail -n 1)
+          
+          if [ -z "$LAST_TAG" ]; then
+            VERSION="2.0.0"
+          else
+            LAST_VERSION=$(echo $LAST_TAG | sed 's/subgraph-v//' | sed 's/-.*$//')
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+            PATCH=$((PATCH + 1))
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+          
+          ENV="${{ steps.env.outputs.environment }}"
+          if [ "$ENV" != "main" ]; then
+            FULL_VERSION="v${VERSION}-${ENV}"
+          else
+            FULL_VERSION="v${VERSION}"
+          fi
+          
+          echo "version=${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=subgraph-${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Version: ${FULL_VERSION}"
+
+  build:
+    name: 🔨 Build
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.is_cicd_branch != 'true'
+    environment: ${{ needs.setup.outputs.environment }}
+    outputs:
+      version: ${{ needs.setup.outputs.version }}
+      tag: ${{ needs.setup.outputs.tag }}
+      environment: ${{ needs.setup.outputs.environment }}
+      graph_node_url: ${{ steps.env.outputs.graph_node_url }}
+      subgraph_name: ${{ steps.env.outputs.subgraph_name }}
+      aws_region: ${{ steps.env.outputs.aws_region }}
+      is_cicd_branch: ${{ needs.setup.outputs.is_cicd_branch }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: indexer/yarn.lock
+
+      - name: Set environment outputs
+        id: env
+        run: |
+          ENV="${{ needs.setup.outputs.environment }}"
+          
+          # Map to endpoints
+          # IPFS uploads go to The Graph's public IPFS (api.thegraph.com/ipfs/)
+          # Our Graph Node fetches from public IPFS gateways when indexing
+          case $ENV in
+            dev)
+              echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
+              echo "graph_node_url=https://graph.dev.lumerin.io" >> $GITHUB_OUTPUT
+              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              ;;
+            stg)
+              echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
+              echo "graph_node_url=https://graphidx.stg.lumerin.io" >> $GITHUB_OUTPUT
+              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              ;;
+            main)
+              echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
+              echo "graph_node_url=https://graphidx.lmn.lumerin.io" >> $GITHUB_OUTPUT
+              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Install dependencies
+        working-directory: ./indexer
+        run: |
+          echo "📦 Installing dependencies..."
+          yarn install --frozen-lockfile
+
+      - name: Build contracts and generate ABIs
+        run: |
+          echo "🔨 Compiling smart contracts..."
+          yarn install --frozen-lockfile
+          npx hardhat compile
+          echo "✅ Contracts compiled and ABIs generated"
+          
+          mkdir -p abi
+          cp artifacts/contracts/marketplace/Futures.sol/Futures.json abi/
+          cp artifacts/contracts/marketplace/HashrateOracle.sol/HashrateOracle.json abi/
+          echo "✅ ABIs copied to abi/ directory"
+
+      - name: Prepare subgraph configuration
+        working-directory: ./indexer
+        env:
+          NETWORK: ${{ vars.NETWORK }}
+          FUTURES_ADDRESS: ${{ vars.FUTURES_ADDRESS }}
+          START_BLOCK_FUTURES: ${{ vars.START_BLOCK_FUTURES }}
+          HASHRATE_ORACLE_ADDRESS: ${{ vars.HASHRATE_ORACLE_ADDRESS }}
+          START_BLOCK_HASHRATE_ORACLE: ${{ vars.START_BLOCK_HASHRATE_ORACLE }}
+          HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL: ${{ vars.HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL }}
+          BTC_TOKEN_ORACLE_ADDRESS: ${{ vars.BTC_TOKEN_ORACLE_ADDRESS }}
+          START_BLOCK_BTC_TOKEN_ORACLE: ${{ vars.START_BLOCK_BTC_TOKEN_ORACLE }}
+          BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL: ${{ vars.BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL }}
+
+        run: |
+          echo "⚙️ Preparing subgraph for ${{ needs.setup.outputs.environment }}..."
+          echo "   Network: ${NETWORK}"
+          echo "   Futures Address: ${FUTURES_ADDRESS}"
+          echo "   Start Block Futures: ${START_BLOCK_FUTURES}"
+          echo "   Hashrate Oracle Address: ${HASHRATE_ORACLE_ADDRESS}"
+          echo "   Start Block Hashrate Oracle: ${START_BLOCK_HASHRATE_ORACLE}"
+          echo "   Polling Block Interval: ${HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL}"
+          echo "   BTC Token Oracle Address: ${BTC_TOKEN_ORACLE_ADDRESS}"
+          echo "   Start Block BTC Token Oracle: ${START_BLOCK_BTC_TOKEN_ORACLE}"
+          echo "   Polling Block Interval: ${BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL}"
+          
+          yarn prepare:env
+          
+          echo "✅ Subgraph configuration ready"
+          echo "📄 Generated subgraph.yaml:"
+          cat subgraph.yaml
+
+      - name: Generate code
+        working-directory: ./indexer
+        run: |
+          echo "🔨 Generating AssemblyScript types..."
+          yarn codegen
+          echo "✅ Code generation complete"
+
+      - name: Build subgraph
+        working-directory: ./indexer
+        run: |
+          echo "🔨 Building subgraph..."
+          yarn build
+          echo "✅ Build complete"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: subgraph-build
+          path: |
+            indexer/build/
+            indexer/generated/
+            indexer/subgraph.yaml
+            abi/
+          retention-days: 1
+
+      - name: Build summary
+        run: |
+          echo "## 🔨 Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Subgraph:** Built and validated successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build verification successful" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    if: needs.build.outputs.is_cicd_branch != 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: subgraph-build
+          path: .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: indexer/yarn.lock
+
+      - name: Install dependencies
+        working-directory: ./indexer
+        run: |
+          echo "📦 Installing dependencies for deployment..."
+          yarn install --frozen-lockfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          aws-region: ${{ needs.build.outputs.aws_region }}
+          role-session-name: GitHubActions-Subgraph-${{ github.run_id }}
+
+      - name: Create subgraph (if not exists)
+        working-directory: ./indexer
+        continue-on-error: true
+        run: |
+          echo "📝 Creating subgraph in Graph Node..."
+          npx graph create --node ${{ needs.build.outputs.graph_node_url }}:8020 \
+            ${{ needs.build.outputs.subgraph_name }} || echo "Subgraph already exists"
+
+      # Deploy subgraph to Graph Node
+      # Uses The Graph's public IPFS (api.thegraph.com/ipfs) - content is immediately
+      # available since Graph Node uses the same IPFS endpoint. No propagation wait needed.
+      - name: Deploy subgraph
+        id: deploy
+        working-directory: ./indexer
+        run: |
+          echo "🚀 Deploying subgraph..."
+          echo "   Environment: ${{ needs.build.outputs.environment }}"
+          echo "   Graph Node:  ${{ needs.build.outputs.graph_node_url }}:8020"
+          echo "   IPFS:        https://api.thegraph.com/ipfs/"
+          echo "   Subgraph:    ${{ needs.build.outputs.subgraph_name }}"
+          echo "   Version:     ${{ needs.build.outputs.version }}"
+          echo "   Start time:  $(date -u +%Y-%m-%dT%H:%M:%S)Z"
+          echo ""
+          
+          # Build first
+          npx graph build
+          
+          # Deploy with retry logic
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          DEPLOY_START_TIME=$(date +%s)
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            ATTEMPT_START_TIME=$(date +%s)
+            echo "================================================"
+            echo "📤 Deployment attempt $ATTEMPT of $MAX_ATTEMPTS"
+            echo "   Timestamp: $(date -u +%Y-%m-%dT%H:%M:%S)Z"
+            echo "================================================"
+            
+            set +e
+            npx graph deploy \
+              --node ${{ needs.build.outputs.graph_node_url }}:8020 \
+              --ipfs "https://api.thegraph.com/ipfs/" \
+              --version-label ${{ needs.build.outputs.version }} \
+              ${{ needs.build.outputs.subgraph_name }} 2>&1 | tee deploy_output.txt
+            DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
+            set -e
+            
+            ATTEMPT_END_TIME=$(date +%s)
+            ATTEMPT_DURATION=$((ATTEMPT_END_TIME - ATTEMPT_START_TIME))
+            
+            # Extract CID from output
+            IPFS_HASH=$(grep -oP 'Qm[a-zA-Z0-9]{44}' deploy_output.txt | tail -1 || echo "")
+            
+            if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
+              TOTAL_DURATION=$((ATTEMPT_END_TIME - DEPLOY_START_TIME))
+              echo ""
+              echo "================================================"
+              echo "✅ Subgraph deployed successfully!"
+              echo "   Duration: ${ATTEMPT_DURATION}s"
+              if [ -n "$IPFS_HASH" ]; then
+                echo "   CID: $IPFS_HASH"
+              fi
+              echo "================================================"
+              
+              # Write success to job summary
+              echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+              echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+              echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Graph Node | ${{ needs.build.outputs.graph_node_url }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Duration | ${TOTAL_DURATION}s |" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$IPFS_HASH" ]; then
+                echo "| Deployment CID | \`$IPFS_HASH\` |" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "### Verify CID" >> $GITHUB_STEP_SUMMARY
+                echo "- [🔍 Check on IPFS Network](https://check.ipfs.network/?cid=$IPFS_HASH)" >> $GITHUB_STEP_SUMMARY
+                echo "- [🌐 View on ipfs.io](https://ipfs.io/ipfs/$IPFS_HASH)" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              exit 0
+            fi
+            
+            echo "================================================"
+            echo "❌ Attempt $ATTEMPT failed (exit code: $DEPLOY_EXIT_CODE)"
+            echo "================================================"
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              WAIT_TIME=30
+              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
+              sleep $WAIT_TIME
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          TOTAL_DURATION=$(($(date +%s) - DEPLOY_START_TIME))
+          echo ""
+          echo "================================================"
+          echo "❌ Deployment failed after $MAX_ATTEMPTS attempts"
+          echo "   Total duration: ${TOTAL_DURATION}s"
+          echo "================================================"
+          
+          # Write failure to job summary
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Deployment failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check Graph Node logs" >> $GITHUB_STEP_SUMMARY
+          echo "2. Re-run the workflow" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          exit 1
+
+  verify:
+    name: 🔍 Verify
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    if: needs.build.outputs.is_cicd_branch != 'true'
+    
+    steps:
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying subgraph deployment..."
+          
+          sleep 10
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"query": "{ _meta { block { number } deployment hasIndexingErrors } }"}' \
+            ${{ needs.build.outputs.graph_node_url }}/subgraphs/name/${{ needs.build.outputs.subgraph_name }})
+          
+          echo "Response: $RESPONSE"
+          
+          HAS_ERRORS=$(echo $RESPONSE | jq -r '.data._meta.hasIndexingErrors // false')
+          
+          if [ "$HAS_ERRORS" == "true" ]; then
+            echo "⚠️ Subgraph has indexing errors"
+            exit 1
+          fi
+          
+          echo "✅ Subgraph is healthy and indexing"
+
+  cleanup:
+    name: 🧹 Cleanup
+    runs-on: ubuntu-latest
+    needs: [setup, build, verify]
+    if: always() && needs.setup.outputs.is_cicd_branch != 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Git tag
+        if: needs.setup.outputs.environment == 'main' && needs.verify.result == 'success'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "${{ needs.setup.outputs.tag }}" -m "Release ${{ needs.setup.outputs.version }}"
+          git push origin "${{ needs.setup.outputs.tag }}"
+
+      - name: Deployment summary
+        if: needs.verify.result == 'success'
+        run: |
+          echo "## 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Subgraph (Futures Marketplace)" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.setup.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Subgraph:** ${{ needs.build.outputs.subgraph_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
+          echo "- GraphQL: \`${{ needs.build.outputs.graph_node_url }}/subgraphs/name/${{ needs.build.outputs.subgraph_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Admin: \`${{ needs.build.outputs.graph_node_url }}:8020\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Subgraph deployed and indexing successfully" >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure summary
+        if: needs.verify.result == 'failure'
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Subgraph (Futures Marketplace)" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.setup.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ Deployment or verification failed. Check logs above for details." >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: 📢 Notify
+    runs-on: ubuntu-latest
+    needs: [setup, build, deploy, verify, cleanup]
+    if: always()
+    
+    steps:
+      - name: Checkout (for composite action)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Determine status
+        id: status
+        run: |
+          if [ "${{ needs.setup.outputs.is_cicd_branch }}" == "true" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "failure" ] || [ "${{ needs.deploy.result }}" == "failure" ] || [ "${{ needs.build.result }}" == "failure" ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "cancelled" ] || [ "${{ needs.deploy.result }}" == "cancelled" ]; then
+            echo "status=cancelled" >> $GITHUB_OUTPUT
+          else
+            echo "status=skipped" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Send Slack notification
+        uses: ./.github/actions/slack-notify
+        with:
+          status: ${{ steps.status.outputs.status }}
+          environment: ${{ needs.setup.outputs.environment }}
+          service_name: 'Subgraph'
+          version: ${{ needs.setup.outputs.version }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || format(''*Subgraph:* `{0}` • *GraphQL:* `{1}/subgraphs/name/{0}`'', needs.build.outputs.subgraph_name, needs.build.outputs.graph_node_url) }}'
+

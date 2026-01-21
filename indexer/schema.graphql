@@ -35,3 +35,29 @@ type HashesForTokenCandle @aggregation(intervals: ["hour", "day"], source: "Hash
 
   timestamp: Timestamp!
 }
+
+type BtcTokenOracle @entity(immutable: false) {
+  id: Int8!
+  initializedBlockNumber: BigInt!
+  initializeTimestamp: BigInt!
+}
+
+# BtcTokenOracle Timeseries Entities
+type BtcPriceIndex @entity(timeseries: true) {
+  id: Int8!
+  price: BigInt!
+  updatedAt: BigInt! # deprecated, use timestamp instead
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+}
+
+type BtcPriceCandle @aggregation(intervals: ["hour", "day"], source: "BtcPriceIndex") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "price")
+  low: BigInt! @aggregate(fn: "min", arg: "price")
+  sum: BigInt! @aggregate(fn: "sum", arg: "price")
+  count: BigInt! @aggregate(fn: "count", arg: "price")
+
+  timestamp: Timestamp!
+}
