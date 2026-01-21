@@ -117,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'yarn'
           cache-dependency-path: indexer/yarn.lock
 
@@ -154,16 +154,18 @@ jobs:
           yarn install --frozen-lockfile
 
       - name: Build contracts and generate ABIs
+        working-directory: ./contracts
         run: |
           echo "🔨 Compiling smart contracts..."
           yarn install --frozen-lockfile
           npx hardhat compile
           echo "✅ Contracts compiled and ABIs generated"
           
+          # Copy ABIs to contracts/abi/ (where subgraph expects them)
           mkdir -p abi
-          cp artifacts/contracts/marketplace/Futures.sol/Futures.json abi/
-          cp artifacts/contracts/marketplace/HashrateOracle.sol/HashrateOracle.json abi/
-          echo "✅ ABIs copied to abi/ directory"
+          cp artifacts/contracts/HashrateOracle.sol/HashrateOracle.json abi/
+          cp artifacts/contracts/BTCPriceOracleMock.sol/BTCPriceOracleMock.json abi/
+          echo "✅ ABIs copied to contracts/abi/ directory"
 
       - name: Prepare subgraph configuration
         working-directory: ./indexer
@@ -218,7 +220,7 @@ jobs:
             indexer/build/
             indexer/generated/
             indexer/subgraph.yaml
-            abi/
+            contracts/abi/
           retention-days: 1
 
       - name: Build summary
@@ -249,7 +251,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'yarn'
           cache-dependency-path: indexer/yarn.lock
 
@@ -492,7 +494,7 @@ jobs:
         with:
           status: ${{ steps.status.outputs.status }}
           environment: ${{ needs.setup.outputs.environment }}
-          service_name: 'Subgraph'
+          service_name: 'Hashrate and BTC Graph Oracles'
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
