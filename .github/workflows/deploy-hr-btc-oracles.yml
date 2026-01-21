@@ -133,17 +133,17 @@ jobs:
             dev)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
               echo "graph_node_url=https://graph.dev.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
               ;;
             stg)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
               echo "graph_node_url=https://graphidx.stg.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
               ;;
             main)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
               echo "graph_node_url=https://graphidx.lmn.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=marketplace" >> $GITHUB_OUTPUT
+              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
               ;;
           esac
 
