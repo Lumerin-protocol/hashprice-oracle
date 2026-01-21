@@ -117,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: indexer/yarn.lock
 
@@ -158,7 +158,7 @@ jobs:
         run: |
           echo "🔨 Compiling smart contracts..."
           yarn install --frozen-lockfile
-          npx hardhat compile
+          yarn hardhat compile
           echo "✅ Contracts compiled and ABIs generated"
           
           # Copy ABIs to contracts/abi/ (where subgraph expects them)
@@ -251,7 +251,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: indexer/yarn.lock
 
