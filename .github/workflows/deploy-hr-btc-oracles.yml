@@ -137,12 +137,12 @@ jobs:
               ;;
             stg)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
-              echo "graph_node_url=https://graphidx.stg.lumerin.io" >> $GITHUB_OUTPUT
+              echo "graph_node_url=https://graph.stg.lumerin.io" >> $GITHUB_OUTPUT
               echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
               ;;
             main)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
-              echo "graph_node_url=https://graphidx.lmn.lumerin.io" >> $GITHUB_OUTPUT
+              echo "graph_node_url=https://graph.lmn.lumerin.io" >> $GITHUB_OUTPUT
               echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
               ;;
           esac
@@ -171,8 +171,6 @@ jobs:
         working-directory: ./indexer
         env:
           NETWORK: ${{ vars.NETWORK }}
-          FUTURES_ADDRESS: ${{ vars.FUTURES_ADDRESS }}
-          START_BLOCK_FUTURES: ${{ vars.START_BLOCK_FUTURES }}
           HASHRATE_ORACLE_ADDRESS: ${{ vars.HASHRATE_ORACLE_ADDRESS }}
           START_BLOCK_HASHRATE_ORACLE: ${{ vars.START_BLOCK_HASHRATE_ORACLE }}
           HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL: ${{ vars.HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL }}
@@ -183,8 +181,6 @@ jobs:
         run: |
           echo "⚙️ Preparing subgraph for ${{ needs.setup.outputs.environment }}..."
           echo "   Network: ${NETWORK}"
-          echo "   Futures Address: ${FUTURES_ADDRESS}"
-          echo "   Start Block Futures: ${START_BLOCK_FUTURES}"
           echo "   Hashrate Oracle Address: ${HASHRATE_ORACLE_ADDRESS}"
           echo "   Start Block Hashrate Oracle: ${START_BLOCK_HASHRATE_ORACLE}"
           echo "   Polling Block Interval: ${HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL}"

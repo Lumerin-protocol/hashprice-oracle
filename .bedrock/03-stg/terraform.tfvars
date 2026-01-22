@@ -12,16 +12,16 @@ wallets = {
 }
 
 core_resources = {
-  create = false
+  create = true
 }
 
 ecs_cluster = {
-  create  = false
+  create  = true
   protect = false
 }
 
 spot_indexer = {
-  create          = false
+  create          = true
   protect         = false
   task_worker_qty = 1
   task_cpu        = 256
@@ -30,7 +30,7 @@ spot_indexer = {
 }
 
 graph_indexer = {
-  create                     = false
+  create                     = true
   protect                    = false
   imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
   task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
