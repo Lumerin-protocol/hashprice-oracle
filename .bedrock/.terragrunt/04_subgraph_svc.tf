@@ -1108,7 +1108,7 @@ resource "aws_alb_listener" "graph_node_ext_8030_use1" {
 
 resource "aws_route53_record" "graph_indexer" {
   count = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
-  provider = aws.use1
+  provider = aws.special-dns
   zone_id  = var.account_lifecycle == "prd" ? data.aws_route53_zone.public_lumerin_root.zone_id : data.aws_route53_zone.public_lumerin.zone_id
   name     = var.account_lifecycle == "prd" ? "${local.graph_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin_root.name}" : "${local.graph_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin.name}"
   type    = "A"
