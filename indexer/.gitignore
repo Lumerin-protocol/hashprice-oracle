@@ -4,3 +4,4 @@ generated
 subgraph.yaml
 .env
 !.env.example
+node_modules
