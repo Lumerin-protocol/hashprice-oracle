@@ -3,7 +3,21 @@
 ################################################################################
 # These variables are now only for documentation and input validation; values are always pulled from AWS Secrets Manager
 variable "ethereum_rpc_url" {
-  description = "Ethereum RPC URL (used by oracle lambda, indexer, and margin call)"
+  description = "Ethereum RPC URL (Futures Marketplace sub-components - Oracle Lambda)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "graph_eth_rpc_url" {
+  description = "Graph Ethereum RPC URL (used by graph indexer)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "spot_eth_rpc_url" {
+  description = "Spot Ethereum RPC URL (used by spot indexer)"
   type        = string
   sensitive   = true
   default     = ""
