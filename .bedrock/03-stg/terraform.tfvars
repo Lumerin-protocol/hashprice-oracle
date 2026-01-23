@@ -23,10 +23,11 @@ ecs_cluster = {
 spot_indexer = {
   create          = true
   protect         = false
-  task_worker_qty = 1
+  task_worker_qty = 0
   task_cpu        = 256
   task_ram        = 512
-  ghcr_imagetag   = "latest-dev"
+  ghcr_imagetag   = "latest-stg"
+  friendly_name   = "indexer-new"
 }
 
 graph_indexer = {
@@ -35,7 +36,7 @@ graph_indexer = {
   imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
   task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
   task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
+  task_worker_qty            = 0
   db_instance_class          = "db.t3.small"
   db_allocated_storage       = 50
   db_max_allocated_storage   = 200

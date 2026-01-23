@@ -27,6 +27,7 @@ spot_indexer = {
   task_cpu        = 256
   task_ram        = 512
   ghcr_imagetag   = "latest-dev"
+  friendly_name   = "indexer"
 }
 
 graph_indexer = {
