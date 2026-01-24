@@ -90,6 +90,74 @@ variable "oracle_lambda_secrets" {
   sensitive = true
 }
 
+################################################################################
+# MONITORING CONFIGURATION
+################################################################################
+variable "monitoring" {
+  description = "Monitoring configuration for alarms, dashboards, and metric filters"
+  type = object({
+    create                        = bool
+    create_alarms                 = bool
+    create_dashboards             = bool
+    create_metric_filters         = bool
+    create_prometheus_scraper     = bool
+    create_oracle_staleness_check = bool
+    notifications_enabled         = bool    # Set false to disable SNS notifications (alarms still visible in console)
+    dev_alerts_topic_name         = string
+    devops_alerts_topic_name      = string
+    dashboard_period              = number
+  })
+  default = {
+    create                        = false
+    create_alarms                 = false
+    create_dashboards             = false
+    create_metric_filters         = false
+    create_prometheus_scraper     = false
+    create_oracle_staleness_check = false
+    notifications_enabled         = false
+    dev_alerts_topic_name         = ""
+    devops_alerts_topic_name      = ""
+    dashboard_period              = 300
+  }
+}
+
+variable "alarm_thresholds" {
+  description = "Environment-specific alarm thresholds (relaxed for dev/stg, strict for prod)"
+  type = object({
+    ecs_cpu_threshold           = number
+    ecs_memory_threshold        = number
+    ecs_min_running_tasks       = number
+    lambda_error_threshold      = number
+    lambda_duration_threshold   = number
+    lambda_throttle_threshold   = number
+    alb_5xx_threshold           = number
+    alb_unhealthy_threshold     = number
+    alb_latency_threshold       = number
+    rds_cpu_threshold           = number
+    rds_storage_threshold       = number
+    rds_connections_threshold   = number
+    graph_sync_lag_threshold    = number
+    graph_error_threshold       = number
+    oracle_max_age_minutes      = number
+  })
+  default = {
+    ecs_cpu_threshold           = 90
+    ecs_memory_threshold        = 90
+    ecs_min_running_tasks       = 1
+    lambda_error_threshold      = 5
+    lambda_duration_threshold   = 55000
+    lambda_throttle_threshold   = 10
+    alb_5xx_threshold           = 20
+    alb_unhealthy_threshold     = 1
+    alb_latency_threshold       = 15
+    rds_cpu_threshold           = 90
+    rds_storage_threshold       = 5
+    rds_connections_threshold   = 190
+    graph_sync_lag_threshold    = 200
+    graph_error_threshold       = 20
+    oracle_max_age_minutes      = 30
+  }
+}
 
 ################################################################################
 # ACCOUNT METADATA

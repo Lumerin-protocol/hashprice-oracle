@@ -57,6 +57,41 @@ oracle_lambda = {
 }
 
 ########################################
+# Monitoring Configuration
+########################################
+monitoring = {
+  create                        = true
+  create_alarms                 = true
+  create_dashboards             = true
+  create_metric_filters         = true
+  create_prometheus_scraper     = true
+  create_oracle_staleness_check = true
+  notifications_enabled         = false  # Set true to enable SNS alerts (disabled to reduce noise in dev)
+  dev_alerts_topic_name         = "titanio-dev-dev-alerts"
+  devops_alerts_topic_name      = "titanio-dev-dev-alerts"  # Same as dev-alerts in non-prod (all to Slack)
+  dashboard_period              = 300
+}
+
+# DEV environment - relaxed thresholds
+alarm_thresholds = {
+  ecs_cpu_threshold           = 90
+  ecs_memory_threshold        = 90
+  ecs_min_running_tasks       = 1
+  lambda_error_threshold      = 5
+  lambda_duration_threshold   = 55000
+  lambda_throttle_threshold   = 10
+  alb_5xx_threshold           = 20
+  alb_unhealthy_threshold     = 1
+  alb_latency_threshold       = 15
+  rds_cpu_threshold           = 90
+  rds_storage_threshold       = 5
+  rds_connections_threshold   = 190
+  graph_sync_lag_threshold    = 200
+  graph_error_threshold       = 20
+  oracle_max_age_minutes      = 30
+}
+
+########################################
 # Account metadata
 ########################################
 provider_profile     = "titanio-dev"  # Local account profile ... should match account_shortname..kept separate for future ci/cd
