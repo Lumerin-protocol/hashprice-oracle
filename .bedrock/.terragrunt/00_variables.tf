@@ -1,16 +1,48 @@
 ################################################################################
-# Secret Variables (seeded in secrets.auto.tfvars and stored in AWS secrets manager)
+# SHARED CONTRACT ADDRESSES (used across multiple services)
 ################################################################################
-# These variables are now only for documentation and input validation; values are always pulled from AWS Secrets Manager
+variable "wallets" {
+  description = "Shared contract / wallet addresses"
+  type = map (string)
+  default = {
+    clone_factory_address = ""
+    hashrate_oracle_address = ""
+    futures_address = ""
+    multicall_address = ""
+    btcusd_oracle_address = ""
+  }
+}
+
+################################################################################
+# Detailed Resource variabeles
+################################################################################
+variable "core_resources" {
+  description = "Core Resources to create"
+  type = map (any)
+}
+# General Ethereum RPC URL
 variable "ethereum_rpc_url" {
-  description = "Ethereum RPC URL (used by oracle lambda, indexer, and margin call)"
+  description = "Ethereum RPC URL (Futures Marketplace sub-components)"
   type        = string
   sensitive   = true
   default     = ""
 }
 
-variable "admin_api_key" {
-  description = "Admin API key (used by spot indexer)"
+variable "ecs_cluster" {
+  description = "ECS Cluster to create"
+  type = map (any)
+}
+
+########################################
+# Graph Indexer Variables
+########################################
+variable "graph_indexer" {
+  description = "Graph Indexer to create"
+  type = map (any)
+}
+### Graph Indexer Secrets Variables
+variable "graph_eth_rpc_url" {
+  description = "Graph Ethereum RPC URL (used by graph indexer)"
   type        = string
   sensitive   = true
   default     = ""
@@ -23,56 +55,113 @@ variable "graph_indexer_db_password" {
   default     = ""
 }
 
-################################################################################
-# VARIABLES 
-################################################################################
-# All variables set in ./terraform.tfvars must be initialized here
-# Any of these variables can be used in any of this environment's .tf files
-
-################################################################################
-# SHARED CONTRACT ADDRESSES (used across multiple services)
-################################################################################
-variable "wallets" {
-  description = "Shared contract / wallet addresses"
-  type = map (string)
-  default = {
-    clone_factory_address = ""
-    hashrate_oracle_address = ""
-    futures_address = ""
-    multicall_address = ""
-  }
-}
-
-################################################################################
-# Detailed Resource variabeles
-################################################################################
-variable "core_resources" {
-  description = "Core Resources to create"
-  type = map (any)
-}
-
-variable "ecs_cluster" {
-  description = "ECS Cluster to create"
-  type = map (any)
-}
-
-variable "graph_indexer" {
-  description = "Graph Indexer to create"
-  type = map (any)
-}
-
+########################################
+# Spot Indexer Variables
+########################################
 variable "spot_indexer" {
   description = "Spot Indexer to create"
   type = map (any)
 }
+### Spot Indexer Secrets Variables
+variable "spot_eth_rpc_url" {
+  description = "Spot Ethereum RPC URL (used by spot indexer)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
 
+variable "admin_api_key" {
+  description = "Admin API key (used by spot indexer)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+################################################################################
+# Oracle Lambda Variables
+################################################################################
 variable "oracle_lambda" {
   description = "Oracle Lambda to create"
   type = map (any)
 }
+variable "oracle_lambda_secrets" {
+  description = "Oracle Lambda secrets to create"
+  type = map (any)
+  sensitive = true
+}
 
-########################################
-########################################
+################################################################################
+# MONITORING CONFIGURATION
+################################################################################
+variable "monitoring" {
+  description = "Monitoring configuration for alarms, dashboards, and metric filters"
+  type = object({
+    create                        = bool
+    create_alarms                 = bool
+    create_dashboards             = bool
+    create_metric_filters         = bool
+    create_prometheus_scraper     = bool
+    create_oracle_staleness_check = bool
+    notifications_enabled         = bool    # Set false to disable SNS notifications (alarms still visible in console)
+    dev_alerts_topic_name         = string
+    devops_alerts_topic_name      = string
+    dashboard_period              = number
+  })
+  default = {
+    create                        = false
+    create_alarms                 = false
+    create_dashboards             = false
+    create_metric_filters         = false
+    create_prometheus_scraper     = false
+    create_oracle_staleness_check = false
+    notifications_enabled         = false
+    dev_alerts_topic_name         = ""
+    devops_alerts_topic_name      = ""
+    dashboard_period              = 300
+  }
+}
+
+variable "alarm_thresholds" {
+  description = "Environment-specific alarm thresholds (relaxed for dev/stg, strict for prod)"
+  type = object({
+    ecs_cpu_threshold           = number
+    ecs_memory_threshold        = number
+    ecs_min_running_tasks       = number
+    lambda_error_threshold      = number
+    lambda_duration_threshold   = number
+    lambda_throttle_threshold   = number
+    alb_5xx_threshold           = number
+    alb_unhealthy_threshold     = number
+    alb_latency_threshold       = number
+    rds_cpu_threshold           = number
+    rds_storage_threshold       = number
+    rds_connections_threshold   = number
+    graph_sync_lag_threshold    = number
+    graph_error_threshold       = number
+    oracle_max_age_minutes      = number
+  })
+  default = {
+    ecs_cpu_threshold           = 90
+    ecs_memory_threshold        = 90
+    ecs_min_running_tasks       = 1
+    lambda_error_threshold      = 5
+    lambda_duration_threshold   = 55000
+    lambda_throttle_threshold   = 10
+    alb_5xx_threshold           = 20
+    alb_unhealthy_threshold     = 1
+    alb_latency_threshold       = 15
+    rds_cpu_threshold           = 90
+    rds_storage_threshold       = 5
+    rds_connections_threshold   = 190
+    graph_sync_lag_threshold    = 200
+    graph_error_threshold       = 20
+    oracle_max_age_minutes      = 30
+  }
+}
+
+################################################################################
+# ACCOUNT METADATA
+################################################################################
 # ACCOUNT METADATA
 ########################################
 variable "account_shortname" { description = "Code describing customer  and lifecycle. E.g., mst, sbx, dev, stg, prd" }

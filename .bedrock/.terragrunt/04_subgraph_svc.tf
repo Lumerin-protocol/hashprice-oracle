@@ -312,75 +312,6 @@ resource "aws_security_group_rule" "graph_node_to_rds" {
 }
 
 ################################
-# SECRETS MANAGER - MANUALLY MANAGED PASSWORD
-################################
-# Create a secret that YOU control (prevents automatic rotation issues)
-resource "aws_secretsmanager_secret" "subgraph_db_password" {
-  count       = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 1
-  provider    = aws.use1
-  name        = "${local.graph_indexer.rds_name}/db-password-v2"
-  description = "Graph Node database password (manually managed - no auto-rotation)"
-
-  tags = merge(
-    var.default_tags,
-    var.foundation_tags,
-    {
-      Name       = "${local.graph_indexer.rds_name} DB Password Secret-v2",
-      Capability = null,
-    },
-  )
-}
-
-resource "aws_secretsmanager_secret_version" "subgraph_db_password" {
-  count     = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 1
-  provider  = aws.use1
-  secret_id = aws_secretsmanager_secret.subgraph_db_password[0].id
-  secret_string = jsonencode({
-    username = local.graph_indexer.rds_admin
-    password = var.graph_indexer_db_password
-  })
-}
-
-# IAM policy to allow ECS task execution role to read the database password
-resource "aws_iam_policy" "subgraph_db_secret_access" {
-  count       = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 1
-  provider    = aws.use1
-  name        = "${local.graph_indexer.rds_name}-db-secret-access-v2-${substr(var.account_shortname, 8, 3)}"
-  description = "Allow ECS tasks to read Graph Node database password from Secrets Manager"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = aws_secretsmanager_secret.subgraph_db_password[0].arn
-      }
-    ]
-  })
-
-  tags = merge(
-    var.default_tags,
-    var.foundation_tags,
-    {
-      Name       = "${local.graph_indexer.rds_name} DB Secret Access Policy-v2",
-      Capability = null,
-    },
-  )
-}
-
-# Attach the policy to the bedrock foundation role
-resource "aws_iam_role_policy_attachment" "subgraph_db_secret_access" {
-  count      = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 1
-  provider   = aws.use1
-  role       = "bedrock-foundation-role"
-  policy_arn = aws_iam_policy.subgraph_db_secret_access[0].arn
-}
-
-################################
 # RDS POSTGRESQL FOR GRAPH NODE
 ################################
 
@@ -773,10 +704,6 @@ resource "aws_ecs_task_definition" "graph_node_use1" {
           # To use local IPFS instead: value = "ipfs.subgraph.local:5001"
           value = "https://api.thegraph.com/ipfs"
         },
-        {
-          name  = "ethereum"
-          value = "${var.account_lifecycle == "dev" ? "arbitrum-sepolia" : "arbitrum"}:${var.ethereum_rpc_url}"
-        },
         # PostgreSQL SSL/TLS configuration
         {
           name  = "PGSSLMODE"
@@ -842,7 +769,11 @@ resource "aws_ecs_task_definition" "graph_node_use1" {
       secrets = [
         {
           name      = "postgres_pass"
-          valueFrom = "${aws_secretsmanager_secret.subgraph_db_password[count.index].arn}:password::"
+          valueFrom = "${aws_secretsmanager_secret.graph_indexer.arn}:graph_indexer_db_password::"
+        }, 
+        {
+          name  = "ethereum"
+          valueFrom = "${aws_secretsmanager_secret.graph_indexer.arn}:graph_eth_rpc_url::"
         }
       ]
 
@@ -1034,7 +965,7 @@ resource "aws_alb_listener" "graph_node_ext_443_use1" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-FS-1-2-Res-2020-10"
-  certificate_arn = data.aws_acm_certificate.lumerin_general.id
+  certificate_arn = data.aws_acm_certificate.lumerin_ext.id
 
   default_action {
     type             = "forward"
@@ -1059,7 +990,7 @@ resource "aws_alb_listener" "graph_node_ext_8020_use1" {
   port              = "8020"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-FS-1-2-Res-2020-10"
-  certificate_arn = data.aws_acm_certificate.lumerin_general.id
+  certificate_arn = data.aws_acm_certificate.lumerin_ext.id
 
   default_action {
     type             = "forward"
@@ -1084,7 +1015,7 @@ resource "aws_alb_listener" "graph_node_ext_8030_use1" {
   port              = "8030"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-FS-1-2-Res-2020-10"
-  certificate_arn = data.aws_acm_certificate.lumerin_general.id
+  certificate_arn = data.aws_acm_certificate.lumerin_ext.id
 
   default_action {
     type             = "forward"
@@ -1108,9 +1039,9 @@ resource "aws_alb_listener" "graph_node_ext_8030_use1" {
 
 resource "aws_route53_record" "graph_indexer" {
   count = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
-  provider = aws.special-dns
-  zone_id  = var.account_lifecycle == "prd" ? data.aws_route53_zone.public_lumerin_root.zone_id : data.aws_route53_zone.public_lumerin.zone_id
-  name     = var.account_lifecycle == "prd" ? "${local.graph_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin_root.name}" : "${local.graph_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin.name}"
+  provider = aws.use1
+  zone_id  = data.aws_route53_zone.public_lumerin.zone_id
+  name     = "${local.graph_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin.name}"
   type    = "A"
   alias {
     name                   = aws_alb.graph_node_ext_use1[count.index].dns_name

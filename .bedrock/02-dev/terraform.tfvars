@@ -9,6 +9,7 @@ wallets = {
   hashrate_oracle_address = "0x6f736186d2c93913721e2570c283dff2a08575e9"
   futures_address         = "0xec76867e96d942282fc7aafe3f778de34d41a311"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
+  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 }
 
 core_resources = {
@@ -27,6 +28,7 @@ spot_indexer = {
   task_cpu        = 256
   task_ram        = 512
   ghcr_imagetag   = "latest-dev"
+  friendly_name   = "indexer"
 }
 
 graph_indexer = {
@@ -46,9 +48,47 @@ graph_indexer = {
 }
 
 oracle_lambda = {
-  create   = false
-  protect  = false
-  svc_name = "oracle-lambda"
+  create       = true
+  protect      = false
+  svc_name     = "oracle-lambda"
+  chain_id     = "421614"
+  log_level    = "info"
+  job_interval = "5"
+}
+
+########################################
+# Monitoring Configuration
+########################################
+monitoring = {
+  create                        = true
+  create_alarms                 = true
+  create_dashboards             = true
+  create_metric_filters         = true
+  create_prometheus_scraper     = true
+  create_oracle_staleness_check = true
+  notifications_enabled         = false  # Set true to enable SNS alerts (disabled to reduce noise in dev)
+  dev_alerts_topic_name         = "titanio-dev-dev-alerts"
+  devops_alerts_topic_name      = "titanio-dev-dev-alerts"  # Same as dev-alerts in non-prod (all to Slack)
+  dashboard_period              = 300
+}
+
+# DEV environment - relaxed thresholds
+alarm_thresholds = {
+  ecs_cpu_threshold           = 90
+  ecs_memory_threshold        = 90
+  ecs_min_running_tasks       = 1
+  lambda_error_threshold      = 5
+  lambda_duration_threshold   = 55000
+  lambda_throttle_threshold   = 10
+  alb_5xx_threshold           = 20
+  alb_unhealthy_threshold     = 1
+  alb_latency_threshold       = 15
+  rds_cpu_threshold           = 90
+  rds_storage_threshold       = 5
+  rds_connections_threshold   = 190
+  graph_sync_lag_threshold    = 200
+  graph_error_threshold       = 20
+  oracle_max_age_minutes      = 30
 }
 
 ########################################

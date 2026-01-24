@@ -17,3 +17,8 @@ output "graph_indexer_url" {
   description = "URL of the graph indexer"
   value = (var.ecs_cluster.create && var.graph_indexer.create) ? "https://${aws_route53_record.graph_indexer[0].name}" : null
 }
+
+output "oracle_lambda_name" {
+  description = "Name of the oracle lambda"
+  value = (var.oracle_lambda.create) ? aws_lambda_function.oracle_update[0].function_name : null
+}

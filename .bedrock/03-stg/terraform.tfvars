@@ -23,10 +23,11 @@ ecs_cluster = {
 spot_indexer = {
   create          = true
   protect         = false
-  task_worker_qty = 1
+  task_worker_qty = 0
   task_cpu        = 256
   task_ram        = 512
-  ghcr_imagetag   = "latest-dev"
+  ghcr_imagetag   = "latest-stg"
+  friendly_name   = "indexer-new"
 }
 
 graph_indexer = {
@@ -35,7 +36,7 @@ graph_indexer = {
   imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
   task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
   task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
+  task_worker_qty            = 0
   db_instance_class          = "db.t3.small"
   db_allocated_storage       = 50
   db_max_allocated_storage   = 200
@@ -49,6 +50,41 @@ oracle_lambda = {
   create   = false
   protect  = false
   svc_name = "oracle-lambda"
+}
+
+########################################
+# Monitoring Configuration
+########################################
+monitoring = {
+  create                        = false
+  create_alarms                 = false
+  create_dashboards             = false
+  create_metric_filters         = false
+  create_prometheus_scraper     = false
+  create_oracle_staleness_check = false  # Disabled - oracle_lambda not deployed in STG
+  notifications_enabled         = false  # Disabled to reduce noise in pre-prod
+  dev_alerts_topic_name         = "titanio-stg-dev-alerts"
+  devops_alerts_topic_name      = "titanio-stg-dev-alerts"  # All to Slack in STG
+  dashboard_period              = 300
+}
+
+# STG environment - moderate thresholds (between DEV and PROD)
+alarm_thresholds = {
+  ecs_cpu_threshold           = 85
+  ecs_memory_threshold        = 85
+  ecs_min_running_tasks       = 1
+  lambda_error_threshold      = 3
+  lambda_duration_threshold   = 50000
+  lambda_throttle_threshold   = 5
+  alb_5xx_threshold           = 10
+  alb_unhealthy_threshold     = 1
+  alb_latency_threshold       = 10
+  rds_cpu_threshold           = 85
+  rds_storage_threshold       = 5
+  rds_connections_threshold   = 180
+  graph_sync_lag_threshold    = 100
+  graph_error_threshold       = 10
+  oracle_max_age_minutes      = 20
 }
 
 ########################################
