@@ -112,11 +112,11 @@ resource "aws_ecs_task_definition" "spot_indexer" {
       secrets = [
         {
           name  = "ADMIN_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.spot_indexer[count.index].arn}:ADMIN_API_KEY::"
+          valueFrom = "${aws_secretsmanager_secret.spot_indexer.arn}:ADMIN_API_KEY::"
         },
         {
           name  = "ETH_NODE_URL"
-          valueFrom = "${aws_secretsmanager_secret.spot_indexer[count.index].arn}:ETH_NODE_URL::"
+          valueFrom = "${aws_secretsmanager_secret.spot_indexer.arn}:ETH_NODE_URL::"
         }
       ]
       logConfiguration = {
@@ -270,7 +270,7 @@ resource "aws_route53_record" "spot_indexer" {
   count    = (var.ecs_cluster.create && var.spot_indexer.create) ? 1 : 0
   provider = aws.special-dns
   zone_id  = var.account_lifecycle == "prd" ? data.aws_route53_zone.public_lumerin_root.zone_id : data.aws_route53_zone.public_lumerin.zone_id
-  name     = var.account_lifecycle == "prd" ? "${local.spot_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin_root.name}" : "${local.spot_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin.name}"
+  name     = var.account_lifecycle == "prd" ? "${var.spot_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin_root.name}" : "${var.spot_indexer.friendly_name}.${data.aws_route53_zone.public_lumerin.name}"
   type     = "A"
   alias {
     name                   = aws_alb.spot_indexer_ext[count.index].dns_name

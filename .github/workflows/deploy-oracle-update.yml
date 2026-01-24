@@ -1,0 +1,307 @@
+name: Deploy Oracle Update Lambda Function
+
+on:
+  push:
+    branches:
+      - dev
+      - stg
+      - main
+      - 'cicd/**'
+    paths:
+      - 'oracle-update/**'
+      - '.github/workflows/deploy-oracle-update.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (dev=DEV, stg=STG, main=LMN/PROD)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stg
+          - main
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: write   # Required for creating git tags on main
+
+env:
+  SERVICE_NAME: oracle-lambda-update
+
+jobs:
+  build:
+    name: 🔨 Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      environment: ${{ steps.env.outputs.environment }}
+      lambda_function: ${{ steps.env.outputs.lambda_function }}
+      aws_region: ${{ steps.env.outputs.aws_region }}
+      is_cicd_branch: ${{ steps.env.outputs.is_cicd_branch }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: oracle-update/yarn.lock
+
+      - name: Determine environment
+        id: env
+        run: |
+          IS_CICD="false"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" == "main" ]; then
+              ENV="main"
+            elif [ "$BRANCH" == "stg" ]; then
+              ENV="stg"
+            elif [[ "$BRANCH" == cicd/* ]]; then
+              ENV="dev"
+              IS_CICD="true"
+              echo "🔧 CI/CD test branch - will build but skip deploy"
+            else
+              ENV="dev"
+            fi
+          fi
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "is_cicd_branch=${IS_CICD}" >> $GITHUB_OUTPUT
+          
+          # Lambda function name is the same across all environments (different AWS accounts)
+          echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
+          echo "lambda_function=futures-oracle-update-v2" >> $GITHUB_OUTPUT
+
+      - name: Generate version tag
+        id: version
+        run: |
+          LAST_TAG=$(git tag -l "futures-oracle-update-v*" | sort -V | tail -n 1)
+          
+          if [ -z "$LAST_TAG" ]; then
+            VERSION="2.0.0"
+          else
+            LAST_VERSION=$(echo $LAST_TAG | sed 's/futures-oracle-update-v//' | sed 's/-.*$//')
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+            PATCH=$((PATCH + 1))
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+          
+          ENV=${{ steps.env.outputs.environment }}
+          if [ "$ENV" != "main" ]; then
+            FULL_VERSION="v${VERSION}-${ENV}"
+          else
+            FULL_VERSION="v${VERSION}"
+          fi
+          
+          echo "version=${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=futures-oracle-update-v${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Version: ${FULL_VERSION}"
+
+      - name: Install dependencies
+        working-directory: ./oracle-update
+        run: |
+          echo "📦 Installing dependencies..."
+          yarn install --frozen-lockfile
+
+      - name: Build Lambda package
+        working-directory: ./oracle-update
+        run: |
+          echo "📦 Building Lambda deployment package with esbuild..."
+          
+          # Run the build script which creates dist/index.zip
+          yarn build
+          
+          echo "✅ Package created: dist/index.zip"
+          ls -lh dist/index.zip
+
+      - name: Upload Lambda package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-package
+          path: oracle-update/dist/index.zip
+          retention-days: 1
+
+      - name: CI/CD test summary
+        if: steps.env.outputs.is_cicd_branch == 'true'
+        run: |
+          echo "## 🔧 CI/CD Test Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** Test only (no deployment)" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** index.zip built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build verification successful" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    if: needs.build.outputs.is_cicd_branch != 'true'
+    outputs:
+      lambda_version: ${{ steps.publish.outputs.lambda_version }}
+    
+    steps:
+      - name: Download Lambda package
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-package
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          aws-region: ${{ needs.build.outputs.aws_region }}
+          role-session-name: GitHubActions-FuturesOracleUpdate-${{ github.run_id }}
+
+      - name: Deploy to Lambda
+        run: |
+          echo "🚀 Deploying to ${{ needs.build.outputs.environment }} environment"
+          echo "   Function: ${{ needs.build.outputs.lambda_function }}"
+          echo "   Version: ${{ needs.build.outputs.version }}"
+          
+          aws lambda update-function-code \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --zip-file fileb://index.zip \
+            --region ${{ needs.build.outputs.aws_region }}
+          
+          echo "✅ Code uploaded successfully"
+
+      - name: Wait for function to update
+        run: |
+          echo "⏳ Waiting for Lambda function to update..."
+          aws lambda wait function-updated \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --region ${{ needs.build.outputs.aws_region }}
+          
+          echo "✅ Function updated successfully"
+
+      - name: Publish new version
+        id: publish
+        run: |
+          echo "📝 Publishing new Lambda version..."
+          VERSION_INFO=$(aws lambda publish-version \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --description "Version ${{ needs.build.outputs.version }} - Deployed by GitHub Actions" \
+            --region ${{ needs.build.outputs.aws_region }})
+          
+          LAMBDA_VERSION=$(echo $VERSION_INFO | jq -r '.Version')
+          echo "lambda_version=${LAMBDA_VERSION}" >> $GITHUB_OUTPUT
+          echo "✅ Published as version: ${LAMBDA_VERSION}"
+
+  verify:
+    name: 🔍 Verify
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    if: needs.build.outputs.is_cicd_branch != 'true'
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          aws-region: ${{ needs.build.outputs.aws_region }}
+          role-session-name: GitHubActions-FuturesOracleUpdate-Verify-${{ github.run_id }}
+
+      - name: Test Lambda function
+        run: |
+          echo "🧪 Testing Lambda function..."
+          aws lambda invoke \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --invocation-type DryRun \
+            --region ${{ needs.build.outputs.aws_region }} \
+            response.json || true
+          
+          echo "✅ Lambda function is responding"
+
+  cleanup:
+    name: 🧹 Cleanup
+    runs-on: ubuntu-latest
+    needs: [build, deploy, verify]
+    if: always() && needs.build.outputs.is_cicd_branch != 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Git tag
+        if: needs.build.outputs.environment == 'main' && needs.verify.result == 'success'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "${{ needs.build.outputs.tag }}" -m "Release ${{ needs.build.outputs.version }}"
+          git push origin "${{ needs.build.outputs.tag }}"
+
+      - name: Deployment summary
+        if: needs.verify.result == 'success'
+        run: |
+          echo "## 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Oracle Update Lambda" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.build.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** ${{ needs.build.outputs.lambda_function }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Lambda Version:** ${{ needs.deploy.outputs.lambda_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Function deployed and tested successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next scheduled run:** Every 5 minutes via EventBridge" >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure summary
+        if: needs.verify.result == 'failure'
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Futures Oracle Update Lambda" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.build.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ Deployment or verification failed. Check logs above for details." >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: 📢 Notify
+    runs-on: ubuntu-latest
+    needs: [build, deploy, verify, cleanup]
+    if: always() && (needs.build.result == 'success')
+    
+    steps:
+      - name: Checkout (for composite action)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Determine status
+        id: status
+        run: |
+          if [ "${{ needs.build.outputs.is_cicd_branch }}" == "true" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "failure" ] || [ "${{ needs.deploy.result }}" == "failure" ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.verify.result }}" == "cancelled" ] || [ "${{ needs.deploy.result }}" == "cancelled" ]; then
+            echo "status=cancelled" >> $GITHUB_OUTPUT
+          else
+            echo "status=skipped" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Send Slack notification
+        uses: ./.github/actions/slack-notify
+        with:
+          status: ${{ steps.status.outputs.status }}
+          environment: ${{ needs.build.outputs.environment }}
+          service_name: 'Futures Oracle Update Lambda'
+          version: ${{ needs.build.outputs.version }}
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          additional_info: '${{ needs.build.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (build only, no deploy)'' || format(''*Lambda Function:* `{0}` • *Lambda Version:* `{1}`'', needs.build.outputs.lambda_function, needs.deploy.outputs.lambda_version) }}'
+

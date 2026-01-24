@@ -65,7 +65,6 @@ data "aws_subnet" "middle_use1_1a" {
 # Find the xxx.Lumerin.io Certificate created in foundation-extra
 data "aws_acm_certificate" "lumerin_ext" {
   provider    = aws.use1
-  # domain      = var.account_lifecycle == "prd" ? data.aws_route53_zone.public_lumerin_root.name : data.aws_route53_zone.public_lumerin.name
   domain      = data.aws_route53_zone.public_lumerin.name
   types       = ["AMAZON_ISSUED"]
   most_recent = true

@@ -257,13 +257,6 @@ jobs:
           echo "📦 Installing dependencies for deployment..."
           yarn install --frozen-lockfile
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
-          aws-region: ${{ needs.build.outputs.aws_region }}
-          role-session-name: GitHubActions-Subgraph-${{ github.run_id }}
-
       - name: Create subgraph (if not exists)
         working-directory: ./indexer
         continue-on-error: true
