@@ -1,14 +1,46 @@
 ################################################################################
-# Secret Variables (seeded in secrets.auto.tfvars and stored in AWS secrets manager)
+# SHARED CONTRACT ADDRESSES (used across multiple services)
 ################################################################################
-# These variables are now only for documentation and input validation; values are always pulled from AWS Secrets Manager
+variable "wallets" {
+  description = "Shared contract / wallet addresses"
+  type = map (string)
+  default = {
+    clone_factory_address = ""
+    hashrate_oracle_address = ""
+    futures_address = ""
+    multicall_address = ""
+    btcusd_oracle_address = ""
+  }
+}
+
+################################################################################
+# Detailed Resource variabeles
+################################################################################
+variable "core_resources" {
+  description = "Core Resources to create"
+  type = map (any)
+}
+# General Ethereum RPC URL
 variable "ethereum_rpc_url" {
-  description = "Ethereum RPC URL (Futures Marketplace sub-components - Oracle Lambda)"
+  description = "Ethereum RPC URL (Futures Marketplace sub-components)"
   type        = string
   sensitive   = true
   default     = ""
 }
 
+variable "ecs_cluster" {
+  description = "ECS Cluster to create"
+  type = map (any)
+}
+
+########################################
+# Graph Indexer Variables
+########################################
+variable "graph_indexer" {
+  description = "Graph Indexer to create"
+  type = map (any)
+}
+### Graph Indexer Secrets Variables
 variable "graph_eth_rpc_url" {
   description = "Graph Ethereum RPC URL (used by graph indexer)"
   type        = string
@@ -16,6 +48,21 @@ variable "graph_eth_rpc_url" {
   default     = ""
 }
 
+variable "graph_indexer_db_password" {
+  description = "Graph Indexer database password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+########################################
+# Spot Indexer Variables
+########################################
+variable "spot_indexer" {
+  description = "Spot Indexer to create"
+  type = map (any)
+}
+### Spot Indexer Secrets Variables
 variable "spot_eth_rpc_url" {
   description = "Spot Ethereum RPC URL (used by spot indexer)"
   type        = string
@@ -30,63 +77,23 @@ variable "admin_api_key" {
   default     = ""
 }
 
-variable "graph_indexer_db_password" {
-  description = "Graph Indexer database password"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 ################################################################################
-# VARIABLES 
+# Oracle Lambda Variables
 ################################################################################
-# All variables set in ./terraform.tfvars must be initialized here
-# Any of these variables can be used in any of this environment's .tf files
-
-################################################################################
-# SHARED CONTRACT ADDRESSES (used across multiple services)
-################################################################################
-variable "wallets" {
-  description = "Shared contract / wallet addresses"
-  type = map (string)
-  default = {
-    clone_factory_address = ""
-    hashrate_oracle_address = ""
-    futures_address = ""
-    multicall_address = ""
-  }
-}
-
-################################################################################
-# Detailed Resource variabeles
-################################################################################
-variable "core_resources" {
-  description = "Core Resources to create"
-  type = map (any)
-}
-
-variable "ecs_cluster" {
-  description = "ECS Cluster to create"
-  type = map (any)
-}
-
-variable "graph_indexer" {
-  description = "Graph Indexer to create"
-  type = map (any)
-}
-
-variable "spot_indexer" {
-  description = "Spot Indexer to create"
-  type = map (any)
-}
-
 variable "oracle_lambda" {
   description = "Oracle Lambda to create"
   type = map (any)
 }
+variable "oracle_lambda_secrets" {
+  description = "Oracle Lambda secrets to create"
+  type = map (any)
+  sensitive = true
+}
 
-########################################
-########################################
+
+################################################################################
+# ACCOUNT METADATA
+################################################################################
 # ACCOUNT METADATA
 ########################################
 variable "account_shortname" { description = "Code describing customer  and lifecycle. E.g., mst, sbx, dev, stg, prd" }

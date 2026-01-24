@@ -2,6 +2,18 @@
 # GITHUB ACTIONS IAM ROLE AND POLICIES
 ################################################################################
 
+# If the OIDC provider doesn't exist, create it
+# Run this once manually if needed:
+# aws iam create-open-id-connect-provider \
+#   --url https://token.actions.githubusercontent.com \
+#   --client-id-list sts.amazonaws.com \
+#   --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 1b511abead59c6ce207077c0bf0e0043b1382612 \
+#   --profile titanio-stg
+#
+# Note: Two thumbprints are recommended by GitHub for compatibility:
+# - 6938fd4d98bab03faadb97b34396831e3780aea1 (legacy)
+# - 1b511abead59c6ce207077c0bf0e0043b1382612 (current as of 2023)
+
 ################################################################################
 # OIDC PROVIDER FOR GITHUB
 ################################################################################
@@ -58,45 +70,39 @@ resource "aws_iam_role" "github_actions_hashprice_oracle" {
 }
 
 ################################################################################
-# SECRETS ACCESS POLICY (for reading deployment secrets and configuration)
+# LAMBDA UPDATE POLICY (for deploying Oracle Update Lambda via GitHub Actions)
 ################################################################################
+resource "aws_iam_role_policy" "github_lambda_update_oracle" {
+  count = var.oracle_lambda.create ? 1 : 0
+  name  = "lambda-update-futures-oracle"
+  role  = aws_iam_role.github_actions_hashprice_oracle[0].id
 
-# resource "aws_iam_role_policy" "github_secrets_read" {
-#   count = var.core_resources.create ? 1 : 0
-#   name  = "secrets-read-hashprice-oracle"
-#   role  = aws_iam_role.github_actions_hashprice_oracle[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "UpdateFuturesOracleLambdaFunction"
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionCode",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:PublishVersion",
+          "lambda:InvokeFunction" # Allow testing the Lambda function
+        ]
+        Resource = aws_lambda_function.oracle_update[count.index].arn
+      },
+      {
+        Sid    = "UpdateFuturesOracleLambdaEnvironment"
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionConfiguration"
+        ]
+        Resource = aws_lambda_function.oracle_update[count.index].arn
+      }
+    ]
+  })
+}
 
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Sid    = "ReadHashpriceOracleSecrets"
-#         Effect = "Allow"
-#         Action = [
-#           "secretsmanager:GetSecretValue",
-#           "secretsmanager:DescribeSecret"
-#         ]
-#         Resource = [
-#           var.switch.graph_indexer ? aws_secretsmanager_secret.graph_indexer[0].arn : null,
-#           var.switch.spot_indexer ? aws_secretsmanager_secret.spot_indexer[0].arn : null,
-#           var.switch.oracle_lambda ? aws_secretsmanager_secret.oracle_lambda[0].arn : null,
-#         ]
-#       }
-#     ]
-#   })
-# }
-
-
-# If the OIDC provider doesn't exist, create it
-# Run this once manually if needed:
-# aws iam create-open-id-connect-provider \
-#   --url https://token.actions.githubusercontent.com \
-#   --client-id-list sts.amazonaws.com \
-#   --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 1b511abead59c6ce207077c0bf0e0043b1382612 \
-#   --profile titanio-stg
-#
-# Note: Two thumbprints are recommended by GitHub for compatibility:
-# - 6938fd4d98bab03faadb97b34396831e3780aea1 (legacy)
-# - 1b511abead59c6ce207077c0bf0e0043b1382612 (current as of 2023)
 
 
