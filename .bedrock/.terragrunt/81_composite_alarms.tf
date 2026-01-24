@@ -8,7 +8,7 @@
 resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider      = aws.use1
-  alarm_name    = "hpo-graph-indexer-unhealthy-${local.env_short}"
+  alarm_name    = "hpo-graph-indexer-${local.env_short}"
   alarm_description = "COMPOSITE: Graph Indexer is unhealthy - check component alarms"
 
   alarm_rule = join(" OR ", compact([
@@ -39,7 +39,7 @@ resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
 resource "aws_cloudwatch_composite_alarm" "spot_indexer_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms && var.spot_indexer.create) ? 1 : 0
   provider      = aws.use1
-  alarm_name    = "hpo-spot-indexer-unhealthy-${local.env_short}"
+  alarm_name    = "hpo-spot-indexer-${local.env_short}"
   alarm_description = "COMPOSITE: Spot Indexer is unhealthy - check component alarms"
 
   alarm_rule = join(" OR ", [
@@ -68,7 +68,7 @@ resource "aws_cloudwatch_composite_alarm" "spot_indexer_unhealthy" {
 resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
   provider      = aws.use1
-  alarm_name    = "hpo-oracle-unhealthy-${local.env_short}"
+  alarm_name    = "hpo-oracle-${local.env_short}"
   alarm_description = "COMPOSITE: Oracle is unhealthy - check component alarms"
 
   alarm_rule = join(" OR ", compact([
@@ -99,7 +99,7 @@ resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
 resource "aws_cloudwatch_composite_alarm" "rds_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider      = aws.use1
-  alarm_name    = "hpo-rds-unhealthy-${local.env_short}"
+  alarm_name    = "hpo-rds-${local.env_short}"
   alarm_description = "COMPOSITE: RDS is unhealthy - check component alarms"
 
   alarm_rule = join(" OR ", [
@@ -128,7 +128,7 @@ resource "aws_cloudwatch_composite_alarm" "rds_unhealthy" {
 resource "aws_cloudwatch_composite_alarm" "system_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms) ? 1 : 0
   provider      = aws.use1
-  alarm_name    = "hpo-system-unhealthy-${local.env_short}"
+  alarm_name    = "hpo-system-${local.env_short}"
   alarm_description = "COMPOSITE: Hashprice Oracle system has unhealthy components"
 
   alarm_rule = join(" OR ", compact([
