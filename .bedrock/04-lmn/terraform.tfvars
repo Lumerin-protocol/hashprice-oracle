@@ -9,6 +9,7 @@ wallets = {
   hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
   futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda" 
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
+  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 }
 
 core_resources = {
@@ -27,7 +28,7 @@ spot_indexer = {
   task_cpu        = 256
   task_ram        = 512
   ghcr_imagetag   = "latest"
-  friendly_name   = "indexer-new"
+  friendly_name   = "indexer"
 }
 
 graph_indexer = {
@@ -47,9 +48,12 @@ graph_indexer = {
 }
 
 oracle_lambda = {
-  create   = false
-  protect  = false
-  svc_name = "oracle-lambda"
+  create       = true
+  protect      = false
+  svc_name     = "oracle-lambda"
+  chain_id     = "42161" # arbitrum mainnet
+  log_level    = "info"
+  job_interval = "5"
 }
 
 ########################################
