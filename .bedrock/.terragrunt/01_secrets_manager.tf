@@ -22,7 +22,7 @@ resource "aws_iam_policy" "hpo_secret_access" {
         Resource = compact([
           var.graph_indexer.create ? aws_secretsmanager_secret.graph_indexer.arn : "",
           var.spot_indexer.create ? aws_secretsmanager_secret.spot_indexer.arn : "",
-          # var.oracle_lambda.create ? aws_secretsmanager_secret.oracle_lambda.arn : ""
+          var.oracle_lambda.create ? aws_secretsmanager_secret.oracle_lambda.arn : ""
         ])
       }
     ]
@@ -110,6 +110,8 @@ resource "aws_secretsmanager_secret_version" "oracle_lambda" {
   # }
   secret_id = aws_secretsmanager_secret.oracle_lambda.id
   secret_string = jsonencode({
-    ethereum_rpc_url = var.ethereum_rpc_url # From secret.auto.tfvars (contains API key)
+    eth_rpc_url = var.oracle_lambda_secrets.eth_rpc_url 
+    bitcoin_rpc_url = var.oracle_lambda_secrets.bitcoin_rpc_url
+    private_key = var.oracle_lambda_secrets.private_key
   })
 }
