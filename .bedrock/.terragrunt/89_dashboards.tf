@@ -369,7 +369,7 @@ locals {
           }
         }
       },
-      # Subgraph Entity Count (growth indicator)
+      # Subgraph Entity Count by Subgraph (growth indicator)
       {
         type   = "metric"
         x      = 18
@@ -377,17 +377,18 @@ locals {
         width  = 6
         height = 5
         properties = {
-          title   = "Subgraph Entity Count"
+          title   = "Subgraph Entity Count (by Subgraph)"
           view    = "timeSeries"
           stacked = false
           region  = var.default_region
           stat    = "Average"
           period  = var.monitoring.dashboard_period
           metrics = [
-            [local.monitoring_namespace, "subgraphs_total_entities", "Environment", local.env_short, { "label" : "Total Entities", "color" : "#9467bd" }],
+            # Use SEARCH to find all subgraphs by SubgraphId dimension
+            [{ "expression" : "SEARCH('{${local.monitoring_namespace},Environment,SubgraphId,Network} MetricName=\"subgraph_entity_count\" Environment=\"${local.env_short}\"', 'Average', ${var.monitoring.dashboard_period})", "label" : "$${PROP('Dim.SubgraphId')}", "id" : "e1" }],
           ]
           yAxis = {
-            left = { min = 0, label = "Count" }
+            left = { min = 0, label = "Entities" }
           }
         }
       },
