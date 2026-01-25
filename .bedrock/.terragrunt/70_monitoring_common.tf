@@ -33,6 +33,17 @@ locals {
   
   # Composite alarms - send notifications only when enabled
   composite_alarm_actions = var.monitoring.notifications_enabled ? [local.critical_sns_arn] : []
+  
+  # Alarm periods - match check rates (in seconds)
+  oracle_staleness_check_period_seconds = var.monitoring_schedule.oracle_staleness_rate_minutes * 60
+  subgraph_alarm_period_seconds         = var.monitoring_schedule.subgraph_health_rate_minutes * 60
+  
+  # Evaluation periods - how many check periods before alarm triggers
+  # e.g., 60 min unhealthy / 5 min check rate = 12 evaluation periods
+  oracle_alarm_evaluation_periods  = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.oracle_staleness_rate_minutes)
+  subgraph_alarm_evaluation_periods = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.subgraph_health_rate_minutes)
+  
+  # oracle_stale_threshold_minutes is in alarm_thresholds - independent business rule (not tied to check rate)
 }
 
 ################################################################################

@@ -16,7 +16,7 @@ locals {
         width  = 8
         height = 4
         properties = {
-          markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Graph Indexer**: Subgraph indexing service\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_max_age_minutes} min"
+          markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Graph Indexer**: Subgraph indexing service\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
         }
       },
       # Service Status - Task Counts
@@ -282,7 +282,7 @@ locals {
           ]
           annotations = {
             horizontal = [
-              { color = "#d62728", value = var.alarm_thresholds.oracle_max_age_minutes, label = "Stale Threshold", fill = "above" }
+              { color = "#d62728", value = var.alarm_thresholds.oracle_stale_threshold_minutes, label = "Stale Threshold", fill = "above" }
             ]
           }
         }

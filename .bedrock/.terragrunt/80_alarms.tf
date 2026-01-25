@@ -95,18 +95,19 @@ resource "aws_cloudwatch_metric_alarm" "oracle_lambda_errors" {
 }
 
 # Oracle Staleness - Data is Stale
+# Alarms when oracle_data_age_minutes > stale_threshold for unhealthy_alarm_period_minutes
 resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-oracle-stale-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle on-chain data is STALE - exceeds ${var.alarm_thresholds.oracle_max_age_minutes} minutes"
+  alarm_description   = "CRITICAL: Oracle on-chain data is STALE - exceeds ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.oracle_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
   metric_name         = "oracle_data_age_minutes"
   namespace           = local.monitoring_namespace
-  period              = 300
+  period              = local.oracle_staleness_check_period_seconds  # Match Lambda check rate
   statistic           = "Maximum"
-  threshold           = var.alarm_thresholds.oracle_max_age_minutes
+  threshold           = var.alarm_thresholds.oracle_stale_threshold_minutes
   treat_missing_data  = "breaching"
 
   dimensions = {
@@ -656,9 +657,9 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_unhealthy" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-subgraph-unhealthy-${local.env_short}"
-  alarm_description   = "CRITICAL: One or more subgraphs reporting unhealthy status"
+  alarm_description   = "CRITICAL: One or more subgraphs unhealthy for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
   threshold           = 2  # Expected number of healthy subgraphs (futures + oracles)
   treat_missing_data  = "breaching"
 
@@ -668,7 +669,7 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_unhealthy" {
     metric {
       metric_name = "subgraphs_healthy"
       namespace   = local.monitoring_namespace
-      period      = 300
+      period      = local.subgraph_alarm_period_seconds  # Match check rate
       stat        = "Minimum"
       dimensions = {
         Environment = local.env_short
@@ -691,9 +692,9 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_not_synced" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-subgraph-not-synced-${local.env_short}"
-  alarm_description   = "WARNING: One or more subgraphs not synced with chain"
+  alarm_description   = "WARNING: One or more subgraphs not synced for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
   threshold           = 2  # Expected number of synced subgraphs
   treat_missing_data  = "breaching"
 
@@ -703,7 +704,7 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_not_synced" {
     metric {
       metric_name = "subgraphs_synced"
       namespace   = local.monitoring_namespace
-      period      = 300
+      period      = local.subgraph_alarm_period_seconds  # Match check rate
       stat        = "Minimum"
       dimensions = {
         Environment = local.env_short

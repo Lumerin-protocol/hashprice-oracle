@@ -8,6 +8,7 @@ locals {
   
   # Graph Node status endpoint (GraphQL)
   graph_node_status_url = "https://${aws_route53_record.graph_indexer[0].name}:8030/graphql"
+  # subgraph_alarm_period_seconds is defined in 70_monitoring_common.tf
 }
 
 ################################################################################
@@ -60,15 +61,15 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
 }
 
 ################################################################################
-# EVENTBRIDGE SCHEDULE (Every 5 minutes)
+# EVENTBRIDGE SCHEDULE (configurable rate)
 ################################################################################
 
 resource "aws_cloudwatch_event_rule" "subgraph_health_monitor" {
   count               = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   name                = "${local.subgraph_health_monitor_name}-schedule"
-  description         = "Trigger Subgraph Health Monitor every 5 minutes"
-  schedule_expression = "rate(5 minutes)"
+  description         = "Trigger Subgraph Health Monitor every ${var.monitoring_schedule.subgraph_health_rate_minutes} minutes"
+  schedule_expression = "rate(${var.monitoring_schedule.subgraph_health_rate_minutes} minutes)"
 
   tags = merge(
     var.default_tags,
