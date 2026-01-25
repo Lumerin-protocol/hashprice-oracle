@@ -39,9 +39,11 @@ locals {
   subgraph_alarm_period_seconds         = var.monitoring_schedule.subgraph_health_rate_minutes * 60
   
   # Evaluation periods - how many check periods before alarm triggers
-  # e.g., 60 min unhealthy / 5 min check rate = 12 evaluation periods
-  oracle_alarm_evaluation_periods  = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.oracle_staleness_rate_minutes)
-  subgraph_alarm_evaluation_periods = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.subgraph_health_rate_minutes)
+  # Standard CloudWatch metrics (ECS, Lambda, RDS, ALB) use 300-second (5 min) periods
+  # Custom Lambdas use their own check rate
+  standard_alarm_evaluation_periods     = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / 5)
+  oracle_alarm_evaluation_periods       = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.oracle_staleness_rate_minutes)
+  subgraph_alarm_evaluation_periods     = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.subgraph_health_rate_minutes)
   
   # oracle_stale_threshold_minutes is in alarm_thresholds - independent business rule (not tied to check rate)
 }

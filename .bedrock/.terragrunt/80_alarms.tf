@@ -13,9 +13,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_indexer_down" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-indexer-down-${local.env_short}"
-  alarm_description   = "CRITICAL: Graph Indexer has no running tasks - service is DOWN"
+  alarm_description   = "CRITICAL: Graph Indexer down for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "RunningTaskCount"
   namespace           = "ECS/ContainerInsights"
   period              = 300
@@ -42,9 +42,9 @@ resource "aws_cloudwatch_metric_alarm" "spot_indexer_down" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.spot_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-spot-indexer-down-${local.env_short}"
-  alarm_description   = "CRITICAL: Spot Indexer has no running tasks - service is DOWN"
+  alarm_description   = "CRITICAL: Spot Indexer down for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "RunningTaskCount"
   namespace           = "ECS/ContainerInsights"
   period              = 300
@@ -71,9 +71,9 @@ resource "aws_cloudwatch_metric_alarm" "oracle_lambda_errors" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-oracle-lambda-failing-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle Lambda is failing - on-chain data may not be updating"
+  alarm_description   = "CRITICAL: Oracle Lambda errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
   period              = 300
@@ -128,9 +128,9 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage_critical" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-rds-storage-critical-${local.env_short}"
-  alarm_description   = "CRITICAL: RDS storage below ${var.alarm_thresholds.rds_storage_threshold}GB - database will fill up"
+  alarm_description   = "CRITICAL: RDS storage low for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "FreeStorageSpace"
   namespace           = "AWS/RDS"
   period              = 300
@@ -156,9 +156,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_alb_unhealthy" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-alb-unhealthy-${local.env_short}"
-  alarm_description   = "CRITICAL: Graph Indexer ALB has unhealthy targets"
+  alarm_description   = "CRITICAL: Graph ALB unhealthy for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "UnHealthyHostCount"
   namespace           = "AWS/ApplicationELB"
   period              = 300
@@ -189,9 +189,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_cpu_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-cpu-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer CPU > ${var.alarm_thresholds.ecs_cpu_threshold}%"
+  alarm_description   = "WARNING: Graph CPU >${var.alarm_thresholds.ecs_cpu_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   threshold           = var.alarm_thresholds.ecs_cpu_threshold
   treat_missing_data  = "notBreaching"
 
@@ -244,9 +244,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_memory_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-memory-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer Memory > ${var.alarm_thresholds.ecs_memory_threshold}%"
+  alarm_description   = "WARNING: Graph Memory >${var.alarm_thresholds.ecs_memory_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   threshold           = var.alarm_thresholds.ecs_memory_threshold
   treat_missing_data  = "notBreaching"
 
@@ -299,9 +299,9 @@ resource "aws_cloudwatch_metric_alarm" "spot_cpu_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.spot_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-spot-cpu-high-${local.env_short}"
-  alarm_description   = "WARNING: Spot Indexer CPU > ${var.alarm_thresholds.ecs_cpu_threshold}%"
+  alarm_description   = "WARNING: Spot CPU >${var.alarm_thresholds.ecs_cpu_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   threshold           = var.alarm_thresholds.ecs_cpu_threshold
   treat_missing_data  = "notBreaching"
 
@@ -354,9 +354,9 @@ resource "aws_cloudwatch_metric_alarm" "spot_memory_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.spot_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-spot-memory-high-${local.env_short}"
-  alarm_description   = "WARNING: Spot Indexer Memory > ${var.alarm_thresholds.ecs_memory_threshold}%"
+  alarm_description   = "WARNING: Spot Memory >${var.alarm_thresholds.ecs_memory_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   threshold           = var.alarm_thresholds.ecs_memory_threshold
   treat_missing_data  = "notBreaching"
 
@@ -409,9 +409,9 @@ resource "aws_cloudwatch_metric_alarm" "oracle_duration_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-oracle-duration-high-${local.env_short}"
-  alarm_description   = "WARNING: Oracle Lambda duration > ${var.alarm_thresholds.lambda_duration_threshold}ms - approaching timeout"
+  alarm_description   = "WARNING: Oracle duration high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "Duration"
   namespace           = "AWS/Lambda"
   period              = 300
@@ -437,9 +437,9 @@ resource "aws_cloudwatch_metric_alarm" "oracle_throttled" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-oracle-throttled-${local.env_short}"
-  alarm_description   = "WARNING: Oracle Lambda is being throttled"
+  alarm_description   = "WARNING: Oracle throttled for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "Throttles"
   namespace           = "AWS/Lambda"
   period              = 300
@@ -465,9 +465,9 @@ resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-rds-cpu-high-${local.env_short}"
-  alarm_description   = "WARNING: RDS CPU > ${var.alarm_thresholds.rds_cpu_threshold}%"
+  alarm_description   = "WARNING: RDS CPU high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "CPUUtilization"
   namespace           = "AWS/RDS"
   period              = 300
@@ -493,9 +493,9 @@ resource "aws_cloudwatch_metric_alarm" "rds_connections_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-rds-connections-high-${local.env_short}"
-  alarm_description   = "WARNING: RDS connections > ${var.alarm_thresholds.rds_connections_threshold}"
+  alarm_description   = "WARNING: RDS connections high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "DatabaseConnections"
   namespace           = "AWS/RDS"
   period              = 300
@@ -521,9 +521,9 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage_warning" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-rds-storage-warning-${local.env_short}"
-  alarm_description   = "WARNING: RDS storage below ${var.alarm_thresholds.rds_storage_threshold * 2}GB"
+  alarm_description   = "WARNING: RDS storage low for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "FreeStorageSpace"
   namespace           = "AWS/RDS"
   period              = 300
@@ -549,9 +549,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_errors_high" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_metric_filters && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-errors-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer log errors > ${var.alarm_thresholds.graph_error_threshold}"
+  alarm_description   = "WARNING: Graph errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "graph_indexer_errors"
   namespace           = local.monitoring_namespace
   period              = 300
@@ -573,9 +573,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_sync_lagging" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_metric_filters && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-sync-lagging-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer sync is lagging behind chain"
+  alarm_description   = "WARNING: Graph sync lagging for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "graph_sync_lagging"
   namespace           = local.monitoring_namespace
   period              = 300
@@ -597,9 +597,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_alb_5xx" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-alb-5xx-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer ALB 5xx errors > ${var.alarm_thresholds.alb_5xx_threshold}"
+  alarm_description   = "WARNING: Graph ALB 5xx errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "HTTPCode_ELB_5XX_Count"
   namespace           = "AWS/ApplicationELB"
   period              = 300
@@ -625,9 +625,9 @@ resource "aws_cloudwatch_metric_alarm" "graph_alb_latency" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-graph-alb-latency-${local.env_short}"
-  alarm_description   = "WARNING: Graph Indexer ALB latency > ${var.alarm_thresholds.alb_latency_threshold}s"
+  alarm_description   = "WARNING: Graph ALB latency high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = local.standard_alarm_evaluation_periods
   metric_name         = "TargetResponseTime"
   namespace           = "AWS/ApplicationELB"
   period              = 300
