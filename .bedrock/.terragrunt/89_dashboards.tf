@@ -16,7 +16,7 @@ locals {
         width  = 8
         height = 4
         properties = {
-          markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Graph Indexer**: Subgraph indexing service\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_max_age_minutes} min"
+          markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Graph Indexer**: Subgraph indexing service\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
         }
       },
       # Service Status - Task Counts
@@ -207,8 +207,8 @@ locals {
           period  = var.monitoring.dashboard_period
           yAxis   = { left = { min = 0 } }
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/alb-graph-indexer-ext-${local.env_short}", { "label" : "Requests", "color" : "#1f77b4" }],
-            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/alb-graph-indexer-ext-${local.env_short}", { "label" : "5xx Errors", "color" : "#d62728" }],
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", data.aws_lb.graph_indexer[0].arn_suffix, { "label" : "Requests", "color" : "#1f77b4" }],
+            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", data.aws_lb.graph_indexer[0].arn_suffix, { "label" : "5xx Errors", "color" : "#d62728" }],
           ]
         }
       },
@@ -228,8 +228,8 @@ locals {
           period  = var.monitoring.dashboard_period
           yAxis   = { left = { min = 0 } }
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/alb-spot-indexer-ext-${local.env_short}", { "label" : "Requests", "color" : "#1f77b4" }],
-            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/alb-spot-indexer-ext-${local.env_short}", { "label" : "5xx Errors", "color" : "#d62728" }],
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", data.aws_lb.spot_indexer[0].arn_suffix, { "label" : "Requests", "color" : "#1f77b4" }],
+            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", data.aws_lb.spot_indexer[0].arn_suffix, { "label" : "5xx Errors", "color" : "#d62728" }],
           ]
         }
       },
@@ -282,7 +282,7 @@ locals {
           ]
           annotations = {
             horizontal = [
-              { color = "#d62728", value = var.alarm_thresholds.oracle_max_age_minutes, label = "Stale Threshold", fill = "above" }
+              { color = "#d62728", value = var.alarm_thresholds.oracle_stale_threshold_minutes, label = "Stale Threshold", fill = "above" }
             ]
           }
         }
@@ -340,27 +340,55 @@ locals {
           }
         }
       },
-      # Graph Prometheus Metrics (if enabled)
+      # Subgraph Health (from health monitor Lambda)
       {
         type   = "metric"
         x      = 12
         y      = 24
-        width  = 12
+        width  = 6
         height = 5
         properties = {
-          title   = "Graph Node - Query Performance"
+          title   = "Subgraph Health Status"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.default_region
+          stat    = "Minimum"
+          period  = var.monitoring.dashboard_period
+          metrics = [
+            [local.monitoring_namespace, "subgraphs_healthy", "Environment", local.env_short, { "label" : "Healthy", "color" : "#2ca02c" }],
+            [local.monitoring_namespace, "subgraphs_synced", "Environment", local.env_short, { "label" : "Synced", "color" : "#1f77b4" }],
+            [local.monitoring_namespace, "subgraphs_total", "Environment", local.env_short, { "label" : "Total", "color" : "#7f7f7f" }],
+          ]
+          yAxis = {
+            left = { min = 0, label = "Count" }
+          }
+          annotations = {
+            horizontal = [
+              { value = 2, label = "Expected", color = "#2ca02c", fill = "none" }
+            ]
+          }
+        }
+      },
+      # Subgraph Entity Count by Subgraph (growth indicator)
+      {
+        type   = "metric"
+        x      = 18
+        y      = 24
+        width  = 6
+        height = 5
+        properties = {
+          title   = "Subgraph Entity Count (by Subgraph)"
           view    = "timeSeries"
           stacked = false
           region  = var.default_region
           stat    = "Average"
           period  = var.monitoring.dashboard_period
           metrics = [
-            [local.monitoring_namespace, "graph_query_count", "Environment", local.env_short, { "label" : "Query Count", "color" : "#1f77b4" }],
-            [local.monitoring_namespace, "graph_query_latency_avg", "Environment", local.env_short, { "label" : "Avg Latency (s)", "color" : "#ff7f0e", "yAxis" : "right" }],
+            # Use SEARCH to find all subgraphs by SubgraphId dimension
+            [{ "expression" : "SEARCH('{${local.monitoring_namespace},Environment,SubgraphId,Network} MetricName=\"subgraph_entity_count\" Environment=\"${local.env_short}\"', 'Average', ${var.monitoring.dashboard_period})", "label" : "$${PROP('Dim.SubgraphId')}", "id" : "e1" }],
           ]
           yAxis = {
-            left  = { min = 0, label = "Count" }
-            right = { min = 0, label = "Seconds" }
+            left = { min = 0, label = "Entities" }
           }
         }
       },

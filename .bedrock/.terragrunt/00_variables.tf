@@ -100,7 +100,7 @@ variable "monitoring" {
     create_alarms                 = bool
     create_dashboards             = bool
     create_metric_filters         = bool
-    create_prometheus_scraper     = bool
+    create_subgraph_health_monitor = bool
     create_oracle_staleness_check = bool
     notifications_enabled         = bool    # Set false to disable SNS notifications (alarms still visible in console)
     dev_alerts_topic_name         = string
@@ -112,12 +112,26 @@ variable "monitoring" {
     create_alarms                 = false
     create_dashboards             = false
     create_metric_filters         = false
-    create_prometheus_scraper     = false
+    create_subgraph_health_monitor = false
     create_oracle_staleness_check = false
     notifications_enabled         = false
     dev_alerts_topic_name         = ""
     devops_alerts_topic_name      = ""
     dashboard_period              = 300
+  }
+}
+
+variable "monitoring_schedule" {
+  description = "Schedule rates for monitoring Lambdas and alarm timing"
+  type = object({
+    subgraph_health_rate_minutes   = number # How often to check subgraph health (minutes)
+    oracle_staleness_rate_minutes  = number # How often to check oracle staleness (minutes)
+    unhealthy_alarm_period_minutes = number # How long to tolerate "bad" before triggering alarm
+  })
+  default = {
+    subgraph_health_rate_minutes   = 5
+    oracle_staleness_rate_minutes  = 5
+    unhealthy_alarm_period_minutes = 15
   }
 }
 
@@ -136,26 +150,26 @@ variable "alarm_thresholds" {
     rds_cpu_threshold           = number
     rds_storage_threshold       = number
     rds_connections_threshold   = number
-    graph_sync_lag_threshold    = number
-    graph_error_threshold       = number
-    oracle_max_age_minutes      = number
+    graph_sync_lag_threshold       = number
+    graph_error_threshold          = number
+    oracle_stale_threshold_minutes = number  # Max acceptable oracle age (business rule, not tied to check rate)
   })
   default = {
-    ecs_cpu_threshold           = 90
-    ecs_memory_threshold        = 90
-    ecs_min_running_tasks       = 1
-    lambda_error_threshold      = 5
-    lambda_duration_threshold   = 55000
-    lambda_throttle_threshold   = 10
-    alb_5xx_threshold           = 20
-    alb_unhealthy_threshold     = 1
-    alb_latency_threshold       = 15
-    rds_cpu_threshold           = 90
-    rds_storage_threshold       = 5
-    rds_connections_threshold   = 190
-    graph_sync_lag_threshold    = 200
-    graph_error_threshold       = 20
-    oracle_max_age_minutes      = 30
+    ecs_cpu_threshold              = 90
+    ecs_memory_threshold           = 90
+    ecs_min_running_tasks          = 1
+    lambda_error_threshold         = 5
+    lambda_duration_threshold      = 55000
+    lambda_throttle_threshold      = 10
+    alb_5xx_threshold              = 20
+    alb_unhealthy_threshold        = 1
+    alb_latency_threshold          = 15
+    rds_cpu_threshold              = 90
+    rds_storage_threshold          = 5
+    rds_connections_threshold      = 190
+    graph_sync_lag_threshold       = 200
+    graph_error_threshold          = 20
+    oracle_stale_threshold_minutes = 30  # Max acceptable oracle data age
   }
 }
 

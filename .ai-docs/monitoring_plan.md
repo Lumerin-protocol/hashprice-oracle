@@ -1,471 +1,464 @@
-# Hashprice Oracle - Monitoring Plan
+# Hashprice Oracle - Monitoring & Alerting Guide
 
-## Summary of Request
+## Overview
 
-Create monitoring infrastructure for the Hashprice Oracle system including:
-- **70-series files** - Metric collection (filters, lambdas, IAM roles, etc.)
-- **80-series files** - Metric actions (alarms, dashboards)
+The Hashprice Oracle (HPO) system monitors blockchain hashrate data and provides it to smart contracts. This guide explains how we ensure the HPO environment stays healthy through CloudWatch monitoring, alarms, and dashboards.
 
-### Alerting Targets
-- `titanio-[env]-dev-alerts` - Slack webhook via Lambda (`devops-alerts` Lambda formats for Slack)
-- `titanio-[env]-devops-alerts` - Direct SMS/email (urgent, primarily for production/LMN)
+### System Components
 
-### Confirmed SNS Topics (titanio-dev)
-```
-arn:aws:sns:us-east-1:434960487817:titanio-dev-dev-alerts  (exists, subscribed to devops-alerts Lambda)
-```
-**Note**: `titanio-dev-devops-alerts` does NOT exist in dev - may need to create for critical alerts or use existing for all in non-prod.
-
-### Requirements
-- Variable-controlled creation per environment
-- Environment-tunable thresholds (relaxed for dev/stg)
-- Critical alerts to cell phone for LMN only, Slack for dev/stg
-- Composite alarms where appropriate
-- Pull Prometheus metrics from Graph Node into CloudWatch
-- Oracle staleness detection (check on-chain state)
+| Component | Purpose | Critical? |
+|-----------|---------|-----------|
+| **Graph Indexer** | Self-hosted Graph Node indexing futures/oracles subgraphs | Yes - UI depends on it |
+| **Spot Indexer** | Contract indexing API for spot marketplace | Yes - API consumers depend on it |
+| **Oracle Lambda** | Updates on-chain hashrate data every 5 minutes | Yes - DeFi contracts depend on it |
+| **RDS PostgreSQL** | Graph Node database storage | Yes - Graph Indexer depends on it |
 
 ---
 
-## Notification Strategy (IMPORTANT)
+## Dashboard Quick Reference
 
-### Two-Tier Alarm Architecture
+**Dashboard Name:** `00-HashpriceOracle-{env}`
 
-The monitoring system uses a **two-tier alarm architecture** to prevent alert flooding:
+Open in CloudWatch Console → Dashboards → `00-HashpriceOracle-lmn` (or dev/stg)
+
+### Dashboard Layout
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         COMPOSITE ALARMS                             │
-│                    (Human-Alertable Level)                           │
-│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐        │
-│  │ graph_indexer   │ │ spot_indexer    │ │ oracle          │        │
-│  │ _unhealthy      │ │ _unhealthy      │ │ _unhealthy      │  ...   │
-│  └────────┬────────┘ └────────┬────────┘ └────────┬────────┘        │
-│           │                   │                   │                  │
-│           ▼                   ▼                   ▼                  │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                    SNS NOTIFICATIONS                         │    │
-│  │         (Only when notifications_enabled = true)             │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ Composite triggers when ANY component is in ALARM
-                              │
-┌─────────────────────────────────────────────────────────────────────┐
-│                       COMPONENT ALARMS                               │
-│                   (State Tracking Only)                              │
-│                                                                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │ cpu_high │ │ mem_high │ │ svc_down │ │ errors   │ │ storage  │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-│                                                                      │
-│  NO SNS NOTIFICATIONS - Visible in CloudWatch Console only           │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Row 1: Service Status                                                        │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                 │
+│ │ ECS Tasks       │ │ Lambda Metrics  │ │ Oracle Staleness│                 │
+│ │ (Running count) │ │ (Invokes/Errors)│ │ (Data age mins) │                 │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Row 2: ECS Resource Usage                                                    │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                 │
+│ │ Graph Indexer   │ │ Spot Indexer    │ │ Oracle Lambda   │                 │
+│ │ CPU/Memory      │ │ CPU/Memory      │ │ Duration        │                 │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Row 3: Log-Based Metrics                                                     │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                 │
+│ │ Graph Indexer   │ │ Spot Indexer    │ │ Oracle Lambda   │                 │
+│ │ Errors/Blocks   │ │ Errors/Updates  │ │ Errors/Jobs     │                 │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Row 4: Infrastructure                                                        │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                 │
+│ │ ALB Graph       │ │ ALB Spot        │ │ RDS PostgreSQL  │                 │
+│ │ Requests/5xx    │ │ Requests/5xx    │ │ CPU/Connections │                 │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Row 5: Application Health                                                    │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐                 │
+│ │ RDS Storage     │ │ Subgraph Health │ │ Subgraph Entity │                 │
+│ │ Free Space (GB) │ │ Healthy/Synced  │ │ Count by ID     │                 │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘                 │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why This Architecture?
+### Key Metrics to Watch
 
-1. **Prevents Double-Alerting**: Without this, when CPU goes high you'd get:
-   - Alert: "CPU High"
-   - Alert: "Graph Indexer Unhealthy" (because CPU triggered composite)
-   - That's noise!
-
-2. **Single Actionable Alert**: DevOps receives ONE alert: "Graph Indexer Unhealthy"
-   - Go to CloudWatch Dashboard
-   - See which component alarm triggered it
-   - Take appropriate action
-
-3. **Clean Console View**: All component alarms are still visible in CloudWatch Alarms console for debugging
-
-### Notification Control
-
-```hcl
-# In terraform.tfvars
-monitoring = {
-  ...
-  notifications_enabled = false  # Set true to enable SNS alerts
-}
-```
-
-| Environment | `notifications_enabled` | Reason |
-|-------------|------------------------|--------|
-| DEV | `false` | Reduce noise during active development |
-| STG | `false` | Reduce noise, enable when testing alerts |
-| LMN/Prod | `true` | Always notify for production issues |
-
-### Implementation in Terraform
-
-```hcl
-# 70_monitoring_common.tf
-locals {
-  # Component alarms - NEVER send notifications (just state tracking)
-  component_alarm_actions = []
-  
-  # Composite alarms - send notifications only when enabled
-  composite_alarm_actions = var.monitoring.notifications_enabled ? [local.critical_sns_arn] : []
-}
-```
-
-```hcl
-# 80_alarms.tf (component alarms)
-resource "aws_cloudwatch_metric_alarm" "graph_cpu_high" {
-  ...
-  alarm_actions = local.component_alarm_actions  # Always empty
-  ok_actions    = local.component_alarm_actions
-}
-
-# 81_composite_alarms.tf
-resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
-  ...
-  alarm_actions = local.composite_alarm_actions  # Only when enabled
-  ok_actions    = local.composite_alarm_actions
-}
-```
+| Widget | Healthy State | Warning Signs |
+|--------|---------------|---------------|
+| **ECS Tasks** | All services showing 1+ | Any service at 0 |
+| **Subgraph Health** | 2 healthy, 2 synced | Either < 2 |
+| **Oracle Data Age** | < 10 minutes | > 10 minutes (stale) |
+| **RDS Storage** | > 10 GB free | < 5 GB free |
+| **Lambda Errors** | 0 | Any errors |
 
 ---
 
-## Infrastructure Inventory
+## Alarm Architecture
 
-### 1. ECS Cluster
-| Resource | Name Pattern | Notes |
-|----------|-------------|-------|
-| ECS Cluster | `ecs-hashprice-oracle-${env}` | Fargate, Container Insights enabled |
+### Two-Tier System
 
-### 2. ECS Services (Running 24/7)
+We use a **two-tier alarm system** to prevent alert flooding:
 
-#### Graph Indexer (Subgraph)
-| Resource | Name Pattern | Notes |
-|----------|-------------|-------|
-| ECS Service | `svc-graph-indexer-${env}` | Self-hosted Graph Node |
-| Log Group | `/ecs/graph-indexer-${env}` | 253MB data, active |
-| ALB | `alb-graph-indexer-ext-${env}` | External, ports 443/8020/8030 |
-| RDS | `graph-indexer-${env}-use1-v2` | PostgreSQL 17 |
-| DNS | `graph.${env}.lumerin.io` | GraphQL endpoint |
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      COMPOSITE ALARMS (Alert Layer)                          │
+│                  ↓ Only these send SNS notifications ↓                       │
+│                                                                              │
+│    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│    │hpo-graph-    │  │hpo-spot-     │  │hpo-oracle    │  │hpo-rds       │   │
+│    │indexer       │  │indexer       │  │              │  │              │   │
+│    └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │
+│           │                 │                 │                 │            │
+└───────────┼─────────────────┼─────────────────┼─────────────────┼────────────┘
+            │                 │                 │                 │
+            ▼                 ▼                 ▼                 ▼
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                     COMPONENT ALARMS (State Layer)                            │
+│                 ↓ NO notifications - state tracking only ↓                    │
+│                                                                               │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│  │svc_down │ │cpu_high │ │mem_high │ │errors   │ │stale    │ │storage  │    │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘    │
+│                                                                               │
+│  Visible in CloudWatch Alarms console for debugging                           │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
 
-#### Spot Indexer
-| Resource | Name Pattern | Notes |
-|----------|-------------|-------|
-| ECS Service | `svc-spot-indexer-${env}` | Contract indexing API |
-| Log Group | `bedrock-hpo-spot-indexer-${env}` | 9KB data (newer deployment) |
-| ALB | `alb-spot-indexer-ext-${env}` | External, port 443 |
-| DNS | `indexer.${env}.lumerin.io` | REST API endpoint |
+### Why This Design?
 
-### 3. Lambda Functions
+**Without composites:** If CPU goes high, you'd get:
+- Alert: "CPU High" 
+- Alert: "Graph Indexer Unhealthy" (because CPU triggered composite)
+- That's noise!
 
-#### Oracle Update Lambda
-| Resource | Name Pattern | Notes |
-|----------|-------------|-------|
-| Lambda | `marketplace-oracle-update` | BTC-USDC hashrate oracle updates |
-| Log Group | `/aws/lambda/marketplace-oracle-update` | 80MB data, active |
-| Schedule | Every 5 minutes | EventBridge |
+**With composites:** You get ONE alert: "Graph Indexer Unhealthy"
+- Go to dashboard
+- See which component triggered it
+- Take action
 
 ---
 
-## Log Pattern Research (from titanio-dev)
+## Composite Alarms Reference
 
-### Graph Indexer Logs (`/ecs/graph-indexer-dev`)
+### hpo-graph-indexer-{env}
+**Triggers when:** Graph Indexer service is unhealthy
 
-**Log Format**: Text with timestamp and level
-```
-Jan 23 18:16:52.296 INFO Syncing 3 blocks from Ethereum, code: BlockIngestionStatus...
-Jan 20 23:49:52.748 ERRO Failed to connect notification listener: db error...
-Jan 20 23:49:57.750 CRIT database setup failed, error: database unavailable
-```
+| Component Alarm | Condition | Severity |
+|-----------------|-----------|----------|
+| `hpo-graph-indexer-down` | Running tasks = 0 | Critical |
+| `hpo-graph-cpu-high` | CPU > threshold | Warning |
+| `hpo-graph-memory-high` | Memory > threshold | Warning |
+| `hpo-graph-errors-high` | Log errors > threshold | Warning |
+| `hpo-subgraph-unhealthy` | Any subgraph health != "healthy" | Critical |
+| `hpo-subgraph-not-synced` | Any subgraph not synced with chain | Warning |
 
-| Pattern | Filter | Metric Name | Purpose |
-|---------|--------|-------------|---------|
-| `ERRO` | `" ERRO "` | `graph_indexer_errors` | Error count |
-| `CRIT` | `" CRIT "` | `graph_indexer_critical` | Critical failures |
-| Database Error | `"Postgres connection error"` OR `"database unavailable"` | `graph_db_errors` | DB connectivity |
-| Block Sync | `"Committed write batch"` | `graph_blocks_committed` | Positive: indexing working |
-| Sync Lagging | `"BlockIngestionLagging"` | `graph_sync_lagging` | Sync falling behind |
-
-### Spot Indexer Logs (`bedrock-hpo-spot-indexer-dev`)
-
-**Log Format**: JSON (pino)
-```json
-{"level":30,"time":1768946177175,"pid":1,"hostname":"...","msg":"Connecting to blockchain..."}
-{"level":30,"time":1768946178567,"pid":1,"hostname":"...","module":"server","msg":"Server listening at http://0.0.0.0:8081"}
-```
-
-| Pattern | Filter | Metric Name | Purpose |
-|---------|--------|-------------|---------|
-| Error Level | `"level":50` | `spot_indexer_errors` | Error count |
-| Server Start | `"Server listening"` | `spot_server_starts` | Service restarts (high = problem) |
-| Contract Update | `"updated in cache"` | `spot_contract_updates` | Positive: indexer working |
-
-### Oracle Lambda Logs (`/aws/lambda/marketplace-oracle-update`)
-
-**Log Format**: JSON (pino)
-```json
-{"level":30,"time":1769192259133,"pid":2,"hostname":"...","msg":"Starting job"}
-{"level":30,"time":1769192265343,"pid":2,"hostname":"...","msg":"Transaction hash: 0x1bab4a04..."}
-{"level":30,"time":1769192265622,"pid":2,"hostname":"...","msg":"Job completed"}
-```
-
-| Pattern | Filter | Metric Name | Purpose |
-|---------|--------|-------------|---------|
-| Error Level | `"level":50` | `oracle_lambda_errors` | Error count |
-| Job Completed | `"Job completed"` | `oracle_job_completions` | Successful executions |
-| TX Success | `"Transaction hash:"` | `oracle_tx_success` | On-chain updates |
+**Response:**
+1. Check dashboard "Subgraph Health Status" widget
+2. If subgraph unhealthy: Check Graph Node logs for errors
+3. If service down: Check ECS console for task failures
+4. If CPU/Memory high: Consider scaling or investigating resource leak
 
 ---
 
-## File Structure (Implemented)
+### hpo-spot-indexer-{env}
+**Triggers when:** Spot Indexer service is unhealthy
+
+| Component Alarm | Condition | Severity |
+|-----------------|-----------|----------|
+| `hpo-spot-indexer-down` | Running tasks = 0 | Critical |
+| `hpo-spot-cpu-high` | CPU > threshold | Warning |
+| `hpo-spot-memory-high` | Memory > threshold | Warning |
+
+**Response:**
+1. Check ECS console for task status
+2. Review Spot Indexer logs for errors
+3. Verify ALB health checks
+
+---
+
+### hpo-oracle-{env}
+**Triggers when:** Oracle Lambda is unhealthy
+
+| Component Alarm | Condition | Severity |
+|-----------------|-----------|----------|
+| `hpo-oracle-lambda-failing` | Lambda errors > 0 | Critical |
+| `hpo-oracle-stale` | On-chain data age > threshold | Critical |
+| `hpo-oracle-duration-high` | Execution time too long | Warning |
+| `hpo-oracle-throttled` | Lambda throttled | Warning |
+
+**Response:**
+1. Check Oracle Lambda logs for error details
+2. If stale: Verify Lambda is executing, check wallet balance for gas
+3. If duration high: Check RPC endpoint latency
+4. If throttled: Check Lambda concurrency limits
+
+---
+
+### hpo-rds-{env}
+**Triggers when:** RDS database is unhealthy
+
+| Component Alarm | Condition | Severity |
+|-----------------|-----------|----------|
+| `hpo-rds-storage-critical` | Free storage < 5GB | Critical |
+| `hpo-rds-cpu-high` | CPU > threshold | Warning |
+| `hpo-rds-connections-high` | Connections > threshold | Warning |
+
+**Response:**
+1. If storage critical: Increase allocated storage immediately
+2. If CPU high: Check for expensive queries, consider scaling
+3. If connections high: Check for connection leaks, restart services if needed
+
+---
+
+## Subgraph Health Monitoring
+
+The Subgraph Health Monitor Lambda queries the Graph Node's GraphQL API to check indexing status every 5 minutes (configurable via `monitoring_schedule.subgraph_health_rate_minutes`).
+
+### How It Works
+
+```
+Lambda (every 5 min)
+    │
+    ▼
+GraphQL Query: POST https://graph.{env}.lumerin.io:8030/graphql
+{
+  indexingStatuses {
+    subgraph    # IPFS CID (unique per deployment)
+    synced      # true = caught up with chain
+    health      # "healthy" | "unhealthy" | "failed"
+    entityCount # number of indexed entities
+  }
+}
+    │
+    ▼
+CloudWatch Metrics (per subgraph):
+  - subgraph_synced (1/0)
+  - subgraph_health (1=healthy, 0=unhealthy)
+  - subgraph_entity_count
+
+CloudWatch Metrics (aggregate):
+  - subgraphs_total
+  - subgraphs_healthy
+  - subgraphs_synced
+  - subgraphs_total_entities
+```
+
+### Subgraph Deployment Visibility
+
+When a subgraph is updated, it gets a **new IPFS CID**. The dashboard will show:
+- Old subgraph (e.g., `QmaRZwdL...`) - entity count stays flat
+- New subgraph (e.g., `QmNewXYZ...`) - entity count grows as it syncs
+
+This provides visibility into:
+- Deployment progress (watch new subgraph sync)
+- Cutover timing (when new is synced)
+- Rollback detection (if old version reappears)
+
+---
+
+## Oracle Staleness Monitoring
+
+The Oracle Staleness Lambda checks on-chain data freshness every 5 minutes (configurable via `monitoring_schedule.oracle_staleness_rate_minutes`).
+
+### How It Works
+
+```
+Lambda (every 5 min)
+    │
+    ▼
+RPC Call to HashrateOracle Contract
+  getHashesForBTC() → (value, updatedAt, ttl)
+    │
+    ▼
+Calculate age: now - updatedAt
+    │
+    ▼
+CloudWatch Metrics:
+  - oracle_data_age_minutes   ← Dashboard shows this as high-water mark
+  - oracle_is_stale (1/0)     ← Based on stale_threshold
+  - oracle_hashes_for_btc (current value)
+```
+
+### Three Independent Variables
+
+| Variable | Purpose | All Environments |
+|----------|---------|------------------|
+| `oracle_staleness_rate_minutes` | How often Lambda checks | 5 min |
+| `oracle_stale_threshold_minutes` | Business rule: data older than this is "stale" | 10 min |
+| `unhealthy_alarm_period_minutes` | How long to tolerate "bad" before alarm triggers | Varies by env |
+
+**How the alarm works:**
+- Lambda runs every 5 minutes (all environments)
+- Each run reports `oracle_data_age_minutes` to CloudWatch
+- If age > 10 min (`stale_threshold`), that reading is "bad"
+- Alarm triggers after `unhealthy_alarm_period_minutes` of consecutive bad readings
+- Evaluation periods = `unhealthy_alarm_period / check_rate` (auto-calculated)
+
+### Environment Configuration
+
+| Environment | Check Rate | Stale Threshold | Unhealthy Period | Time to Alarm |
+|-------------|------------|-----------------|------------------|---------------|
+| DEV | 5 min | 10 min | 60 min | 60 min (12 periods) |
+| STG | 5 min | 10 min | 30 min | 30 min (6 periods) |
+| LMN/Prod | 5 min | 10 min | 15 min | 15 min (3 periods) |
+
+- **Stale threshold** is a business rule - when is data considered "stale"
+- **Unhealthy period** controls alarm sensitivity - production alerts faster
+- **Check rate** is the same everywhere for consistent data granularity
+
+---
+
+## Environment Configuration
+
+### Notification Settings
+
+| Environment | notifications_enabled | Alert Target |
+|-------------|----------------------|--------------|
+| DEV | `false` | None (console only) |
+| STG | `false` | None (console only) |
+| LMN/Prod | `true` | SNS → DevOps phones |
+
+### Threshold Examples
+
+| Threshold | DEV | LMN/Prod | Notes |
+|-----------|-----|----------|-------|
+| `ecs_cpu_threshold` | 90% | 80% | Lower in prod for earlier warning |
+| `ecs_memory_threshold` | 90% | 85% | Lower in prod |
+| `lambda_error_threshold` | 5 | 1 | Strict in prod |
+| `oracle_stale_threshold_minutes` | 10 | 10 | Business rule (same all envs) |
+| `rds_storage_threshold` | 5 GB | 10 GB | More headroom in prod |
+
+### Monitoring Schedule
+
+| Setting | DEV | STG | LMN/Prod | Notes |
+|---------|-----|-----|----------|-------|
+| `subgraph_health_rate_minutes` | 5 | 5 | 5 | How often to check |
+| `oracle_staleness_rate_minutes` | 5 | 5 | 5 | How often to check |
+| `unhealthy_alarm_period_minutes` | 60 | 30 | 15 | How long before alarm triggers |
+
+**Note:** Check rates are the same across environments (5 min) for consistent data. The `unhealthy_alarm_period_minutes` controls alarm sensitivity - production alerts faster while dev/stg tolerate longer periods of "bad" before alerting.
+
+---
+
+## File Structure
 
 ```
 .bedrock/.terragrunt/
-├── 70_monitoring_common.tf        # IAM roles, data sources, alarm action locals
-├── 71_metric_filters.tf           # 11 CloudWatch Log metric filters
-├── 72_prometheus_scraper.tf       # Lambda to scrape Graph Node metrics (port 8030)
-├── 72_prometheus_scraper.py       # Python Lambda code
-├── 73_oracle_staleness.tf         # Lambda to check on-chain oracle freshness
-├── 73_oracle_staleness.py         # Python Lambda code (uses getHashesForBTC())
-├── 80_alarms.tf                   # 19 CloudWatch component alarms
-├── 81_composite_alarms.tf         # 5 composite alarms
-└── 89_dashboards.tf               # CloudWatch dashboard
+├── 70_monitoring_common.tf          # IAM, data sources, alarm action locals
+├── 71_metric_filters.tf             # CloudWatch Log metric filters
+├── 72_subgraph_health_monitor.tf    # Lambda to query subgraph health
+├── 72_subgraph_health_monitor.py    # Python Lambda code
+├── 73_oracle_staleness.tf           # Lambda to check on-chain freshness
+├── 73_oracle_staleness.py           # Python Lambda code
+├── 80_alarms.tf                     # Component alarms (no notifications)
+├── 81_composite_alarms.tf           # Composite alarms (notifications)
+└── 89_dashboards.tf                 # CloudWatch dashboard
 ```
 
 ---
 
-## Variables Structure (Implemented)
+## Runbook: Responding to Alerts
+
+### Alert: "hpo-graph-indexer-{env}"
+
+1. **Open Dashboard:** CloudWatch → Dashboards → `00-HashpriceOracle-{env}`
+2. **Check "Subgraph Health Status" widget:**
+   - If healthy < 2: A subgraph has failed
+   - If synced < 2: A subgraph is behind
+3. **Check Graph Indexer logs:**
+   - CloudWatch → Log groups → `/ecs/graph-indexer-{env}`
+   - Look for `ERRO` or `CRIT` level messages
+4. **Check ECS service:**
+   - ECS Console → Cluster → Services → graph-indexer
+   - Verify task is running, check events for failures
+5. **Check RDS:**
+   - Is the database accessible? Check `hpo-rds-*` composite
+
+### Alert: "hpo-oracle-{env}"
+
+1. **Open Dashboard:** Check "Oracle Data Age" widget
+2. **If data is stale (> threshold):**
+   - Check Lambda logs: CloudWatch → `/aws/lambda/marketplace-oracle-update`
+   - Look for errors in recent invocations
+   - Check wallet balance for gas (may need ETH/ARB)
+3. **If Lambda is erroring:**
+   - Check RPC endpoint availability
+   - Check contract address is correct
+   - Verify Lambda has necessary permissions
+4. **Manual test:** Invoke Lambda manually from AWS Console
+
+### Alert: "hpo-rds-{env}"
+
+1. **If storage critical:**
+   - RDS Console → Modify → Increase allocated storage
+   - This is non-disruptive but takes time
+2. **If CPU high:**
+   - Check Performance Insights for slow queries
+   - Consider RDS instance size upgrade
+3. **If connections high:**
+   - Restart Graph Indexer to release connections
+   - Check for connection pool leaks
+
+---
+
+## Maintenance Tasks
+
+### Weekly Review
+- Check dashboard for trends (storage growth, memory creep)
+- Review any alarms that fired
+- Verify Lambda schedules are executing
+
+### Monthly Review
+- Review and adjust thresholds based on observed patterns
+- Check CloudWatch costs
+- Verify SNS subscriptions are active
+
+### After Deployments
+- Watch Subgraph Entity Count for new subgraph sync progress
+- Monitor Graph Indexer logs for indexing errors
+- Verify Oracle Lambda continues executing successfully
+
+---
+
+## Terraform Variables Reference
 
 ### monitoring object
 ```hcl
-variable "monitoring" {
-  type = object({
-    create                        = bool   # Master switch
-    create_alarms                 = bool   # Create CloudWatch alarms
-    create_dashboards             = bool   # Create CloudWatch dashboard
-    create_metric_filters         = bool   # Create log metric filters
-    create_prometheus_scraper     = bool   # Create Graph Node metrics scraper Lambda
-    create_oracle_staleness_check = bool   # Create oracle staleness check Lambda
-    notifications_enabled         = bool   # Enable SNS notifications (composites only)
-    dev_alerts_topic_name         = string # SNS topic for Slack alerts
-    devops_alerts_topic_name      = string # SNS topic for critical/cell alerts
-    dashboard_period              = number # Dashboard refresh period (seconds)
-  })
+monitoring = {
+  create                         = bool   # Master switch for all monitoring
+  create_alarms                  = bool   # Create CloudWatch alarms
+  create_dashboards              = bool   # Create CloudWatch dashboard
+  create_metric_filters          = bool   # Create log metric filters
+  create_subgraph_health_monitor = bool   # Create subgraph health Lambda
+  create_oracle_staleness_check  = bool   # Create oracle staleness Lambda
+  notifications_enabled          = bool   # Enable SNS notifications
+  dev_alerts_topic_name          = string # SNS topic for Slack
+  devops_alerts_topic_name       = string # SNS topic for critical alerts
+  dashboard_period               = number # Dashboard refresh (seconds)
 }
 ```
+
+### monitoring_schedule object
+```hcl
+monitoring_schedule = {
+  subgraph_health_rate_minutes   = number  # How often to check subgraph health (minutes)
+  oracle_staleness_rate_minutes  = number  # How often to check oracle freshness (minutes)
+  unhealthy_alarm_period_minutes = number  # How long to tolerate "bad" before alarm triggers
+}
+```
+
+**How it works:**
+- Check rates (5 min recommended) determine data granularity
+- `unhealthy_alarm_period_minutes` controls alarm sensitivity
+- Evaluation periods are auto-calculated: `unhealthy_alarm_period / check_rate`
+
+**Example (LMN with 5 min check rate, 15 min unhealthy period):**
+- Lambda runs every 5 min
+- If unhealthy, alarm fires after 15 min (3 consecutive bad readings)
+- Recovery also takes 15 min (3 consecutive good readings)
+
+**Cost note:** At 5-min intervals, each Lambda costs ~$0.009/month (~1 cent). Cost is negligible.
 
 ### alarm_thresholds object
 ```hcl
-variable "alarm_thresholds" {
-  type = object({
-    ecs_cpu_threshold           = number  # ECS CPU % threshold
-    ecs_memory_threshold        = number  # ECS Memory % threshold
-    ecs_min_running_tasks       = number  # Minimum running tasks
-    lambda_error_threshold      = number  # Lambda error count
-    lambda_duration_threshold   = number  # Lambda duration (ms)
-    lambda_throttle_threshold   = number  # Lambda throttle count
-    alb_5xx_threshold           = number  # ALB 5xx error count
-    alb_unhealthy_threshold     = number  # ALB unhealthy host count
-    alb_latency_threshold       = number  # ALB latency (seconds)
-    rds_cpu_threshold           = number  # RDS CPU % threshold
-    rds_storage_threshold       = number  # RDS free storage (GB)
-    rds_connections_threshold   = number  # RDS connection count
-    graph_sync_lag_threshold    = number  # Graph sync lag events
-    graph_error_threshold       = number  # Graph error count
-    oracle_max_age_minutes      = number  # Max oracle data age (minutes)
-  })
-}
-```
-
----
-
-## terraform.tfvars Examples
-
-### DEV Environment (relaxed, notifications disabled)
-```hcl
-monitoring = {
-  create                        = true
-  create_alarms                 = true
-  create_dashboards             = true
-  create_metric_filters         = true
-  create_prometheus_scraper     = true
-  create_oracle_staleness_check = true
-  notifications_enabled         = false  # Disabled to reduce noise
-  dev_alerts_topic_name         = "titanio-dev-dev-alerts"
-  devops_alerts_topic_name      = "titanio-dev-dev-alerts"
-  dashboard_period              = 300
-}
-
 alarm_thresholds = {
-  ecs_cpu_threshold           = 90
-  ecs_memory_threshold        = 90
-  ecs_min_running_tasks       = 1
-  lambda_error_threshold      = 5
-  lambda_duration_threshold   = 55000
-  lambda_throttle_threshold   = 10
-  alb_5xx_threshold           = 20
-  alb_unhealthy_threshold     = 1
-  alb_latency_threshold       = 15
-  rds_cpu_threshold           = 90
-  rds_storage_threshold       = 5
-  rds_connections_threshold   = 190
-  graph_sync_lag_threshold    = 200
-  graph_error_threshold       = 20
-  oracle_max_age_minutes      = 30
+  ecs_cpu_threshold              = number  # ECS CPU % (0-100)
+  ecs_memory_threshold           = number  # ECS Memory % (0-100)
+  ecs_min_running_tasks          = number  # Minimum running tasks
+  lambda_error_threshold         = number  # Lambda error count
+  lambda_duration_threshold      = number  # Lambda duration (ms)
+  lambda_throttle_threshold      = number  # Lambda throttle count
+  alb_5xx_threshold              = number  # ALB 5xx error count
+  alb_unhealthy_threshold        = number  # ALB unhealthy hosts
+  alb_latency_threshold          = number  # ALB latency (seconds)
+  rds_cpu_threshold              = number  # RDS CPU %
+  rds_storage_threshold          = number  # RDS free storage (GB)
+  rds_connections_threshold      = number  # RDS connection count
+  graph_sync_lag_threshold       = number  # Graph sync lag events
+  graph_error_threshold          = number  # Graph error count
+  oracle_stale_threshold_minutes = number  # Max oracle data age (business rule)
 }
 ```
 
-### LMN/PROD Environment (strict, notifications enabled)
-```hcl
-monitoring = {
-  create                        = true
-  create_alarms                 = true
-  create_dashboards             = true
-  create_metric_filters         = true
-  create_prometheus_scraper     = true
-  create_oracle_staleness_check = true
-  notifications_enabled         = true   # ENABLED for production
-  dev_alerts_topic_name         = "titanio-lmn-dev-alerts"     # Slack (warning)
-  devops_alerts_topic_name      = "titanio-lmn-devops-alerts"  # Cell phone (critical)
-  dashboard_period              = 300
-}
+**Key variable relationships:**
+- `oracle_stale_threshold_minutes` - Business rule: when is data "stale" (10 min)
+- `oracle_staleness_rate_minutes` - How often we check (5 min)
+- `unhealthy_alarm_period_minutes` - How long to wait before alerting (varies by env)
 
-alarm_thresholds = {
-  ecs_cpu_threshold           = 80
-  ecs_memory_threshold        = 85
-  ecs_min_running_tasks       = 1
-  lambda_error_threshold      = 1
-  lambda_duration_threshold   = 45000
-  lambda_throttle_threshold   = 1
-  alb_5xx_threshold           = 5
-  alb_unhealthy_threshold     = 1
-  alb_latency_threshold       = 5
-  rds_cpu_threshold           = 80
-  rds_storage_threshold       = 10
-  rds_connections_threshold   = 150
-  graph_sync_lag_threshold    = 50
-  graph_error_threshold       = 5
-  oracle_max_age_minutes      = 10
-}
-```
-
----
-
-## Alarm Inventory
-
-### Component Alarms (19) - NO Notifications
-These alarms track state only. They feed into composite alarms.
-
-| Alarm Name | Resource | Metric | Severity |
-|------------|----------|--------|----------|
-| `hpo-graph-indexer-down` | ECS | RunningTaskCount | Critical |
-| `hpo-graph-cpu-high` | ECS | CpuUtilized | Warning |
-| `hpo-graph-memory-high` | ECS | MemoryUtilized | Warning |
-| `hpo-graph-errors-high` | Custom | graph_indexer_errors | Warning |
-| `hpo-graph-sync-lagging` | Custom | graph_sync_lagging | Warning |
-| `hpo-graph-alb-5xx` | ALB | HTTPCode_ELB_5XX | Warning |
-| `hpo-graph-alb-latency` | ALB | TargetResponseTime | Warning |
-| `hpo-graph-alb-unhealthy` | ALB | UnHealthyHostCount | Critical |
-| `hpo-spot-indexer-down` | ECS | RunningTaskCount | Critical |
-| `hpo-spot-cpu-high` | ECS | CpuUtilized | Warning |
-| `hpo-spot-memory-high` | ECS | MemoryUtilized | Warning |
-| `hpo-oracle-lambda-failing` | Lambda | Errors | Critical |
-| `hpo-oracle-stale` | Custom | oracle_data_age_minutes | Critical |
-| `hpo-oracle-duration-high` | Lambda | Duration | Warning |
-| `hpo-oracle-throttled` | Lambda | Throttles | Warning |
-| `hpo-rds-storage-critical` | RDS | FreeStorageSpace | Critical |
-| `hpo-rds-storage-warning` | RDS | FreeStorageSpace | Warning |
-| `hpo-rds-cpu-high` | RDS | CPUUtilization | Warning |
-| `hpo-rds-connections-high` | RDS | DatabaseConnections | Warning |
-
-### Composite Alarms (5) - Notifications Enabled
-These are the human-alertable alarms that aggregate component states.
-
-| Composite Alarm | Triggers When | Components |
-|-----------------|---------------|------------|
-| `hpo-graph-indexer-unhealthy` | ANY in ALARM | graph_indexer_down, graph_errors_high, graph_cpu_high, graph_memory_high |
-| `hpo-spot-indexer-unhealthy` | ANY in ALARM | spot_indexer_down, spot_cpu_high, spot_memory_high |
-| `hpo-oracle-unhealthy` | ANY in ALARM | oracle_lambda_errors, oracle_stale, oracle_duration_high, oracle_throttled |
-| `hpo-rds-unhealthy` | ANY in ALARM | rds_storage_critical, rds_cpu_high, rds_connections_high |
-| `hpo-system-unhealthy` | ANY in ALARM | All 4 composite alarms above |
-
----
-
-## Oracle Staleness Check
-
-### Implementation Details
-
-The oracle staleness Lambda uses the HashrateOracle contract's `getHashesForBTC()` function:
-
-```python
-# Function selector
-GET_HASHES_FOR_BTC_SELECTOR = "0x19e26291"  # keccak256("getHashesForBTC()")[:4]
-
-# Returns: (uint256 value, uint256 updatedAt, uint256 ttl)
-```
-
-**Staleness Logic:**
-```python
-is_stale = age_minutes > MAX_AGE_MINUTES
-# Also check contract TTL if not infinite (max uint256)
-if not ttl_is_infinite and age_seconds > ttl_seconds:
-    is_stale = True
-```
-
-**Metrics Pushed:**
-- `oracle_data_age_minutes` - Age of on-chain data
-- `oracle_data_age_seconds` - Age in seconds
-- `oracle_is_stale` - 1 if stale, 0 if fresh
-- `oracle_hashes_for_btc` - Current hashrate value
-- `oracle_ttl_seconds` - Contract TTL (0 if infinite)
-- `oracle_staleness_check_success` - Successful check count
-- `oracle_staleness_check_failed` - Failed check count (RPC errors)
-
----
-
-## Dashboard Layout
-
-Dashboard name: `Hashprice-Oracle-${ENV}-Monitor`
-
-| Row | Widgets |
-|-----|---------|
-| 1 | Title/KPIs, Service Status (task counts), Lambda Executions |
-| 2 | Graph Indexer CPU/Memory, Spot Indexer CPU/Memory |
-| 3 | Graph Log Metrics, Spot Log Metrics, Oracle Log Metrics |
-| 4 | ALB Graph Indexer, ALB Spot Indexer, RDS PostgreSQL |
-| 5 | Oracle Data Freshness, Graph Node Query Performance |
-| 6 | Oracle Lambda Duration, RDS Storage |
-
----
-
-## Replication Guide for Other Repos
-
-### Step 1: Copy File Structure
-```bash
-# Copy from hashprice-oracle as template
-cp .bedrock/.terragrunt/70_monitoring_common.tf <new-repo>/.bedrock/.terragrunt/
-cp .bedrock/.terragrunt/71_metric_filters.tf <new-repo>/.bedrock/.terragrunt/
-cp .bedrock/.terragrunt/80_alarms.tf <new-repo>/.bedrock/.terragrunt/
-cp .bedrock/.terragrunt/81_composite_alarms.tf <new-repo>/.bedrock/.terragrunt/
-cp .bedrock/.terragrunt/89_dashboards.tf <new-repo>/.bedrock/.terragrunt/
-```
-
-### Step 2: Customize for Repo
-1. **Update service names** in all files (search/replace `hpo-` with new prefix)
-2. **Update log group names** in `71_metric_filters.tf`
-3. **Update metric namespace** in `70_monitoring_common.tf`
-4. **Update dashboard widgets** in `89_dashboards.tf`
-5. **Adjust alarm thresholds** in `terraform.tfvars` for service characteristics
-
-### Step 3: Add Variables
-Copy the `monitoring` and `alarm_thresholds` variable blocks to `00_variables.tf`
-
-### Step 4: Configure terraform.tfvars
-Add monitoring configuration per environment
-
-### Step 5: Optional Lambdas
-- Prometheus scraper: Only if service exposes `/metrics` endpoint
-- Staleness checker: Only if service has on-chain state to monitor
-
----
-
-## Critical Instructions
-
-- **DO NOT APPLY without review** - Always `tgplan` first, user applies
-- **DO NOT COMMIT without review** - User commits after verification
-- **notifications_enabled = false** for dev/stg to reduce noise
-- **Component alarms NEVER notify** - Only composites send alerts
-- **Test Lambdas manually** after deployment before relying on scheduled runs
+These are intentionally independent. The stale threshold defines the business rule, the check rate determines data granularity, and the unhealthy period controls alarm sensitivity.

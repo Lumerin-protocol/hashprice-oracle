@@ -7,7 +7,7 @@
 wallets = {
   clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
   hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
-  futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda" 
+  futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
   btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 }
@@ -60,35 +60,42 @@ oracle_lambda = {
 # Monitoring Configuration
 ########################################
 monitoring = {
-  create                        = true
-  create_alarms                 = true
-  create_dashboards             = true
-  create_metric_filters         = true
-  create_prometheus_scraper     = true
-  create_oracle_staleness_check = true  # Disabled - oracle_lambda not deployed in LMN
-  notifications_enabled         = true   # ENABLED for production - alerts go to humans
-  dev_alerts_topic_name         = "titanio-lmn-dev-alerts"      # Slack (info/warning)
-  devops_alerts_topic_name      = "titanio-lmn-devops-alerts"   # Cell phone (critical)
-  dashboard_period              = 300
+  create                         = true
+  create_alarms                  = true
+  create_dashboards              = true
+  create_metric_filters          = true
+  create_subgraph_health_monitor = true
+  create_oracle_staleness_check  = true
+  notifications_enabled          = true                        # ENABLED for production - alerts go to humans
+  dev_alerts_topic_name          = "titanio-lmn-dev-alerts"    # Slack (info/warning)
+  devops_alerts_topic_name       = "titanio-lmn-devops-alerts" # Cell phone (critical)
+  dashboard_period               = 300
 }
 
-# LMN/PROD environment - strict thresholds
+# LMN/PROD environment
+monitoring_schedule = {
+  subgraph_health_rate_minutes   = 5  # how often to run the lambda to check subgraph health
+  oracle_staleness_rate_minutes  = 5  # how often to run the lambda to check oracle staleness
+  unhealthy_alarm_period_minutes = 15 # how long to wait before triggering an unhealthy alarm
+}
+
+# LMN/PROD environment - strict thresholds (account for 15 min check frequency)
 alarm_thresholds = {
-  ecs_cpu_threshold           = 80
-  ecs_memory_threshold        = 85
-  ecs_min_running_tasks       = 1
-  lambda_error_threshold      = 1
-  lambda_duration_threshold   = 45000
-  lambda_throttle_threshold   = 1
-  alb_5xx_threshold           = 5
-  alb_unhealthy_threshold     = 1
-  alb_latency_threshold       = 5
-  rds_cpu_threshold           = 80
-  rds_storage_threshold       = 10
-  rds_connections_threshold   = 150
-  graph_sync_lag_threshold    = 50
-  graph_error_threshold       = 5
-  oracle_max_age_minutes      = 10
+  ecs_cpu_threshold              = 80
+  ecs_memory_threshold           = 85
+  ecs_min_running_tasks          = 1
+  lambda_error_threshold         = 1
+  lambda_duration_threshold      = 45000
+  lambda_throttle_threshold      = 1
+  alb_5xx_threshold              = 5
+  alb_unhealthy_threshold        = 1
+  alb_latency_threshold          = 5
+  rds_cpu_threshold              = 80
+  rds_storage_threshold          = 10
+  rds_connections_threshold      = 150
+  graph_sync_lag_threshold       = 50
+  graph_error_threshold          = 5
+  oracle_stale_threshold_minutes = 30 # Business rule: how old should oracle data be before it is considered stale
 }
 
 ########################################

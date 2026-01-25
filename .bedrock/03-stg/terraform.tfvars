@@ -61,35 +61,42 @@ oracle_lambda = {
 # Monitoring Configuration
 ########################################
 monitoring = {
-  create                        = true
-  create_alarms                 = true
-  create_dashboards             = true
-  create_metric_filters         = true
-  create_prometheus_scraper     = true
-  create_oracle_staleness_check = true  # Disabled - oracle_lambda not deployed in STG
-  notifications_enabled         = true  # Disabled to reduce noise in pre-prod
-  dev_alerts_topic_name         = "titanio-stg-dev-alerts"
-  devops_alerts_topic_name      = "titanio-stg-dev-alerts"  # All to Slack in STG
-  dashboard_period              = 300
+  create                         = true
+  create_alarms                  = true
+  create_dashboards              = true
+  create_metric_filters          = true
+  create_subgraph_health_monitor = true
+  create_oracle_staleness_check  = true
+  notifications_enabled          = true
+  dev_alerts_topic_name          = "titanio-stg-dev-alerts"
+  devops_alerts_topic_name       = "titanio-stg-dev-alerts" # All to Slack in STG
+  dashboard_period               = 300
 }
 
-# STG environment - moderate thresholds (between DEV and PROD)
+# STG environment
+monitoring_schedule = {
+  subgraph_health_rate_minutes   = 5  # how often to run the lambda to check subgraph health
+  oracle_staleness_rate_minutes  = 5  # how often to run the lambda to check oracle staleness
+  unhealthy_alarm_period_minutes = 30 # how long to wait before triggering an unhealthy alarm
+}
+
+# STG environment - moderate thresholds (account for 30 min check frequency)
 alarm_thresholds = {
-  ecs_cpu_threshold           = 85
-  ecs_memory_threshold        = 85
-  ecs_min_running_tasks       = 1
-  lambda_error_threshold      = 3
-  lambda_duration_threshold   = 50000
-  lambda_throttle_threshold   = 5
-  alb_5xx_threshold           = 10
-  alb_unhealthy_threshold     = 1
-  alb_latency_threshold       = 10
-  rds_cpu_threshold           = 85
-  rds_storage_threshold       = 5
-  rds_connections_threshold   = 180
-  graph_sync_lag_threshold    = 100
-  graph_error_threshold       = 10
-  oracle_max_age_minutes      = 20
+  ecs_cpu_threshold              = 85
+  ecs_memory_threshold           = 85
+  ecs_min_running_tasks          = 1
+  lambda_error_threshold         = 3
+  lambda_duration_threshold      = 50000
+  lambda_throttle_threshold      = 5
+  alb_5xx_threshold              = 10
+  alb_unhealthy_threshold        = 1
+  alb_latency_threshold          = 10
+  rds_cpu_threshold              = 85
+  rds_storage_threshold          = 5
+  rds_connections_threshold      = 180
+  graph_sync_lag_threshold       = 100
+  graph_error_threshold          = 10
+  oracle_stale_threshold_minutes = 30 # Business rule: how old should oracle data be before it is considered stale
 }
 
 ########################################

@@ -4,7 +4,7 @@
 ################################################################################
 
 # Graph Indexer Overall Health
-# ALARM if: service down OR critical errors OR DB errors
+# ALARM if: service down OR critical errors OR high resources OR subgraph unhealthy/not synced
 resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
   count         = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
   provider      = aws.use1
@@ -16,6 +16,8 @@ resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
     var.monitoring.create_metric_filters ? "ALARM(${aws_cloudwatch_metric_alarm.graph_errors_high[0].alarm_name})" : "",
     "ALARM(${aws_cloudwatch_metric_alarm.graph_cpu_high[0].alarm_name})",
     "ALARM(${aws_cloudwatch_metric_alarm.graph_memory_high[0].alarm_name})",
+    var.monitoring.create_subgraph_health_monitor ? "ALARM(${aws_cloudwatch_metric_alarm.subgraph_unhealthy[0].alarm_name})" : "",
+    var.monitoring.create_subgraph_health_monitor ? "ALARM(${aws_cloudwatch_metric_alarm.subgraph_not_synced[0].alarm_name})" : "",
   ]))
 
   alarm_actions = local.composite_alarm_actions
@@ -31,6 +33,8 @@ resource "aws_cloudwatch_composite_alarm" "graph_indexer_unhealthy" {
     aws_cloudwatch_metric_alarm.graph_errors_high,
     aws_cloudwatch_metric_alarm.graph_cpu_high,
     aws_cloudwatch_metric_alarm.graph_memory_high,
+    aws_cloudwatch_metric_alarm.subgraph_unhealthy,
+    aws_cloudwatch_metric_alarm.subgraph_not_synced,
   ]
 }
 
@@ -123,33 +127,33 @@ resource "aws_cloudwatch_composite_alarm" "rds_unhealthy" {
   ]
 }
 
-# Overall System Health
-# ALARM if any major component is unhealthy
-resource "aws_cloudwatch_composite_alarm" "system_unhealthy" {
-  count         = (var.monitoring.create && var.monitoring.create_alarms) ? 1 : 0
-  provider      = aws.use1
-  alarm_name    = "hpo-system-${local.env_short}"
-  alarm_description = "COMPOSITE: Hashprice Oracle system has unhealthy components"
+# # Overall System Health
+# # ALARM if any major component is unhealthy
+# resource "aws_cloudwatch_composite_alarm" "system_unhealthy" {
+#   count         = (var.monitoring.create && var.monitoring.create_alarms) ? 1 : 0
+#   provider      = aws.use1
+#   alarm_name    = "hpo-system-${local.env_short}"
+#   alarm_description = "COMPOSITE: Hashprice Oracle system has unhealthy components"
 
-  alarm_rule = join(" OR ", compact([
-    var.graph_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.graph_indexer_unhealthy[0].alarm_name})" : "",
-    var.spot_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.spot_indexer_unhealthy[0].alarm_name})" : "",
-    var.oracle_lambda.create ? "ALARM(${aws_cloudwatch_composite_alarm.oracle_unhealthy[0].alarm_name})" : "",
-    var.graph_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.rds_unhealthy[0].alarm_name})" : "",
-  ]))
+#   alarm_rule = join(" OR ", compact([
+#     var.graph_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.graph_indexer_unhealthy[0].alarm_name})" : "",
+#     var.spot_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.spot_indexer_unhealthy[0].alarm_name})" : "",
+#     var.oracle_lambda.create ? "ALARM(${aws_cloudwatch_composite_alarm.oracle_unhealthy[0].alarm_name})" : "",
+#     var.graph_indexer.create ? "ALARM(${aws_cloudwatch_composite_alarm.rds_unhealthy[0].alarm_name})" : "",
+#   ]))
 
-  alarm_actions = local.composite_alarm_actions
-  ok_actions    = local.composite_alarm_actions
+#   alarm_actions = local.composite_alarm_actions
+#   ok_actions    = local.composite_alarm_actions
 
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO System Unhealthy Composite"
-    Severity = "Critical"
-  })
+#   tags = merge(var.default_tags, var.foundation_tags, {
+#     Name     = "HPO System Unhealthy Composite"
+#     Severity = "Critical"
+#   })
 
-  depends_on = [
-    aws_cloudwatch_composite_alarm.graph_indexer_unhealthy,
-    aws_cloudwatch_composite_alarm.spot_indexer_unhealthy,
-    aws_cloudwatch_composite_alarm.oracle_unhealthy,
-    aws_cloudwatch_composite_alarm.rds_unhealthy,
-  ]
-}
+#   depends_on = [
+#     aws_cloudwatch_composite_alarm.graph_indexer_unhealthy,
+#     aws_cloudwatch_composite_alarm.spot_indexer_unhealthy,
+#     aws_cloudwatch_composite_alarm.oracle_unhealthy,
+#     aws_cloudwatch_composite_alarm.rds_unhealthy,
+#   ]
+# }
