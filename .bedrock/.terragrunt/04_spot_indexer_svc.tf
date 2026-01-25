@@ -26,9 +26,9 @@ data "aws_security_group" "alb_spot_indexer" {
 
 # Define Service (watch for conflict with Gitlab CI/CD)
 resource "aws_ecs_service" "spot_indexer" {
-  # lifecycle {
-  #   ignore_changes = [task_definition] # May want to change this to kick update to prod when new task is replicated 
-  # }
+  lifecycle {
+    ignore_changes = [task_definition] # May want to change this to kick update to prod when new task is replicated 
+  }
   count                  = (var.ecs_cluster.create && var.spot_indexer.create) ? 1 : 0
   provider               = aws.use1
   name                   = "svc-${local.spot_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}"
@@ -67,9 +67,9 @@ resource "aws_ecs_service" "spot_indexer" {
 
 # Define Task  
 resource "aws_ecs_task_definition" "spot_indexer" {
-  # lifecycle {
-  #   ignore_changes = [container_definitions] # May want to change this to kick update to prod when new task is replicated 
-  # }
+  lifecycle {
+    ignore_changes = [container_definitions] # May want to change this to kick update to prod when new task is replicated 
+  }
   count                    = (var.ecs_cluster.create && var.spot_indexer.create) ? 1 : 0
   provider                 = aws.use1
   family                   = "tsk-${local.spot_indexer.svc_name}"
