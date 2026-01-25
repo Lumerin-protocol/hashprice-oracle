@@ -207,8 +207,8 @@ locals {
           period  = var.monitoring.dashboard_period
           yAxis   = { left = { min = 0 } }
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/alb-graph-indexer-ext-${local.env_short}", { "label" : "Requests", "color" : "#1f77b4" }],
-            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/alb-graph-indexer-ext-${local.env_short}", { "label" : "5xx Errors", "color" : "#d62728" }],
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", data.aws_lb.graph_indexer[0].arn_suffix, { "label" : "Requests", "color" : "#1f77b4" }],
+            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", data.aws_lb.graph_indexer[0].arn_suffix, { "label" : "5xx Errors", "color" : "#d62728" }],
           ]
         }
       },
@@ -228,8 +228,8 @@ locals {
           period  = var.monitoring.dashboard_period
           yAxis   = { left = { min = 0 } }
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/alb-spot-indexer-ext-${local.env_short}", { "label" : "Requests", "color" : "#1f77b4" }],
-            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/alb-spot-indexer-ext-${local.env_short}", { "label" : "5xx Errors", "color" : "#d62728" }],
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", data.aws_lb.spot_indexer[0].arn_suffix, { "label" : "Requests", "color" : "#1f77b4" }],
+            ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", data.aws_lb.spot_indexer[0].arn_suffix, { "label" : "5xx Errors", "color" : "#d62728" }],
           ]
         }
       },
