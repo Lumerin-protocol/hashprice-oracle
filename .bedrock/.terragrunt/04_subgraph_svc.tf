@@ -577,17 +577,21 @@ resource "aws_cloudwatch_log_group" "graph_node_use1" {
 ################################
 
 resource "aws_ecs_service" "graph_node_use1" {
-  lifecycle {ignore_changes = [task_definition]}
+  # lifecycle {ignore_changes = [task_definition]}
   count                  = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
   provider               = aws.use1
   name                   = "svc-${local.graph_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}"
   cluster                = aws_ecs_cluster.hashprice_oracle[0].id
   task_definition        = aws_ecs_task_definition.graph_node_use1[count.index].arn
-  desired_count          = var.graph_indexer.task_worker_qty
+  desired_count          = 1 #var.graph_indexer.task_worker_qty
   launch_type            = "FARGATE"
   propagate_tags         = "SERVICE"
   enable_execute_command = true
 
+  # ✅ Prevent overlapping old/new tasks during deployment (stop old first, then start new)
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+  
   # Give Graph Node time to wait for IPFS and database to be ready
   health_check_grace_period_seconds = 180
 
@@ -640,7 +644,7 @@ resource "aws_ecs_service" "graph_node_use1" {
 }
 
 resource "aws_ecs_task_definition" "graph_node_use1" {
-  lifecycle {ignore_changes = [container_definitions]}
+  # lifecycle {ignore_changes = [container_definitions]}
   count                    = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
   provider                 = aws.use1
   family                   = "tsk-${local.graph_indexer.svc_name}"

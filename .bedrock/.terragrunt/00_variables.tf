@@ -100,7 +100,7 @@ variable "monitoring" {
     create_alarms                 = bool
     create_dashboards             = bool
     create_metric_filters         = bool
-    create_prometheus_scraper     = bool
+    create_subgraph_health_monitor = bool
     create_oracle_staleness_check = bool
     notifications_enabled         = bool    # Set false to disable SNS notifications (alarms still visible in console)
     dev_alerts_topic_name         = string
@@ -112,7 +112,7 @@ variable "monitoring" {
     create_alarms                 = false
     create_dashboards             = false
     create_metric_filters         = false
-    create_prometheus_scraper     = false
+    create_subgraph_health_monitor = false
     create_oracle_staleness_check = false
     notifications_enabled         = false
     dev_alerts_topic_name         = ""

@@ -646,3 +646,77 @@ resource "aws_cloudwatch_metric_alarm" "graph_alb_latency" {
     Severity = "Warning"
   })
 }
+
+################################################################################
+# SUBGRAPH HEALTH ALARMS (from health monitor Lambda)
+################################################################################
+
+# Subgraph Unhealthy - any subgraph reports unhealthy status
+resource "aws_cloudwatch_metric_alarm" "subgraph_unhealthy" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-subgraph-unhealthy-${local.env_short}"
+  alarm_description   = "CRITICAL: One or more subgraphs reporting unhealthy status"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  threshold           = 2  # Expected number of healthy subgraphs (futures + oracles)
+  treat_missing_data  = "breaching"
+
+  metric_query {
+    id          = "healthy"
+    return_data = true
+    metric {
+      metric_name = "subgraphs_healthy"
+      namespace   = local.monitoring_namespace
+      period      = 300
+      stat        = "Minimum"
+      dimensions = {
+        Environment = local.env_short
+      }
+    }
+  }
+
+  # No direct notifications - rolls up to graph_indexer composite alarm
+  alarm_actions = []
+  ok_actions    = []
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Subgraph Unhealthy Alarm"
+    Severity = "Critical"
+  })
+}
+
+# Subgraph Not Synced - any subgraph fell behind the chain
+resource "aws_cloudwatch_metric_alarm" "subgraph_not_synced" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-subgraph-not-synced-${local.env_short}"
+  alarm_description   = "WARNING: One or more subgraphs not synced with chain"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  threshold           = 2  # Expected number of synced subgraphs
+  treat_missing_data  = "breaching"
+
+  metric_query {
+    id          = "synced"
+    return_data = true
+    metric {
+      metric_name = "subgraphs_synced"
+      namespace   = local.monitoring_namespace
+      period      = 300
+      stat        = "Minimum"
+      dimensions = {
+        Environment = local.env_short
+      }
+    }
+  }
+
+  # No direct notifications - rolls up to graph_indexer composite alarm
+  alarm_actions = []
+  ok_actions    = []
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Subgraph Not Synced Alarm"
+    Severity = "Warning"
+  })
+}

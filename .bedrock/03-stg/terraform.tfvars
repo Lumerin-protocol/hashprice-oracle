@@ -65,7 +65,7 @@ monitoring = {
   create_alarms                 = true
   create_dashboards             = true
   create_metric_filters         = true
-  create_prometheus_scraper     = true
+  create_subgraph_health_monitor = true
   create_oracle_staleness_check = true  # Disabled - oracle_lambda not deployed in STG
   notifications_enabled         = true  # Disabled to reduce noise in pre-prod
   dev_alerts_topic_name         = "titanio-stg-dev-alerts"
@@ -89,7 +89,7 @@ alarm_thresholds = {
   rds_connections_threshold   = 180
   graph_sync_lag_threshold    = 100
   graph_error_threshold       = 10
-  oracle_max_age_minutes      = 20
+  oracle_max_age_minutes      = 40
 }
 
 ########################################

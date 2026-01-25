@@ -64,7 +64,7 @@ monitoring = {
   create_alarms                 = true
   create_dashboards             = true
   create_metric_filters         = true
-  create_prometheus_scraper     = true
+  create_subgraph_health_monitor = true
   create_oracle_staleness_check = true
   notifications_enabled         = false  # Set true to enable SNS alerts (disabled to reduce noise in dev)
   dev_alerts_topic_name         = "titanio-dev-dev-alerts"
@@ -88,7 +88,7 @@ alarm_thresholds = {
   rds_connections_threshold   = 190
   graph_sync_lag_threshold    = 200
   graph_error_threshold       = 20
-  oracle_max_age_minutes      = 30
+  oracle_max_age_minutes      = 40
 }
 
 ########################################

@@ -64,7 +64,7 @@ monitoring = {
   create_alarms                 = true
   create_dashboards             = true
   create_metric_filters         = true
-  create_prometheus_scraper     = true
+  create_subgraph_health_monitor = true
   create_oracle_staleness_check = true  # Disabled - oracle_lambda not deployed in LMN
   notifications_enabled         = true   # ENABLED for production - alerts go to humans
   dev_alerts_topic_name         = "titanio-lmn-dev-alerts"      # Slack (info/warning)
@@ -88,7 +88,7 @@ alarm_thresholds = {
   rds_connections_threshold   = 150
   graph_sync_lag_threshold    = 50
   graph_error_threshold       = 5
-  oracle_max_age_minutes      = 10
+  oracle_max_age_minutes      = 40
 }
 
 ########################################

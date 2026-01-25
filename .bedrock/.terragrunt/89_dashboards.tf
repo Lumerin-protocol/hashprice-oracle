@@ -340,27 +340,54 @@ locals {
           }
         }
       },
-      # Graph Prometheus Metrics (if enabled)
+      # Subgraph Health (from health monitor Lambda)
       {
         type   = "metric"
         x      = 12
         y      = 24
-        width  = 12
+        width  = 6
         height = 5
         properties = {
-          title   = "Graph Node - Query Performance"
+          title   = "Subgraph Health Status"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.default_region
+          stat    = "Minimum"
+          period  = var.monitoring.dashboard_period
+          metrics = [
+            [local.monitoring_namespace, "subgraphs_healthy", "Environment", local.env_short, { "label" : "Healthy", "color" : "#2ca02c" }],
+            [local.monitoring_namespace, "subgraphs_synced", "Environment", local.env_short, { "label" : "Synced", "color" : "#1f77b4" }],
+            [local.monitoring_namespace, "subgraphs_total", "Environment", local.env_short, { "label" : "Total", "color" : "#7f7f7f" }],
+          ]
+          yAxis = {
+            left = { min = 0, label = "Count" }
+          }
+          annotations = {
+            horizontal = [
+              { value = 2, label = "Expected", color = "#2ca02c", fill = "none" }
+            ]
+          }
+        }
+      },
+      # Subgraph Entity Count (growth indicator)
+      {
+        type   = "metric"
+        x      = 18
+        y      = 24
+        width  = 6
+        height = 5
+        properties = {
+          title   = "Subgraph Entity Count"
           view    = "timeSeries"
           stacked = false
           region  = var.default_region
           stat    = "Average"
           period  = var.monitoring.dashboard_period
           metrics = [
-            [local.monitoring_namespace, "graph_query_count", "Environment", local.env_short, { "label" : "Query Count", "color" : "#1f77b4" }],
-            [local.monitoring_namespace, "graph_query_latency_avg", "Environment", local.env_short, { "label" : "Avg Latency (s)", "color" : "#ff7f0e", "yAxis" : "right" }],
+            [local.monitoring_namespace, "subgraphs_total_entities", "Environment", local.env_short, { "label" : "Total Entities", "color" : "#9467bd" }],
           ]
           yAxis = {
-            left  = { min = 0, label = "Count" }
-            right = { min = 0, label = "Seconds" }
+            left = { min = 0, label = "Count" }
           }
         }
       },
