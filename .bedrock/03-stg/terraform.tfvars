@@ -61,13 +61,13 @@ oracle_lambda = {
 # Monitoring Configuration
 ########################################
 monitoring = {
-  create                        = false
-  create_alarms                 = false
-  create_dashboards             = false
-  create_metric_filters         = false
-  create_prometheus_scraper     = false
-  create_oracle_staleness_check = false  # Disabled - oracle_lambda not deployed in STG
-  notifications_enabled         = false  # Disabled to reduce noise in pre-prod
+  create                        = true
+  create_alarms                 = true
+  create_dashboards             = true
+  create_metric_filters         = true
+  create_prometheus_scraper     = true
+  create_oracle_staleness_check = true  # Disabled - oracle_lambda not deployed in STG
+  notifications_enabled         = true  # Disabled to reduce noise in pre-prod
   dev_alerts_topic_name         = "titanio-stg-dev-alerts"
   devops_alerts_topic_name      = "titanio-stg-dev-alerts"  # All to Slack in STG
   dashboard_period              = 300

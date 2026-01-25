@@ -577,7 +577,7 @@ resource "aws_cloudwatch_log_group" "graph_node_use1" {
 ################################
 
 resource "aws_ecs_service" "graph_node_use1" {
-  # lifecycle {ignore_changes = [task_definition]}
+  lifecycle {ignore_changes = [task_definition]}
   count                  = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
   provider               = aws.use1
   name                   = "svc-${local.graph_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}"
@@ -640,7 +640,7 @@ resource "aws_ecs_service" "graph_node_use1" {
 }
 
 resource "aws_ecs_task_definition" "graph_node_use1" {
-  # lifecycle {ignore_changes = [container_definitions]}
+  lifecycle {ignore_changes = [container_definitions]}
   count                    = (var.ecs_cluster.create && var.graph_indexer.create) ? 1 : 0
   provider                 = aws.use1
   family                   = "tsk-${local.graph_indexer.svc_name}"
