@@ -259,7 +259,7 @@ jobs:
         working-directory: ./indexer
         run: |
           echo "🔐 Authenticating with The Graph Studio..."
-          npx graph auth --studio ${{ secrets.GRAPH_DEPLOY_KEY }}
+          npx graph auth ${{ secrets.GRAPH_DEPLOY_KEY }}
           echo "✅ Authentication successful"
 
       # Deploy subgraph to The Graph Studio
