@@ -46,6 +46,9 @@ graph_indexer = {
   db_backup_window           = "03:00-04:00"
   db_maintenance_window      = "sun:04:00-sun:05:00"
   db_max_connections         = "200"
+  # RPC tuning - STG: balanced between dev speed and prod cost savings
+  rpc_polling_interval_ms    = "2000" # Poll every 1.5s
+  rpc_max_concurrent_receipts = "150" # Moderate concurrency
 }
 
 oracle_lambda = {
