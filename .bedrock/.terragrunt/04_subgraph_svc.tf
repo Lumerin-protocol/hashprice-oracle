@@ -767,6 +767,39 @@ resource "aws_ecs_task_definition" "graph_node_use1" {
         {
           name  = "GRAPH_SUBGRAPH_MAX_DATA_SOURCES"
           value = "100" # Allow more data sources if needed
+        },
+        # ============================================
+        # RPC LOAD REDUCTION TUNING
+        # ============================================
+        # These settings reduce Alchemy RPC usage from ~800K/day to ~100-150K/day
+        # Tuned for Arbitrum (~250ms block time). Key values configurable per-environment.
+        {
+          name  = "ETHEREUM_POLLING_INTERVAL"
+          value = var.graph_indexer.rpc_polling_interval_ms # Per-env: dev=1000, stg=1500, lmn=2000
+        },
+        {
+          name  = "ETHEREUM_BLOCK_BATCH_SIZE"
+          value = "50" # Fetch 50 blocks at once instead of default 10
+        },
+        {
+          name  = "GRAPH_ETHEREUM_BLOCK_INGESTOR_MAX_CONCURRENT_JSON_RPC_CALLS_FOR_TXN_RECEIPTS"
+          value = var.graph_indexer.rpc_max_concurrent_receipts # Per-env: dev=200, stg=150, lmn=100
+        },
+        {
+          name  = "GRAPH_ETHEREUM_TARGET_TRIGGERS_PER_BLOCK_RANGE"
+          value = "500" # Larger batch = fewer requests (default 100)
+        },
+        {
+          name  = "GRAPH_ETHEREUM_MAX_BLOCK_RANGE_SIZE"
+          value = "2000" # Allow larger getLogs ranges (default 1000)
+        },
+        {
+          name  = "GRAPH_ETHEREUM_FETCH_TXN_RECEIPTS_IN_BATCHES"
+          value = "true" # Use batched receipt fetching instead of concurrent
+        },
+        {
+          name  = "GRAPH_QUERY_CACHE_BLOCKS"
+          value = "10" # Cache recent blocks to reduce refetch (default 1)
         }
       ]
       # Pull postgres password from manually-managed Secrets Manager secret
