@@ -371,8 +371,9 @@ jobs:
             echo "================================================"
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              WAIT_TIME=30
-              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
+              # Exponential backoff: 30s, 60s, 120s
+              WAIT_TIME=$((30 * (2 ** (ATTEMPT - 1))))
+              echo "⏳ Waiting ${WAIT_TIME}s before retry (exponential backoff)..."
               sleep $WAIT_TIME
             fi
             
