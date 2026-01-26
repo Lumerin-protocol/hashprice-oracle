@@ -384,7 +384,7 @@ jobs:
           RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d '{"query": "{ _meta { block { number } deployment hasIndexingErrors } }"}' \
-            "https://api.studio.thegraph.com/query/120486/${{ needs.build.outputs.subgraph_name }}/version/latest")
+            "https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest")
           
           echo "Response: $RESPONSE"
           
@@ -442,7 +442,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
           echo "- Studio: \`https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Query: \`https://api.studio.thegraph.com/query/120486/${{ needs.build.outputs.subgraph_name }}/version/latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Query: \`https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Subgraph deployed and indexing on The Graph Studio" >> $GITHUB_STEP_SUMMARY
 
@@ -493,5 +493,5 @@ jobs:
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || format(''*Subgraph:* `{0}` • *Target:* The Graph Studio'', needs.build.outputs.subgraph_name) }}'
+          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || format(''*Subgraph:* `{0}` • <https://api.studio.thegraph.com/query/1724245/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name) }}'
 
