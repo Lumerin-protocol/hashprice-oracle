@@ -1,3 +1,5 @@
+import { fetchWithRetry } from "./fetch-retry";
+
 export class BitcoinClient {
   private readonly rpcUrl: string;
   private requestId = 0;
@@ -38,14 +40,31 @@ export class BitcoinClient {
   }
 
   private async request<R>(method: string, params: any[]): Promise<R> {
-    const response = await fetch(this.rpcUrl, {
-      method: "POST",
-      body: JSON.stringify({ jsonrpc: "1.0", id: this.requestId++, method, params }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error.message);
+    const response = await fetchWithRetry(
+      this.rpcUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "1.0", id: this.requestId++, method, params }),
+      },
+      `Bitcoin RPC ${method}`
+    );
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(
+        `Failed to parse RPC response for ${method} (status ${response.status}): ${text.substring(0, 500)}`
+      );
     }
+
+    if (!response.ok || data.error) {
+      throw new Error(
+        data.error?.message || `RPC error for ${method}: HTTP ${response.status}`
+      );
+    }
+
     return data.result as R;
   }
 }

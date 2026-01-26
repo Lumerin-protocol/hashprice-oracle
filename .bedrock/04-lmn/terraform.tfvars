@@ -7,8 +7,9 @@
 wallets = {
   clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
   hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
-  futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda" 
+  futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
+  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 }
 
 core_resources = {
@@ -23,11 +24,11 @@ ecs_cluster = {
 spot_indexer = {
   create          = true
   protect         = false
-  task_worker_qty = 0
+  task_worker_qty = 1
   task_cpu        = 256
   task_ram        = 512
   ghcr_imagetag   = "latest"
-  friendly_name   = "indexer-new"
+  friendly_name   = "indexer"
 }
 
 graph_indexer = {
@@ -36,7 +37,7 @@ graph_indexer = {
   imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
   task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
   task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 0
+  task_worker_qty            = 1
   db_instance_class          = "db.t3.medium"
   db_allocated_storage       = 100
   db_max_allocated_storage   = 500
@@ -44,47 +45,60 @@ graph_indexer = {
   db_backup_window           = "03:00-04:00"
   db_maintenance_window      = "sun:04:00-sun:05:00"
   db_max_connections         = "400"
+  # RPC tuning - LMN/PROD: optimized for cost savings
+  rpc_polling_interval_ms    = "2000" # Poll every 2s (75% reduction from default)
+  rpc_max_concurrent_receipts = "150" # Lower concurrency to reduce RPC load
 }
 
 oracle_lambda = {
-  create   = false
-  protect  = false
-  svc_name = "oracle-lambda"
+  create       = true
+  protect      = false
+  svc_name     = "oracle-lambda"
+  chain_id     = "42161" # arbitrum mainnet
+  log_level    = "info"
+  job_interval = "5"
 }
 
 ########################################
 # Monitoring Configuration
 ########################################
 monitoring = {
-  create                        = false
-  create_alarms                 = false
-  create_dashboards             = false
-  create_metric_filters         = false
-  create_prometheus_scraper     = false
-  create_oracle_staleness_check = false  # Disabled - oracle_lambda not deployed in LMN
-  notifications_enabled         = false   # ENABLED for production - alerts go to humans
-  dev_alerts_topic_name         = "titanio-lmn-dev-alerts"      # Slack (info/warning)
-  devops_alerts_topic_name      = "titanio-lmn-devops-alerts"   # Cell phone (critical)
-  dashboard_period              = 300
+  create                         = true
+  create_alarms                  = true
+  create_dashboards              = true
+  create_metric_filters          = true
+  create_subgraph_health_monitor = true
+  create_oracle_staleness_check  = true
+  notifications_enabled          = true                        # ENABLED for production - alerts go to humans
+  dev_alerts_topic_name          = "titanio-lmn-dev-alerts"    # Slack (info/warning)
+  devops_alerts_topic_name       = "titanio-lmn-devops-alerts" # Cell phone (critical)
+  dashboard_period               = 300
 }
 
-# LMN/PROD environment - strict thresholds
+# LMN/PROD environment
+monitoring_schedule = {
+  subgraph_health_rate_minutes   = 5  # how often to run the lambda to check subgraph health
+  oracle_staleness_rate_minutes  = 5  # how often to run the lambda to check oracle staleness
+  unhealthy_alarm_period_minutes = 15 # how long to wait before triggering an unhealthy alarm
+}
+
+# LMN/PROD environment - strict thresholds (account for 15 min check frequency)
 alarm_thresholds = {
-  ecs_cpu_threshold           = 80
-  ecs_memory_threshold        = 85
-  ecs_min_running_tasks       = 1
-  lambda_error_threshold      = 1
-  lambda_duration_threshold   = 45000
-  lambda_throttle_threshold   = 1
-  alb_5xx_threshold           = 5
-  alb_unhealthy_threshold     = 1
-  alb_latency_threshold       = 5
-  rds_cpu_threshold           = 80
-  rds_storage_threshold       = 10
-  rds_connections_threshold   = 150
-  graph_sync_lag_threshold    = 50
-  graph_error_threshold       = 5
-  oracle_max_age_minutes      = 10
+  ecs_cpu_threshold              = 80
+  ecs_memory_threshold           = 85
+  ecs_min_running_tasks          = 1
+  lambda_error_threshold         = 1
+  lambda_duration_threshold      = 45000
+  lambda_throttle_threshold      = 1
+  alb_5xx_threshold              = 5
+  alb_unhealthy_threshold        = 1
+  alb_latency_threshold          = 5
+  rds_cpu_threshold              = 80
+  rds_storage_threshold          = 10
+  rds_connections_threshold      = 150
+  graph_sync_lag_threshold       = 50
+  graph_error_threshold          = 5
+  oracle_stale_threshold_minutes = 30 # Business rule: how old should oracle data be before it is considered stale
 }
 
 ########################################

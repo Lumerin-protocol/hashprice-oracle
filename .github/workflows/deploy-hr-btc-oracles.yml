@@ -103,7 +103,6 @@ jobs:
       version: ${{ needs.setup.outputs.version }}
       tag: ${{ needs.setup.outputs.tag }}
       environment: ${{ needs.setup.outputs.environment }}
-      graph_node_url: ${{ steps.env.outputs.graph_node_url }}
       subgraph_name: ${{ steps.env.outputs.subgraph_name }}
       aws_region: ${{ steps.env.outputs.aws_region }}
       is_cicd_branch: ${{ needs.setup.outputs.is_cicd_branch }}
@@ -126,26 +125,24 @@ jobs:
         run: |
           ENV="${{ needs.setup.outputs.environment }}"
           
-          # Map to endpoints
-          # IPFS uploads go to The Graph's public IPFS (api.thegraph.com/ipfs/)
-          # Our Graph Node fetches from public IPFS gateways when indexing
+          # Map to The Graph Studio subgraph names
+          # All deployments now go to The Graph Network (Studio)
           case $ENV in
             dev)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
-              echo "graph_node_url=https://graph.dev.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
+              echo "subgraph_name=lumerin-dev-oracles" >> $GITHUB_OUTPUT
               ;;
             stg)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
-              echo "graph_node_url=https://graph.stg.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
+              echo "subgraph_name=lumerin-stg-oracles" >> $GITHUB_OUTPUT
               ;;
             main)
               echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
-              echo "graph_node_url=https://graph.lmn.lumerin.io" >> $GITHUB_OUTPUT
-              echo "subgraph_name=oracles" >> $GITHUB_OUTPUT
+              echo "subgraph_name=lumerin-lmn-oracles" >> $GITHUB_OUTPUT
               ;;
           esac
+          
+          echo "🎯 Deploying to The Graph Studio: subgraph=${subgraph_name}"
 
       - name: Install dependencies
         working-directory: ./indexer
@@ -233,6 +230,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: needs.build.outputs.is_cicd_branch != 'true'
+    outputs:
+      deploy_status: ${{ steps.deploy.outputs.deploy_status }}
     
     steps:
       - name: Checkout code
@@ -257,34 +256,28 @@ jobs:
           echo "📦 Installing dependencies for deployment..."
           yarn install --frozen-lockfile
 
-      - name: Create subgraph (if not exists)
+      # Authenticate with The Graph Studio
+      - name: Authenticate with The Graph Studio
         working-directory: ./indexer
-        continue-on-error: true
         run: |
-          echo "📝 Creating subgraph in Graph Node..."
-          npx graph create --node ${{ needs.build.outputs.graph_node_url }}:8020 \
-            ${{ needs.build.outputs.subgraph_name }} || echo "Subgraph already exists"
+          echo "🔐 Authenticating with The Graph Studio..."
+          npx graph auth ${{ secrets.GRAPH_DEPLOY_KEY }}
+          echo "✅ Authentication successful"
 
-      # Deploy subgraph to Graph Node
-      # Uses The Graph's public IPFS (api.thegraph.com/ipfs) - content is immediately
-      # available since Graph Node uses the same IPFS endpoint. No propagation wait needed.
-      - name: Deploy subgraph
+      # Deploy subgraph to The Graph Studio
+      # Note: graph deploy handles compilation and IPFS upload internally
+      - name: Deploy subgraph to Studio
         id: deploy
         working-directory: ./indexer
         run: |
-          echo "🚀 Deploying subgraph..."
+          echo "🚀 Deploying subgraph to The Graph Studio..."
           echo "   Environment: ${{ needs.build.outputs.environment }}"
-          echo "   Graph Node:  ${{ needs.build.outputs.graph_node_url }}:8020"
-          echo "   IPFS:        https://api.thegraph.com/ipfs/"
           echo "   Subgraph:    ${{ needs.build.outputs.subgraph_name }}"
           echo "   Version:     ${{ needs.build.outputs.version }}"
           echo "   Start time:  $(date -u +%Y-%m-%dT%H:%M:%S)Z"
           echo ""
           
-          # Build first
-          npx graph build
-          
-          # Deploy with retry logic
+          # Deploy with retry logic (deploy command handles build internally)
           MAX_ATTEMPTS=3
           ATTEMPT=1
           DEPLOY_START_TIME=$(date +%s)
@@ -297,28 +290,56 @@ jobs:
             echo "================================================"
             
             set +e
-            npx graph deploy \
-              --node ${{ needs.build.outputs.graph_node_url }}:8020 \
-              --ipfs "https://api.thegraph.com/ipfs/" \
-              --version-label ${{ needs.build.outputs.version }} \
-              ${{ needs.build.outputs.subgraph_name }} 2>&1 | tee deploy_output.txt
+            npx graph deploy ${{ needs.build.outputs.subgraph_name }} \
+              --node https://api.studio.thegraph.com/deploy/ \
+              --version-label ${{ needs.build.outputs.version }} 2>&1 | tee deploy_output.txt
             DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
             set -e
             
             ATTEMPT_END_TIME=$(date +%s)
             ATTEMPT_DURATION=$((ATTEMPT_END_TIME - ATTEMPT_START_TIME))
             
-            # Extract CID from output
-            IPFS_HASH=$(grep -oP 'Qm[a-zA-Z0-9]{44}' deploy_output.txt | tail -1 || echo "")
+            # Extract deployment ID from output
+            DEPLOYMENT_ID=$(grep -oP 'Qm[a-zA-Z0-9]{44}' deploy_output.txt | tail -1 || echo "")
+            
+            # Check for "Version label already exists" - this means no changes, treat as success
+            if grep -q "Version label already exists" deploy_output.txt; then
+              echo ""
+              echo "================================================"
+              echo "✅ Version ${{ needs.build.outputs.version }} already deployed - no update needed"
+              echo "   Subgraph is current and synced"
+              echo "================================================"
+              
+              # Write to job summary
+              echo "## ✅ No Update Needed" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Version \`${{ needs.build.outputs.version }}\` is already deployed. The subgraph is current." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+              echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+              echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Status | Already deployed |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
+              echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
+              echo "- [🔍 Query Playground](https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Set output for Slack notification
+              echo "deploy_status=no_update" >> $GITHUB_OUTPUT
+              exit 0
+            fi
             
             if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
               TOTAL_DURATION=$((ATTEMPT_END_TIME - DEPLOY_START_TIME))
               echo ""
               echo "================================================"
-              echo "✅ Subgraph deployed successfully!"
+              echo "✅ Subgraph deployed to The Graph Studio!"
               echo "   Duration: ${ATTEMPT_DURATION}s"
-              if [ -n "$IPFS_HASH" ]; then
-                echo "   CID: $IPFS_HASH"
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                echo "   Deployment ID: $DEPLOYMENT_ID"
               fi
               echo "================================================"
               
@@ -329,17 +350,19 @@ jobs:
               echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
               echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
               echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Graph Node | ${{ needs.build.outputs.graph_node_url }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Target | The Graph Studio |" >> $GITHUB_STEP_SUMMARY
               echo "| Duration | ${TOTAL_DURATION}s |" >> $GITHUB_STEP_SUMMARY
-              if [ -n "$IPFS_HASH" ]; then
-                echo "| Deployment CID | \`$IPFS_HASH\` |" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "### Verify CID" >> $GITHUB_STEP_SUMMARY
-                echo "- [🔍 Check on IPFS Network](https://check.ipfs.network/?cid=$IPFS_HASH)" >> $GITHUB_STEP_SUMMARY
-                echo "- [🌐 View on ipfs.io](https://ipfs.io/ipfs/$IPFS_HASH)" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                echo "| Deployment ID | \`$DEPLOYMENT_ID\` |" >> $GITHUB_STEP_SUMMARY
               fi
               echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
+              echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
               
+              # Set output for Slack notification
+              echo "deploy_status=deployed" >> $GITHUB_OUTPUT
               exit 0
             fi
             
@@ -348,8 +371,9 @@ jobs:
             echo "================================================"
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              WAIT_TIME=30
-              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
+              # Exponential backoff: 30s, 60s, 120s
+              WAIT_TIME=$((30 * (2 ** (ATTEMPT - 1))))
+              echo "⏳ Waiting ${WAIT_TIME}s before retry (exponential backoff)..."
               sleep $WAIT_TIME
             fi
             
@@ -369,8 +393,9 @@ jobs:
           echo "Deployment failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
-          echo "1. Check Graph Node logs" >> $GITHUB_STEP_SUMMARY
-          echo "2. Re-run the workflow" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check The Graph Studio for errors" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify GRAPH_DEPLOY_KEY secret is set" >> $GITHUB_STEP_SUMMARY
+          echo "3. Re-run the workflow" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           exit 1
@@ -382,27 +407,42 @@ jobs:
     if: needs.build.outputs.is_cicd_branch != 'true'
     
     steps:
-      - name: Verify deployment
+      - name: Verify deployment on The Graph Studio
         run: |
-          echo "🔍 Verifying subgraph deployment..."
+          echo "🔍 Verifying subgraph deployment on The Graph Studio..."
+          echo "   Subgraph: ${{ needs.build.outputs.subgraph_name }}"
           
-          sleep 10
+          # Wait for deployment to propagate
+          sleep 15
           
+          # Query The Graph Studio API
           RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d '{"query": "{ _meta { block { number } deployment hasIndexingErrors } }"}' \
-            ${{ needs.build.outputs.graph_node_url }}/subgraphs/name/${{ needs.build.outputs.subgraph_name }})
+            "https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest")
           
           echo "Response: $RESPONSE"
           
+          # Check for errors in response
+          if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "⚠️ GraphQL errors in response - subgraph may still be syncing"
+            echo "   This is normal for new deployments. Check Studio for status."
+            # Don't fail - new deployments take time to sync
+            exit 0
+          fi
+          
           HAS_ERRORS=$(echo $RESPONSE | jq -r '.data._meta.hasIndexingErrors // false')
+          BLOCK_NUMBER=$(echo $RESPONSE | jq -r '.data._meta.block.number // "unknown"')
+          
+          echo "   Block number: $BLOCK_NUMBER"
+          echo "   Has indexing errors: $HAS_ERRORS"
           
           if [ "$HAS_ERRORS" == "true" ]; then
-            echo "⚠️ Subgraph has indexing errors"
+            echo "⚠️ Subgraph has indexing errors - check Studio for details"
             exit 1
           fi
           
-          echo "✅ Subgraph is healthy and indexing"
+          echo "✅ Subgraph deployed and indexing on The Graph Studio"
 
   cleanup:
     name: 🧹 Cleanup
@@ -429,16 +469,17 @@ jobs:
         run: |
           echo "## 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Service:** Subgraph (Futures Marketplace)" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Hashrate & BTC Oracles Subgraph" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ needs.setup.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Subgraph:** ${{ needs.build.outputs.subgraph_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** The Graph Studio" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
-          echo "- GraphQL: \`${{ needs.build.outputs.graph_node_url }}/subgraphs/name/${{ needs.build.outputs.subgraph_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Admin: \`${{ needs.build.outputs.graph_node_url }}:8020\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Studio: \`https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Query: \`https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Subgraph deployed and indexing successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Subgraph deployed and indexing on The Graph Studio" >> $GITHUB_STEP_SUMMARY
 
       - name: Failure summary
         if: needs.verify.result == 'failure'
@@ -487,5 +528,5 @@ jobs:
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || format(''*Subgraph:* `{0}` • *GraphQL:* `{1}/subgraphs/name/{0}`'', needs.build.outputs.subgraph_name, needs.build.outputs.graph_node_url) }}'
+          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || (needs.deploy.outputs.deploy_status == ''no_update'' && format(''*Status:* Already deployed (no changes) • <https://api.studio.thegraph.com/query/1724245/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name) || format(''*Subgraph:* `{0}` • <https://api.studio.thegraph.com/query/1724245/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name)) }}'
 
