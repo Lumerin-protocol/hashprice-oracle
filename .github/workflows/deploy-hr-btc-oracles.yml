@@ -278,7 +278,8 @@ jobs:
           echo ""
           
           # Deploy with retry logic (deploy command handles build internally)
-          MAX_ATTEMPTS=3
+          # Using 5 attempts with aggressive exponential backoff for IPFS rate limits
+          MAX_ATTEMPTS=5
           ATTEMPT=1
           DEPLOY_START_TIME=$(date +%s)
           
@@ -371,8 +372,8 @@ jobs:
             echo "================================================"
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              # Exponential backoff: 30s, 60s, 120s
-              WAIT_TIME=$((30 * (2 ** (ATTEMPT - 1))))
+              # Exponential backoff: 60s, 120s, 240s, 480s (total ~15 min if all fail)
+              WAIT_TIME=$((60 * (2 ** (ATTEMPT - 1))))
               echo "⏳ Waiting ${WAIT_TIME}s before retry (exponential backoff)..."
               sleep $WAIT_TIME
             fi
