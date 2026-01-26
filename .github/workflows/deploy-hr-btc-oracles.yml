@@ -290,7 +290,8 @@ jobs:
             echo "================================================"
             
             set +e
-            npx graph deploy --studio ${{ needs.build.outputs.subgraph_name }} \
+            npx graph deploy ${{ needs.build.outputs.subgraph_name }} \
+              --node https://api.studio.thegraph.com/deploy/ \
               --version-label ${{ needs.build.outputs.version }} 2>&1 | tee deploy_output.txt
             DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
             set -e
