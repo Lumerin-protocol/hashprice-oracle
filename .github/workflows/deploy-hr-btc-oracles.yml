@@ -263,6 +263,7 @@ jobs:
           echo "✅ Authentication successful"
 
       # Deploy subgraph to The Graph Studio
+      # Note: graph deploy handles compilation and IPFS upload internally
       - name: Deploy subgraph to Studio
         id: deploy
         working-directory: ./indexer
@@ -274,10 +275,7 @@ jobs:
           echo "   Start time:  $(date -u +%Y-%m-%dT%H:%M:%S)Z"
           echo ""
           
-          # Build first
-          npx graph build
-          
-          # Deploy with retry logic
+          # Deploy with retry logic (deploy command handles build internally)
           MAX_ATTEMPTS=3
           ATTEMPT=1
           DEPLOY_START_TIME=$(date +%s)
