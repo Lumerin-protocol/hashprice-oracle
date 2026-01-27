@@ -3,10 +3,12 @@
 # Local Graph Seed Script for Hashprice Oracle Subgraph
 # 
 # Multi-phase deployment to avoid The Graph's IPFS rate limiting:
+#   0. IPFS Setup - ensure local IPFS daemon is running
 #   1. Build - compile subgraph locally
-#   2. Upload - push to alternative IPFS (Infura/Pinata/local)
+#   2. Upload - push to local IPFS (propagates to global network)
 #   3. Verify - wait for IPFS propagation to The Graph's nodes
 #   4. Deploy - trigger The Graph using IPFS hash
+#   5. Cleanup - stop local IPFS daemon
 #
 # Usage:
 #   ./deploy.sh dev              # Deploy to dev environment
@@ -27,6 +29,102 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Track if we started IPFS (so we know to stop it later)
+IPFS_STARTED_BY_SCRIPT=false
+
+#############################################
+# Cleanup function - runs on exit
+#############################################
+cleanup() {
+    if [ "$IPFS_STARTED_BY_SCRIPT" = true ]; then
+        echo ""
+        echo -e "${YELLOW}🧹 Cleaning up: Stopping IPFS daemon...${NC}"
+        ipfs shutdown 2>/dev/null || pkill -f "ipfs daemon" 2>/dev/null || true
+        echo -e "${GREEN}✅ IPFS daemon stopped${NC}"
+    fi
+}
+
+# Register cleanup function to run on exit (success or failure)
+trap cleanup EXIT
+
+#############################################
+# PHASE 0: IPFS Setup
+#############################################
+setup_ipfs() {
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}🔧 PHASE 0: IPFS Setup${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Check if running on macOS
+    if [[ "$(uname)" != "Darwin" ]]; then
+        echo -e "${YELLOW}⚠️  Not on macOS - skipping Homebrew IPFS setup${NC}"
+        echo "   Please ensure IPFS is installed and running manually"
+        echo "   Or set IPFS_URL in .env to point to your IPFS node"
+        return 0
+    fi
+    
+    # Check if Homebrew is installed
+    if ! command -v brew &> /dev/null; then
+        echo -e "${RED}❌ Homebrew not found${NC}"
+        echo "   Install Homebrew: https://brew.sh"
+        echo "   Or install IPFS manually: https://docs.ipfs.tech/install/"
+        exit 1
+    fi
+    echo "✅ Homebrew found"
+    
+    # Check if IPFS (kubo) is installed
+    if ! command -v ipfs &> /dev/null; then
+        echo ""
+        echo -e "${YELLOW}📦 IPFS not found - installing via Homebrew...${NC}"
+        brew install ipfs
+        echo -e "${GREEN}✅ IPFS installed${NC}"
+    else
+        echo "✅ IPFS already installed ($(ipfs --version))"
+    fi
+    
+    # Check if IPFS is initialized
+    if [ ! -d "$HOME/.ipfs" ]; then
+        echo ""
+        echo -e "${YELLOW}🔧 Initializing IPFS repository...${NC}"
+        ipfs init
+        echo -e "${GREEN}✅ IPFS initialized${NC}"
+    fi
+    
+    # Check if IPFS daemon is already running
+    if curl -s --max-time 2 http://localhost:5001/api/v0/id > /dev/null 2>&1; then
+        echo "✅ IPFS daemon already running"
+        IPFS_STARTED_BY_SCRIPT=false
+    else
+        echo ""
+        echo -e "${YELLOW}🚀 Starting IPFS daemon...${NC}"
+        
+        # Start daemon in background
+        ipfs daemon --enable-gc > /dev/null 2>&1 &
+        IPFS_PID=$!
+        IPFS_STARTED_BY_SCRIPT=true
+        
+        # Wait for daemon to be ready (up to 30 seconds)
+        echo "   Waiting for daemon to start..."
+        for i in {1..30}; do
+            if curl -s --max-time 2 http://localhost:5001/api/v0/id > /dev/null 2>&1; then
+                echo -e "${GREEN}✅ IPFS daemon started (PID: $IPFS_PID)${NC}"
+                break
+            fi
+            if [ $i -eq 30 ]; then
+                echo -e "${RED}❌ IPFS daemon failed to start${NC}"
+                exit 1
+            fi
+            sleep 1
+        done
+    fi
+    
+    # Set IPFS URL for the rest of the script
+    export IPFS_URL="http://localhost:5001"
+    echo ""
+    echo "📡 Using local IPFS: $IPFS_URL"
+}
 
 # Load environment variables
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -127,8 +225,9 @@ fi
 echo "📋 Configuration:"
 echo "   Subgraph:  $SUBGRAPH_NAME"
 echo "   Network:   $NETWORK"
-echo "   IPFS:      ${IPFS_UPLOAD_URL:-https://api.thegraph.com/ipfs/api/v0} (upload)"
-echo ""
+
+# Setup local IPFS (install if needed, start daemon)
+setup_ipfs
 
 # Change to indexer directory
 cd "$INDEXER_DIR"
@@ -257,18 +356,12 @@ if [ -z "$IPFS_HASH" ]; then
     echo -e "${RED}❌ Failed to get IPFS hash after $UPLOAD_MAX_ATTEMPTS attempts${NC}"
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "Could not upload to IPFS or capture a hash."
+    echo "Could not upload to local IPFS."
     echo ""
-    echo "🔧 Options:"
-    echo ""
-    echo "   1. Wait 30-60 minutes and try again"
-    echo "      ./deploy.sh $ENV"
-    echo ""
-    echo "   2. Try at off-peak hours (late night/early morning US time)"
-    echo ""
-    echo "   3. Run your own IPFS node:"
-    echo "      brew install ipfs && ipfs init && ipfs daemon"
-    echo "      Then set: IPFS_UPLOAD_URL=http://localhost:5001"
+    echo "🔧 Troubleshooting:"
+    echo "   - Check if IPFS daemon is responding: curl http://localhost:5001/api/v0/id"
+    echo "   - Try restarting: ipfs shutdown && ipfs daemon"
+    echo "   - Check IPFS logs for errors"
     echo ""
     exit 1
 fi
