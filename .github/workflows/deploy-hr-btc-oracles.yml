@@ -104,6 +104,7 @@ jobs:
       tag: ${{ needs.setup.outputs.tag }}
       environment: ${{ needs.setup.outputs.environment }}
       subgraph_name: ${{ steps.env.outputs.subgraph_name }}
+      graph_userid: ${{ steps.env.outputs.graph_userid }}
       aws_region: ${{ steps.env.outputs.aws_region }}
       is_cicd_branch: ${{ needs.setup.outputs.is_cicd_branch }}
     
@@ -142,7 +143,10 @@ jobs:
               ;;
           esac
           
-          echo "🎯 Deploying to The Graph Studio: subgraph=${subgraph_name}"
+          # Set Graph user ID for this environment's account
+          GRAPH_USERID="${{ needs.setup.outputs.environment == 'dev' && vars.DEV_GRAPH_USERID || needs.setup.outputs.environment == 'stg' && vars.STG_GRAPH_USERID || vars.LMN_GRAPH_USERID }}"
+          echo "graph_userid=$GRAPH_USERID" >> $GITHUB_OUTPUT
+          echo "🎯 Deploying to The Graph Studio: subgraph=${subgraph_name}, userid=${GRAPH_USERID}"
 
       - name: Install dependencies
         working-directory: ./indexer
@@ -257,11 +261,15 @@ jobs:
           yarn install --frozen-lockfile
 
       # Authenticate with The Graph Studio
+      # Each environment has its own Graph account (3 subgraph limit per account)
       - name: Authenticate with The Graph Studio
         working-directory: ./indexer
+        env:
+          GRAPH_DEPLOY_KEY: ${{ needs.build.outputs.environment == 'dev' && secrets.DEV_GRAPH_DPKY || needs.build.outputs.environment == 'stg' && secrets.STG_GRAPH_DPKY || secrets.LMN_GRAPH_DPKY }}
         run: |
           echo "🔐 Authenticating with The Graph Studio..."
-          npx graph auth ${{ secrets.GRAPH_DEPLOY_KEY }}
+          echo "   Environment: ${{ needs.build.outputs.environment }}"
+          npx graph auth $GRAPH_DEPLOY_KEY
           echo "✅ Authentication successful"
 
       # Deploy subgraph to The Graph Studio
@@ -325,7 +333,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
               echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
-              echo "- [🔍 Query Playground](https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest)" >> $GITHUB_STEP_SUMMARY
+              echo "- [🔍 Query Playground](https://api.studio.thegraph.com/query/${{ needs.build.outputs.graph_userid }}/${{ needs.build.outputs.subgraph_name }}/version/latest)" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
               # Set output for Slack notification
@@ -420,7 +428,7 @@ jobs:
           RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d '{"query": "{ _meta { block { number } deployment hasIndexingErrors } }"}' \
-            "https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest")
+            "https://api.studio.thegraph.com/query/${{ needs.build.outputs.graph_userid }}/${{ needs.build.outputs.subgraph_name }}/version/latest")
           
           echo "Response: $RESPONSE"
           
@@ -478,7 +486,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Endpoints:**" >> $GITHUB_STEP_SUMMARY
           echo "- Studio: \`https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Query: \`https://api.studio.thegraph.com/query/1724245/${{ needs.build.outputs.subgraph_name }}/version/latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Query: \`https://api.studio.thegraph.com/query/${{ needs.build.outputs.graph_userid }}/${{ needs.build.outputs.subgraph_name }}/version/latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Subgraph deployed and indexing on The Graph Studio" >> $GITHUB_STEP_SUMMARY
 
@@ -529,5 +537,5 @@ jobs:
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || (needs.deploy.outputs.deploy_status == ''no_update'' && format(''*Status:* Already deployed (no changes) • <https://api.studio.thegraph.com/query/1724245/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name) || format(''*Subgraph:* `{0}` • <https://api.studio.thegraph.com/query/1724245/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name)) }}'
+          additional_info: '${{ needs.setup.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (no build/deploy)'' || (needs.deploy.outputs.deploy_status == ''no_update'' && format(''*Status:* Already deployed (no changes) • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid) || format(''*Subgraph:* `{0}` • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>'', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid)) }}'
 
