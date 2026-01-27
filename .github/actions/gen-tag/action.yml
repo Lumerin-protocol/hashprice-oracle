@@ -88,8 +88,9 @@ runs:
         
         set +o pipefail
         
-        # Find the last production tag for this component on main branch
-        VLAST=$(git describe --tags --abbrev=0 --match="${COMPONENT}-v[0-9]*" refs/remotes/origin/main 2>/dev/null | sed "s/${COMPONENT}-v//" || echo "")
+        # Find the last production tag for this component (without -dev/-stg suffix)
+        # Use git tag -l with sort to find latest, not git describe (which requires reachability)
+        VLAST=$(git tag -l "${COMPONENT}-v[0-9]*" | grep -E "^${COMPONENT}-v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -n 1 | sed "s/${COMPONENT}-v//" || echo "")
         
         if [ -n "$VLAST" ]; then
             # Parse existing version
