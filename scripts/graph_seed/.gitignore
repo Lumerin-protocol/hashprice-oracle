@@ -1,2 +1,4 @@
 # Don't commit secrets
 .env
+# But don't ignore the example file
+!.env.example

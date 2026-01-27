@@ -2,11 +2,14 @@
 #
 # Local Graph Seed Script for Hashprice Oracle Subgraph
 # 
-# This script deploys the subgraph to The Graph Studio from your local machine.
-# Use this to bypass GitHub Actions shared IP rate limiting.
+# Multi-phase deployment to avoid The Graph's IPFS rate limiting:
+#   1. Build - compile subgraph locally
+#   2. Upload - push to alternative IPFS (Infura/Pinata/local)
+#   3. Verify - wait for IPFS propagation to The Graph's nodes
+#   4. Deploy - trigger The Graph using IPFS hash
 #
 # Usage:
-#   ./deploy.sh dev              # Deploy to dev environment (auto version)
+#   ./deploy.sh dev              # Deploy to dev environment
 #   ./deploy.sh stg              # Deploy to staging environment
 #   ./deploy.sh lmn              # Deploy to production environment
 #   ./deploy.sh dev v1.0.0       # Deploy with specific version
@@ -18,11 +21,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$SCRIPT_DIR/../.."
 INDEXER_DIR="$REPO_DIR/indexer"
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 # Load environment variables
 if [ -f "$SCRIPT_DIR/.env" ]; then
     export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
 else
-    echo "❌ Error: .env file not found"
+    echo -e "${RED}❌ Error: .env file not found${NC}"
     echo "   Copy .env.example to .env and fill in the values"
     exit 1
 fi
@@ -32,7 +42,7 @@ ENV="${1:-$DEPLOY_ENV}"
 VERSION_OVERRIDE="${2:-}"
 
 if [ -z "$ENV" ]; then
-    echo "❌ Error: No environment specified"
+    echo -e "${RED}❌ Error: No environment specified${NC}"
     echo "   Usage: ./deploy.sh [dev|stg|lmn] [version]"
     exit 1
 fi
@@ -40,11 +50,8 @@ fi
 # Generate version from git tags (same logic as CI/CD) or use override
 generate_version() {
     local env=$1
-    
     cd "$REPO_DIR"
-    
     LAST_TAG=$(git tag -l "subgraph-v*" 2>/dev/null | sort -V | tail -n 1)
-    
     if [ -z "$LAST_TAG" ]; then
         BASE_VERSION="2.0.0"
     else
@@ -53,23 +60,21 @@ generate_version() {
         PATCH=$((PATCH + 1))
         BASE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
     fi
-    
     echo "v${BASE_VERSION}-${env}"
 }
 
-# Use override or generate
 if [ -n "$VERSION_OVERRIDE" ]; then
     VERSION_LABEL="$VERSION_OVERRIDE"
 else
     VERSION_LABEL=$(generate_version "$ENV")
 fi
 
-echo "=============================================="
-echo "🚀 Graph Seed Script - Hashprice Oracle"
-echo "=============================================="
+echo ""
+echo -e "${BLUE}===============================================${NC}"
+echo -e "${BLUE}🚀 Graph Seed Script - Hashprice Oracle${NC}"
+echo -e "${BLUE}===============================================${NC}"
 echo "   Environment: $ENV"
 echo "   Version:     $VERSION_LABEL"
-echo "   Indexer Dir: $INDEXER_DIR"
 echo ""
 
 # Set environment-specific variables
@@ -108,29 +113,21 @@ case $ENV in
         BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL="$LMN_BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL"
         ;;
     *)
-        echo "❌ Error: Invalid environment '$ENV'"
-        echo "   Valid options: dev, stg, lmn"
+        echo -e "${RED}❌ Error: Invalid environment '$ENV'${NC}"
         exit 1
         ;;
 esac
 
 # Validate required variables
 if [ -z "$DEPLOY_KEY" ]; then
-    echo "❌ Error: Deploy key not set for $ENV environment"
-    exit 1
-fi
-
-if [ -z "$SUBGRAPH_NAME" ]; then
-    echo "❌ Error: Subgraph name not set for $ENV environment"
+    echo -e "${RED}❌ Error: Deploy key not set for $ENV environment${NC}"
     exit 1
 fi
 
 echo "📋 Configuration:"
 echo "   Subgraph:  $SUBGRAPH_NAME"
 echo "   Network:   $NETWORK"
-echo "   Version:   $VERSION_LABEL"
-echo "   Hashrate Oracle: $HASHRATE_ORACLE_ADDRESS"
-echo "   BTC Token Oracle: $BTC_TOKEN_ORACLE_ADDRESS"
+echo "   IPFS:      ${IPFS_UPLOAD_URL:-https://api.thegraph.com/ipfs/api/v0} (upload)"
 echo ""
 
 # Change to indexer directory
@@ -151,43 +148,238 @@ export BTC_TOKEN_ORACLE_ADDRESS
 export START_BLOCK_BTC_TOKEN_ORACLE
 export BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL
 
-# Generate subgraph.yaml from template
+#############################################
+# PHASE 1: Prepare and Build
+#############################################
+echo ""
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${YELLOW}📦 PHASE 1: Build Subgraph${NC}"
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
 echo "⚙️  Preparing subgraph configuration..."
 yarn prepare:env
 
 echo ""
-echo "📄 Generated subgraph.yaml:"
-head -30 subgraph.yaml
-echo "   ... (truncated)"
-echo ""
-
-# Generate code
 echo "🔨 Generating AssemblyScript types..."
 yarn codegen
 
-# Authenticate with The Graph
 echo ""
-echo "🔐 Authenticating with The Graph Studio..."
+echo "🏗️  Building subgraph..."
+npx graph build
+
+echo -e "${GREEN}✅ Build complete${NC}"
+
+#############################################
+# PHASE 2: Build and Get IPFS Hash
+#############################################
+# Per The Graph Discord recommendation:
+# 1. graph build --ipfs ... (upload to IPFS, get Qm hash)
+# 2. graph deploy SLUG --ipfs-hash <hash> (uses hash, skips re-upload)
+echo ""
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${YELLOW}📤 PHASE 2: Upload to IPFS${NC}"
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+# Use IPFS_URL from .env, default to The Graph's (rate limited)
+IPFS_UPLOAD_URL="${IPFS_URL:-https://api.thegraph.com/ipfs/api/v0}"
+IPFS_HASH=""
+UPLOAD_SUCCESS=false
+
+echo "📤 Uploading to IPFS..."
+echo "   URL: $IPFS_UPLOAD_URL"
+if [[ "$IPFS_UPLOAD_URL" == *"localhost"* ]] || [[ "$IPFS_UPLOAD_URL" == *"127.0.0.1"* ]]; then
+    echo "   Mode: Local IPFS daemon (will propagate to global network)"
+fi
+echo ""
+
+# Try to upload to IPFS - capture hash even if it fails partway
+# The hash is generated during upload and can be reused with --ipfs-hash
+UPLOAD_MAX_ATTEMPTS=3
+UPLOAD_ATTEMPT=1
+
+while [ $UPLOAD_ATTEMPT -le $UPLOAD_MAX_ATTEMPTS ]; do
+    TIMESTAMP=$(date +%H:%M:%S)
+    echo "[$TIMESTAMP] 📤 Attempt $UPLOAD_ATTEMPT of $UPLOAD_MAX_ATTEMPTS..."
+    
+    set +e
+    BUILD_OUTPUT=$(npx graph build --ipfs "$IPFS_UPLOAD_URL" 2>&1)
+    BUILD_EXIT=$?
+    set -e
+    
+    echo "$BUILD_OUTPUT"
+    
+    # Extract IPFS hash from output (looks like: Build completed: QmXXX...)
+    # Capture any Qm hash - even from failed uploads (partial success)
+    FOUND_HASH=$(echo "$BUILD_OUTPUT" | grep -oE 'Qm[a-zA-Z0-9]{44}' | tail -1)
+    
+    if [ -n "$FOUND_HASH" ]; then
+        IPFS_HASH="$FOUND_HASH"
+        echo ""
+        echo -e "${GREEN}📦 Got IPFS hash: $IPFS_HASH${NC}"
+    fi
+    
+    if [ $BUILD_EXIT -eq 0 ] && [ -n "$IPFS_HASH" ]; then
+        echo -e "${GREEN}✅ Full upload successful!${NC}"
+        UPLOAD_SUCCESS=true
+        break
+    fi
+    
+    # Check for rate limiting - but we might have gotten a hash!
+    if echo "$BUILD_OUTPUT" | grep -q "Too Many Requests"; then
+        echo -e "${YELLOW}   ⚠️  Rate limited (HTTP 429)${NC}"
+        
+        # If we got a hash, we can try deploying with it
+        if [ -n "$IPFS_HASH" ]; then
+            echo -e "${GREEN}   ✅ But we captured the hash! Will try --ipfs-hash method${NC}"
+            UPLOAD_SUCCESS=true
+            break
+        fi
+        
+        if [ $UPLOAD_ATTEMPT -lt $UPLOAD_MAX_ATTEMPTS ]; then
+            WAIT_TIME=$((60 * UPLOAD_ATTEMPT))
+            echo "   ⏳ Waiting ${WAIT_TIME}s before retry..."
+            sleep $WAIT_TIME
+        fi
+    else
+        # Other error
+        if [ $UPLOAD_ATTEMPT -lt $UPLOAD_MAX_ATTEMPTS ]; then
+            sleep 15
+        fi
+    fi
+    
+    UPLOAD_ATTEMPT=$((UPLOAD_ATTEMPT + 1))
+done
+
+# If we have a hash (even from partial upload), we can proceed
+if [ -z "$IPFS_HASH" ]; then
+    echo ""
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}❌ Failed to get IPFS hash after $UPLOAD_MAX_ATTEMPTS attempts${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Could not upload to IPFS or capture a hash."
+    echo ""
+    echo "🔧 Options:"
+    echo ""
+    echo "   1. Wait 30-60 minutes and try again"
+    echo "      ./deploy.sh $ENV"
+    echo ""
+    echo "   2. Try at off-peak hours (late night/early morning US time)"
+    echo ""
+    echo "   3. Run your own IPFS node:"
+    echo "      brew install ipfs && ipfs init && ipfs daemon"
+    echo "      Then set: IPFS_UPLOAD_URL=http://localhost:5001"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}✅ IPFS hash ready: $IPFS_HASH${NC}"
+
+# If using local IPFS, wait for content to propagate to global network
+if [[ "$IPFS_UPLOAD_URL" == *"localhost"* ]] || [[ "$IPFS_UPLOAD_URL" == *"127.0.0.1"* ]]; then
+    echo ""
+    echo -e "${YELLOW}⏳ Waiting for IPFS content to propagate to global network...${NC}"
+    echo "   This typically takes 2-5 minutes."
+    echo "   Hash: $IPFS_HASH"
+    echo ""
+    
+    # Wait 2 minutes for DHT propagation
+    for i in {1..4}; do
+        echo "   Waiting... ($((i * 30))s / 120s)"
+        sleep 30
+    done
+    echo -e "${GREEN}✅ Propagation wait complete${NC}"
+fi
+
+#############################################
+# PHASE 3: Deploy to The Graph Studio
+#############################################
+# Using --ipfs-hash as recommended by The Graph Discord
+# This skips re-uploading and uses the hash directly
+echo ""
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${YELLOW}🚀 PHASE 3: Deploy to The Graph Studio${NC}"
+echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+echo "🔐 Authenticating..."
 npx graph auth "$DEPLOY_KEY"
 
-# Deploy
 echo ""
-echo "🚀 Deploying subgraph to The Graph Studio..."
-echo "   This may take a few minutes..."
+echo "🚀 Deploying subgraph using --ipfs-hash (skips IPFS upload)..."
+echo "   Subgraph: $SUBGRAPH_NAME"
+echo "   Version:  $VERSION_LABEL"
+echo "   IPFS:     $IPFS_HASH"
 echo ""
 
-npx graph deploy "$SUBGRAPH_NAME" \
-    --node https://api.studio.thegraph.com/deploy/ \
-    --version-label "$VERSION_LABEL"
+DEPLOY_MAX_ATTEMPTS=3
+DEPLOY_ATTEMPT=1
+DEPLOYED=false
 
+while [ $DEPLOY_ATTEMPT -le $DEPLOY_MAX_ATTEMPTS ]; do
+    echo "📤 Deploy attempt $DEPLOY_ATTEMPT of $DEPLOY_MAX_ATTEMPTS..."
+    
+    set +e
+    DEPLOY_OUTPUT=$(npx graph deploy "$SUBGRAPH_NAME" \
+        --node https://api.studio.thegraph.com/deploy/ \
+        --ipfs-hash "$IPFS_HASH" \
+        --version-label "$VERSION_LABEL" 2>&1)
+    DEPLOY_EXIT=$?
+    set -e
+    
+    echo "$DEPLOY_OUTPUT"
+    
+    # Check for success
+    if [ $DEPLOY_EXIT -eq 0 ]; then
+        DEPLOYED=true
+        break
+    fi
+    
+    # Check for "version already exists" - treat as success
+    if echo "$DEPLOY_OUTPUT" | grep -q "Version label already exists"; then
+        echo ""
+        echo -e "${GREEN}✅ Version $VERSION_LABEL already deployed - no update needed${NC}"
+        DEPLOYED=true
+        break
+    fi
+    
+    # Check for rate limiting
+    if echo "$DEPLOY_OUTPUT" | grep -q "Too Many Requests"; then
+        WAIT_TIME=$((60 * DEPLOY_ATTEMPT))
+        echo ""
+        echo -e "${YELLOW}⚠️  Rate limited. Waiting ${WAIT_TIME}s...${NC}"
+        sleep $WAIT_TIME
+    else
+        echo -e "${RED}❌ Deploy failed${NC}"
+    fi
+    
+    DEPLOY_ATTEMPT=$((DEPLOY_ATTEMPT + 1))
+done
+
+if [ "$DEPLOYED" = false ]; then
+    echo ""
+    echo -e "${RED}❌ All deployment attempts failed${NC}"
+    echo ""
+    echo "🔧 Troubleshooting:"
+    echo "   - IPFS hash: $IPFS_HASH"
+    echo "   - Try again in a few minutes"
+    echo "   - Check The Graph Studio for status"
+    exit 1
+fi
+
+#############################################
+# SUCCESS
+#############################################
 echo ""
-echo "=============================================="
-echo "✅ Deployment complete!"
-echo "=============================================="
+echo -e "${GREEN}===============================================${NC}"
+echo -e "${GREEN}✅ Deployment Successful!${NC}"
+echo -e "${GREEN}===============================================${NC}"
 echo ""
 echo "📊 View your subgraph:"
 echo "   Studio: https://thegraph.com/studio/subgraph/$SUBGRAPH_NAME/"
 echo ""
-echo "🔍 Once synced, query at:"
-echo "   https://api.studio.thegraph.com/query/YOUR_USER_ID/$SUBGRAPH_NAME/version/latest"
+echo "🔍 Once synced, the query URL will be visible in Studio"
+echo "   (Look for the User ID in the query URL to update GitHub vars)"
+echo ""
+echo "📝 IPFS Hash: $IPFS_HASH"
 echo ""
