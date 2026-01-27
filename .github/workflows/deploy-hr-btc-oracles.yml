@@ -236,6 +236,19 @@ jobs:
     if: needs.build.outputs.is_cicd_branch != 'true'
     outputs:
       deploy_status: ${{ steps.deploy.outputs.deploy_status }}
+      ipfs_hash: ${{ steps.ipfs_upload.outputs.ipfs_hash }}
+    
+    services:
+      # Ephemeral IPFS node - avoids The Graph's IPFS rate limits
+      ipfs:
+        image: ipfs/kubo:latest
+        ports:
+          - 5001:5001
+        options: >-
+          --health-cmd "ipfs id"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     
     steps:
       - name: Checkout code
@@ -260,8 +273,84 @@ jobs:
           echo "📦 Installing dependencies for deployment..."
           yarn install --frozen-lockfile
 
+      # Upload to ephemeral IPFS node (no rate limits!)
+      - name: Upload to local IPFS
+        id: ipfs_upload
+        working-directory: ./indexer
+        run: |
+          echo "📤 Uploading subgraph to ephemeral IPFS node..."
+          echo "   This avoids The Graph's IPFS rate limits"
+          echo ""
+          
+          # Build and upload to local IPFS
+          set +e
+          BUILD_OUTPUT=$(npx graph build --ipfs http://localhost:5001 2>&1)
+          BUILD_EXIT=$?
+          set -e
+          
+          echo "$BUILD_OUTPUT"
+          
+          # Extract IPFS hash
+          IPFS_HASH=$(echo "$BUILD_OUTPUT" | grep -oE 'Qm[a-zA-Z0-9]{44}' | tail -1)
+          
+          if [ -z "$IPFS_HASH" ]; then
+            echo "❌ Failed to get IPFS hash from build"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Uploaded to local IPFS"
+          echo "   Hash: $IPFS_HASH"
+          echo "ipfs_hash=$IPFS_HASH" >> $GITHUB_OUTPUT
+
+      # Wait for IPFS content to propagate to global DHT
+      - name: Wait for IPFS propagation
+        id: ipfs_propagate
+        run: |
+          IPFS_HASH="${{ steps.ipfs_upload.outputs.ipfs_hash }}"
+          echo "⏳ Waiting for IPFS content to propagate to global network..."
+          echo "   Hash: $IPFS_HASH"
+          echo ""
+          
+          # Check propagation with exponential backoff
+          # Try to fetch from a public gateway to verify availability
+          MAX_CHECKS=6
+          CHECK=1
+          PROPAGATED=false
+          
+          while [ $CHECK -le $MAX_CHECKS ]; do
+            # Wait time: 30s, 60s, 90s, 120s, 150s, 180s (total ~10 min)
+            WAIT_TIME=$((30 * CHECK))
+            echo "[$CHECK/$MAX_CHECKS] Waiting ${WAIT_TIME}s then checking propagation..."
+            sleep $WAIT_TIME
+            
+            # Try to check if hash is available via public IPFS gateway
+            set +e
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+              "https://ipfs.io/ipfs/$IPFS_HASH" 2>/dev/null)
+            set -e
+            
+            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "302" ]; then
+              echo "✅ Content available on public IPFS gateway!"
+              PROPAGATED=true
+              break
+            else
+              echo "   Not yet available (HTTP $RESPONSE), continuing to wait..."
+            fi
+            
+            CHECK=$((CHECK + 1))
+          done
+          
+          if [ "$PROPAGATED" = "false" ]; then
+            echo ""
+            echo "⚠️ Could not confirm propagation via public gateway"
+            echo "   Proceeding anyway - The Graph may still be able to fetch it"
+          fi
+          
+          echo ""
+          echo "✅ Propagation wait complete"
+
       # Authenticate with The Graph Studio
-      # Each environment has its own Graph account (3 subgraph limit per account)
       - name: Authenticate with The Graph Studio
         working-directory: ./indexer
         env:
@@ -272,8 +361,7 @@ jobs:
           npx graph auth $GRAPH_DEPLOY_KEY
           echo "✅ Authentication successful"
 
-      # Deploy subgraph to The Graph Studio
-      # Note: graph deploy handles compilation and IPFS upload internally
+      # Deploy using --ipfs-hash (skips IPFS upload, uses pre-propagated content)
       - name: Deploy subgraph to Studio
         id: deploy
         working-directory: ./indexer
@@ -282,77 +370,61 @@ jobs:
           echo "   Environment: ${{ needs.build.outputs.environment }}"
           echo "   Subgraph:    ${{ needs.build.outputs.subgraph_name }}"
           echo "   Version:     ${{ needs.build.outputs.version }}"
-          echo "   Start time:  $(date -u +%Y-%m-%dT%H:%M:%S)Z"
+          echo "   IPFS Hash:   ${{ steps.ipfs_upload.outputs.ipfs_hash }}"
+          echo "   Method:      --ipfs-hash (skips IPFS upload)"
           echo ""
           
-          # Deploy with retry logic (deploy command handles build internally)
-          # Using 5 attempts with aggressive exponential backoff for IPFS rate limits
-          MAX_ATTEMPTS=5
-          ATTEMPT=1
           DEPLOY_START_TIME=$(date +%s)
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
           
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            ATTEMPT_START_TIME=$(date +%s)
             echo "================================================"
-            echo "📤 Deployment attempt $ATTEMPT of $MAX_ATTEMPTS"
-            echo "   Timestamp: $(date -u +%Y-%m-%dT%H:%M:%S)Z"
+            echo "📤 Deploy attempt $ATTEMPT of $MAX_ATTEMPTS"
             echo "================================================"
             
             set +e
             npx graph deploy ${{ needs.build.outputs.subgraph_name }} \
               --node https://api.studio.thegraph.com/deploy/ \
+              --ipfs-hash ${{ steps.ipfs_upload.outputs.ipfs_hash }} \
               --version-label ${{ needs.build.outputs.version }} 2>&1 | tee deploy_output.txt
             DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
             set -e
             
-            ATTEMPT_END_TIME=$(date +%s)
-            ATTEMPT_DURATION=$((ATTEMPT_END_TIME - ATTEMPT_START_TIME))
-            
-            # Extract deployment ID from output
-            DEPLOYMENT_ID=$(grep -oP 'Qm[a-zA-Z0-9]{44}' deploy_output.txt | tail -1 || echo "")
-            
-            # Check for "Version label already exists" - this means no changes, treat as success
+            # Check for "Version label already exists" - treat as success
             if grep -q "Version label already exists" deploy_output.txt; then
               echo ""
               echo "================================================"
               echo "✅ Version ${{ needs.build.outputs.version }} already deployed - no update needed"
-              echo "   Subgraph is current and synced"
               echo "================================================"
               
-              # Write to job summary
               echo "## ✅ No Update Needed" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "Version \`${{ needs.build.outputs.version }}\` is already deployed. The subgraph is current." >> $GITHUB_STEP_SUMMARY
+              echo "Version \`${{ needs.build.outputs.version }}\` is already deployed." >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
               echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
               echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
               echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
               echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Status | Already deployed |" >> $GITHUB_STEP_SUMMARY
+              echo "| IPFS Hash | \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\` |" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
               echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
               echo "- [🔍 Query Playground](https://api.studio.thegraph.com/query/${{ needs.build.outputs.graph_userid }}/${{ needs.build.outputs.subgraph_name }}/version/latest)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
               
-              # Set output for Slack notification
               echo "deploy_status=no_update" >> $GITHUB_OUTPUT
               exit 0
             fi
             
             if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
-              TOTAL_DURATION=$((ATTEMPT_END_TIME - DEPLOY_START_TIME))
+              TOTAL_DURATION=$(($(date +%s) - DEPLOY_START_TIME))
               echo ""
               echo "================================================"
               echo "✅ Subgraph deployed to The Graph Studio!"
-              echo "   Duration: ${ATTEMPT_DURATION}s"
-              if [ -n "$DEPLOYMENT_ID" ]; then
-                echo "   Deployment ID: $DEPLOYMENT_ID"
-              fi
+              echo "   Duration: ${TOTAL_DURATION}s"
               echo "================================================"
               
-              # Write success to job summary
               echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
@@ -360,52 +432,40 @@ jobs:
               echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
               echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
               echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Target | The Graph Studio |" >> $GITHUB_STEP_SUMMARY
+              echo "| IPFS Hash | \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\` |" >> $GITHUB_STEP_SUMMARY
               echo "| Duration | ${TOTAL_DURATION}s |" >> $GITHUB_STEP_SUMMARY
-              if [ -n "$DEPLOYMENT_ID" ]; then
-                echo "| Deployment ID | \`$DEPLOYMENT_ID\` |" >> $GITHUB_STEP_SUMMARY
-              fi
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
               echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
               
-              # Set output for Slack notification
               echo "deploy_status=deployed" >> $GITHUB_OUTPUT
               exit 0
             fi
             
-            echo "================================================"
             echo "❌ Attempt $ATTEMPT failed (exit code: $DEPLOY_EXIT_CODE)"
-            echo "================================================"
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              # Exponential backoff: 60s, 120s, 240s, 480s (total ~15 min if all fail)
-              WAIT_TIME=$((60 * (2 ** (ATTEMPT - 1))))
-              echo "⏳ Waiting ${WAIT_TIME}s before retry (exponential backoff)..."
+              WAIT_TIME=$((30 * ATTEMPT))
+              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
               sleep $WAIT_TIME
             fi
             
             ATTEMPT=$((ATTEMPT + 1))
           done
           
-          TOTAL_DURATION=$(($(date +%s) - DEPLOY_START_TIME))
           echo ""
-          echo "================================================"
           echo "❌ Deployment failed after $MAX_ATTEMPTS attempts"
-          echo "   Total duration: ${TOTAL_DURATION}s"
-          echo "================================================"
           
-          # Write failure to job summary
           echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Deployment failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
-          echo "1. Check The Graph Studio for errors" >> $GITHUB_STEP_SUMMARY
-          echo "2. Verify GRAPH_DEPLOY_KEY secret is set" >> $GITHUB_STEP_SUMMARY
-          echo "3. Re-run the workflow" >> $GITHUB_STEP_SUMMARY
+          echo "**IPFS Hash:** \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
+          echo "1. The Graph may not be able to fetch the IPFS content" >> $GITHUB_STEP_SUMMARY
+          echo "2. Try re-running the workflow (IPFS propagation is eventual)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check The Graph Studio for errors" >> $GITHUB_STEP_SUMMARY
           
           exit 1
 
