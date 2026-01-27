@@ -91,10 +91,11 @@ runs:
       run: |
         # Set environment emoji and label
         case "$ENVIRONMENT" in
-          dev)   ENV_EMOJI="🔧"; ENV_LABEL="DEV" ;;
-          stg)   ENV_EMOJI="🧪"; ENV_LABEL="STG" ;;
-          main)  ENV_EMOJI="🚀"; ENV_LABEL="PROD" ;;
-          *)     ENV_EMOJI="📦"; ENV_LABEL="${ENVIRONMENT^^}" ;;
+          dev)          ENV_EMOJI="🔧"; ENV_LABEL="DEV" ;;
+          stg)          ENV_EMOJI="🧪"; ENV_LABEL="STG" ;;
+          main)         ENV_EMOJI="🚀"; ENV_LABEL="PROD" ;;
+          infra|INFRA)  ENV_EMOJI="🏗️"; ENV_LABEL="INFRA" ;;
+          *)            ENV_EMOJI="📦"; ENV_LABEL="${ENVIRONMENT^^}" ;;
         esac
         
         # Set status emoji and color
@@ -103,6 +104,7 @@ runs:
           failure)   STATUS_EMOJI="❌"; COLOR="danger"; STATUS_TEXT="Deployment Failed" ;;
           cancelled) STATUS_EMOJI="⚠️"; COLOR="warning"; STATUS_TEXT="Deployment Cancelled" ;;
           skipped)   STATUS_EMOJI="⏭️"; COLOR="#808080"; STATUS_TEXT="Skipped" ;;
+          updated)   STATUS_EMOJI="📝"; COLOR="#4A90D9"; STATUS_TEXT="Code Updated" ;;
           *)         STATUS_EMOJI="ℹ️"; COLOR="#808080"; STATUS_TEXT="$STATUS" ;;
         esac
         
@@ -121,10 +123,9 @@ runs:
         COMMIT_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
         
         # Build header: ENV | repo | service | status
-        # Format: 🔧 DEV | proxy-smart-contracts | Market Maker | ✅ Deployed Successfully
         HEADER_TEXT="$ENV_EMOJI $ENV_LABEL | $REPO_SHORT | $SERVICE_NAME | $STATUS_EMOJI $STATUS_TEXT"
         
-        # Build fields array (removed repo and branch - now in header)
+        # Build fields array
         FIELDS=$(jq -n \
           --arg version "$VERSION" \
           --arg actor "$GITHUB_ACTOR" \
@@ -146,7 +147,7 @@ runs:
             '. + [{"type": "mrkdwn", "text": ("*Image:*\n`" + $img + "`")}]')
         fi
         
-        # Build commit section (just message, hash available via button)
+        # Build commit section
         COMMIT_TEXT="*Commit:* ${COMMIT_MSG}"
         
         # Build blocks array
@@ -209,3 +210,4 @@ runs:
           echo "Payload was:"
           echo "$PAYLOAD" | jq .
         fi
+
