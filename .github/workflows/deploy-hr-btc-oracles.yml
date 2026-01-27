@@ -34,64 +34,24 @@ jobs:
     name: 🔧 Setup
     runs-on: ubuntu-latest
     outputs:
-      environment: ${{ steps.env.outputs.environment }}
-      is_cicd_branch: ${{ steps.env.outputs.is_cicd_branch }}
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      environment: ${{ steps.gen_tag.outputs.environment }}
+      is_cicd_branch: ${{ steps.gen_tag.outputs.is_cicd_branch }}
+      version: ${{ steps.gen_tag.outputs.version }}
+      tag: ${{ steps.gen_tag.outputs.tag_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Determine environment
-        id: env
-        run: |
-          IS_CICD="false"
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            ENV="${{ github.event.inputs.environment }}"
-          else
-            BRANCH="${{ github.ref_name }}"
-            if [ "$BRANCH" == "main" ]; then
-              ENV="main"
-            elif [ "$BRANCH" == "stg" ]; then
-              ENV="stg"
-            elif [[ "$BRANCH" == cicd/* ]]; then
-              ENV="dev"
-              IS_CICD="true"
-              echo "🔧 CI/CD test branch - will skip build/deploy"
-            else
-              ENV="dev"
-            fi
-          fi
-          echo "environment=${ENV}" >> $GITHUB_OUTPUT
-          echo "is_cicd_branch=${IS_CICD}" >> $GITHUB_OUTPUT
-          echo "🎯 Target environment: ${ENV}"
+          fetch-tags: true
 
       - name: Generate version tag
-        id: version
-        run: |
-          LAST_TAG=$(git tag -l "subgraph-v*" | sort -V | tail -n 1)
-          
-          if [ -z "$LAST_TAG" ]; then
-            VERSION="2.0.0"
-          else
-            LAST_VERSION=$(echo $LAST_TAG | sed 's/subgraph-v//' | sed 's/-.*$//')
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
-            PATCH=$((PATCH + 1))
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          fi
-          
-          ENV="${{ steps.env.outputs.environment }}"
-          if [ "$ENV" != "main" ]; then
-            FULL_VERSION="v${VERSION}-${ENV}"
-          else
-            FULL_VERSION="v${VERSION}"
-          fi
-          
-          echo "version=${FULL_VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=subgraph-${FULL_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Version: ${FULL_VERSION}"
+        id: gen_tag
+        uses: ./.github/actions/gen-tag
+        with:
+          component: indexer
+          major_version: '3'
+          environment_override: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || '' }}
 
   build:
     name: 🔨 Build
@@ -525,13 +485,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create Git tag
-        if: needs.setup.outputs.environment == 'main' && needs.verify.result == 'success'
+      - name: Configure Git
+        if: needs.verify.result == 'success'
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git tag -a "${{ needs.setup.outputs.tag }}" -m "Release ${{ needs.setup.outputs.version }}"
-          git push origin "${{ needs.setup.outputs.tag }}"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        if: needs.verify.result == 'success'
+        run: |
+          TAG_NAME="${{ needs.setup.outputs.tag }}"
+          echo "🏷️ Creating tag after successful deployment: $TAG_NAME"
+          
+          # Check if tag already exists
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "⚠️ Tag $TAG_NAME already exists, skipping tag creation"
+          else
+            git tag -a "$TAG_NAME" -m "Release ${{ needs.setup.outputs.version }} - Deployed to ${{ needs.setup.outputs.environment }}"
+            git push origin "$TAG_NAME"
+            echo "✅ Tag $TAG_NAME created and pushed"
+          fi
 
       - name: Deployment summary
         if: needs.verify.result == 'success'
