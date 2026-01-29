@@ -8,35 +8,6 @@
 # CRITICAL PRIORITY ALARMS - Service Down / Data Loss
 ################################################################################
 
-# Graph Indexer - No Running Tasks
-resource "aws_cloudwatch_metric_alarm" "graph_indexer_down" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-indexer-down-${local.env_short}"
-  alarm_description   = "CRITICAL: Graph Indexer down for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "RunningTaskCount"
-  namespace           = "ECS/ContainerInsights"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.alarm_thresholds.ecs_min_running_tasks
-  treat_missing_data  = "breaching"
-
-  dimensions = {
-    ClusterName = "ecs-hashprice-oracle-${local.env_short}"
-    ServiceName = "svc-graph-indexer-${local.env_short}"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph Indexer Down Alarm"
-    Severity = "Critical"
-  })
-}
-
 # Spot Indexer - No Running Tasks
 resource "aws_cloudwatch_metric_alarm" "spot_indexer_down" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.spot_indexer.create) ? 1 : 0
@@ -102,10 +73,10 @@ resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
   alarm_name          = "hpo-oracle-stale-${local.env_short}"
   alarm_description   = "CRITICAL: Oracle on-chain data is STALE - exceeds ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.oracle_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
+  evaluation_periods  = local.oracle_alarm_evaluation_periods # unhealthy_alarm_period / check_rate
   metric_name         = "oracle_data_age_minutes"
   namespace           = local.monitoring_namespace
-  period              = local.oracle_staleness_check_period_seconds  # Match Lambda check rate
+  period              = local.oracle_staleness_check_period_seconds # Match Lambda check rate
   statistic           = "Maximum"
   threshold           = var.alarm_thresholds.oracle_stale_threshold_minutes
   treat_missing_data  = "breaching"
@@ -123,176 +94,9 @@ resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
   })
 }
 
-# RDS - Storage Critical
-resource "aws_cloudwatch_metric_alarm" "rds_storage_critical" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-rds-storage-critical-${local.env_short}"
-  alarm_description   = "CRITICAL: RDS storage low for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "FreeStorageSpace"
-  namespace           = "AWS/RDS"
-  period              = 300
-  statistic           = "Minimum"
-  threshold           = var.alarm_thresholds.rds_storage_threshold * 1073741824  # Convert GB to bytes
-  treat_missing_data  = "breaching"
-
-  dimensions = {
-    DBInstanceIdentifier = "graph-indexer-${local.env_short}-${var.region_shortname}-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO RDS Storage Critical Alarm"
-    Severity = "Critical"
-  })
-}
-
-# ALB - All Targets Unhealthy (Graph Indexer)
-resource "aws_cloudwatch_metric_alarm" "graph_alb_unhealthy" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-alb-unhealthy-${local.env_short}"
-  alarm_description   = "CRITICAL: Graph ALB unhealthy for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "UnHealthyHostCount"
-  namespace           = "AWS/ApplicationELB"
-  period              = 300
-  statistic           = "Maximum"
-  threshold           = var.alarm_thresholds.alb_unhealthy_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    LoadBalancer = data.aws_lb.graph_indexer[0].arn_suffix
-    TargetGroup  = "targetgroup/tg-graph-indexer-http-8000"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph ALB Unhealthy Alarm"
-    Severity = "Critical"
-  })
-}
-
 ################################################################################
 # WARNING PRIORITY ALARMS - Performance / Capacity
 ################################################################################
-
-# Graph Indexer - High CPU (using metric math for percentage)
-resource "aws_cloudwatch_metric_alarm" "graph_cpu_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-cpu-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph CPU >${var.alarm_thresholds.ecs_cpu_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  threshold           = var.alarm_thresholds.ecs_cpu_threshold
-  treat_missing_data  = "notBreaching"
-
-  metric_query {
-    id          = "cpu_percent"
-    expression  = "(cpu_used / cpu_reserved) * 100"
-    label       = "CPU Utilization %"
-    return_data = true
-  }
-
-  metric_query {
-    id = "cpu_used"
-    metric {
-      metric_name = "CpuUtilized"
-      namespace   = "ECS/ContainerInsights"
-      period      = 300
-      stat        = "Average"
-      dimensions = {
-        ClusterName = "ecs-hashprice-oracle-${local.env_short}"
-        ServiceName = "svc-graph-indexer-${local.env_short}"
-      }
-    }
-  }
-
-  metric_query {
-    id = "cpu_reserved"
-    metric {
-      metric_name = "CpuReserved"
-      namespace   = "ECS/ContainerInsights"
-      period      = 300
-      stat        = "Average"
-      dimensions = {
-        ClusterName = "ecs-hashprice-oracle-${local.env_short}"
-        ServiceName = "svc-graph-indexer-${local.env_short}"
-      }
-    }
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph CPU High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# Graph Indexer - High Memory (using metric math for percentage)
-resource "aws_cloudwatch_metric_alarm" "graph_memory_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-memory-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph Memory >${var.alarm_thresholds.ecs_memory_threshold}% for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  threshold           = var.alarm_thresholds.ecs_memory_threshold
-  treat_missing_data  = "notBreaching"
-
-  metric_query {
-    id          = "mem_percent"
-    expression  = "(mem_used / mem_reserved) * 100"
-    label       = "Memory Utilization %"
-    return_data = true
-  }
-
-  metric_query {
-    id = "mem_used"
-    metric {
-      metric_name = "MemoryUtilized"
-      namespace   = "ECS/ContainerInsights"
-      period      = 300
-      stat        = "Average"
-      dimensions = {
-        ClusterName = "ecs-hashprice-oracle-${local.env_short}"
-        ServiceName = "svc-graph-indexer-${local.env_short}"
-      }
-    }
-  }
-
-  metric_query {
-    id = "mem_reserved"
-    metric {
-      metric_name = "MemoryReserved"
-      namespace   = "ECS/ContainerInsights"
-      period      = 300
-      stat        = "Average"
-      dimensions = {
-        ClusterName = "ecs-hashprice-oracle-${local.env_short}"
-        ServiceName = "svc-graph-indexer-${local.env_short}"
-      }
-    }
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph Memory High Alarm"
-    Severity = "Warning"
-  })
-}
 
 # Spot Indexer - High CPU (using metric math for percentage)
 resource "aws_cloudwatch_metric_alarm" "spot_cpu_high" {
@@ -460,216 +264,40 @@ resource "aws_cloudwatch_metric_alarm" "oracle_throttled" {
   })
 }
 
-# RDS - High CPU
-resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-rds-cpu-high-${local.env_short}"
-  alarm_description   = "WARNING: RDS CPU high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/RDS"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.alarm_thresholds.rds_cpu_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    DBInstanceIdentifier = "graph-indexer-${local.env_short}-${var.region_shortname}-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO RDS CPU High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# RDS - High Connections
-resource "aws_cloudwatch_metric_alarm" "rds_connections_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-rds-connections-high-${local.env_short}"
-  alarm_description   = "WARNING: RDS connections high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "DatabaseConnections"
-  namespace           = "AWS/RDS"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.alarm_thresholds.rds_connections_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    DBInstanceIdentifier = "graph-indexer-${local.env_short}-${var.region_shortname}-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO RDS Connections High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# RDS - Storage Warning (2x threshold)
-resource "aws_cloudwatch_metric_alarm" "rds_storage_warning" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-rds-storage-warning-${local.env_short}"
-  alarm_description   = "WARNING: RDS storage low for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "FreeStorageSpace"
-  namespace           = "AWS/RDS"
-  period              = 300
-  statistic           = "Minimum"
-  threshold           = var.alarm_thresholds.rds_storage_threshold * 2 * 1073741824  # 2x threshold in bytes
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    DBInstanceIdentifier = "graph-indexer-${local.env_short}-${var.region_shortname}-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO RDS Storage Warning Alarm"
-    Severity = "Warning"
-  })
-}
-
-# Graph Indexer - Errors from metric filter
-resource "aws_cloudwatch_metric_alarm" "graph_errors_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_metric_filters && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-errors-high-${local.env_short}"
-  alarm_description   = "WARNING: Graph errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "graph_indexer_errors"
-  namespace           = local.monitoring_namespace
-  period              = 300
-  statistic           = "Sum"
-  threshold           = var.alarm_thresholds.graph_error_threshold
-  treat_missing_data  = "notBreaching"
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph Errors High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# Graph Indexer - Sync Lagging
-resource "aws_cloudwatch_metric_alarm" "graph_sync_lagging" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_metric_filters && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-sync-lagging-${local.env_short}"
-  alarm_description   = "WARNING: Graph sync lagging for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "graph_sync_lagging"
-  namespace           = local.monitoring_namespace
-  period              = 300
-  statistic           = "Sum"
-  threshold           = var.alarm_thresholds.graph_sync_lag_threshold
-  treat_missing_data  = "notBreaching"
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph Sync Lagging Alarm"
-    Severity = "Warning"
-  })
-}
-
-# ALB - 5xx Errors (Graph Indexer)
-resource "aws_cloudwatch_metric_alarm" "graph_alb_5xx" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-alb-5xx-${local.env_short}"
-  alarm_description   = "WARNING: Graph ALB 5xx errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "HTTPCode_ELB_5XX_Count"
-  namespace           = "AWS/ApplicationELB"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = var.alarm_thresholds.alb_5xx_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    LoadBalancer = data.aws_lb.graph_indexer[0].arn_suffix
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph ALB 5xx Alarm"
-    Severity = "Warning"
-  })
-}
-
-# ALB - High Latency (Graph Indexer)
-resource "aws_cloudwatch_metric_alarm" "graph_alb_latency" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-graph-alb-latency-${local.env_short}"
-  alarm_description   = "WARNING: Graph ALB latency high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "TargetResponseTime"
-  namespace           = "AWS/ApplicationELB"
-  period              = 300
-  extended_statistic  = "p95"
-  threshold           = var.alarm_thresholds.alb_latency_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    LoadBalancer = data.aws_lb.graph_indexer[0].arn_suffix
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Graph ALB Latency Alarm"
-    Severity = "Warning"
-  })
-}
-
 ################################################################################
-# SUBGRAPH HEALTH ALARMS (from health monitor Lambda)
+# THEGRAPH SUBGRAPH HEALTH ALARMS (from health monitor Lambda)
+# Per-subgraph alarms for: indexing errors, response time, data age
 ################################################################################
 
-# Subgraph Unhealthy - any subgraph reports unhealthy status
-resource "aws_cloudwatch_metric_alarm" "subgraph_unhealthy" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+locals {
+  # Subgraph names for per-subgraph alarms
+  thegraph_subgraphs = ["futures", "oracles"]
+
+  # Data age threshold in seconds (convert from minutes threshold)
+  thegraph_data_age_threshold_seconds = var.alarm_thresholds.oracle_stale_threshold_minutes * 60
+
+  # Response time threshold in milliseconds (5 seconds = concerning)
+  thegraph_response_time_threshold_ms = 5000
+}
+
+# TheGraph Unavailable - aggregate check that both subgraphs respond
+resource "aws_cloudwatch_metric_alarm" "thegraph_unavailable" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? 1 : 0
   provider            = aws.use1
-  alarm_name          = "hpo-subgraph-unhealthy-${local.env_short}"
-  alarm_description   = "CRITICAL: One or more subgraphs unhealthy for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
+  alarm_name          = "hpo-thegraph-unavailable-${local.env_short}"
+  alarm_description   = "CRITICAL: TheGraph subgraphs unavailable for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = local.subgraph_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
-  threshold           = 2  # Expected number of healthy subgraphs (futures + oracles)
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods
+  threshold           = 2 # Expected: both futures + oracles available
   treat_missing_data  = "breaching"
 
   metric_query {
-    id          = "healthy"
+    id          = "available"
     return_data = true
     metric {
-      metric_name = "subgraphs_healthy"
+      metric_name = "thegraph_subgraphs_available"
       namespace   = local.monitoring_namespace
-      period      = local.subgraph_alarm_period_seconds  # Match check rate
+      period      = local.subgraph_alarm_period_seconds
       stat        = "Minimum"
       dimensions = {
         Environment = local.env_short
@@ -677,47 +305,125 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_unhealthy" {
     }
   }
 
-  # No direct notifications - rolls up to graph_indexer composite alarm
   alarm_actions = []
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Subgraph Unhealthy Alarm"
+    Name     = "HPO TheGraph Unavailable Alarm"
     Severity = "Critical"
   })
 }
 
-# Subgraph Not Synced - any subgraph fell behind the chain
-resource "aws_cloudwatch_metric_alarm" "subgraph_not_synced" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-subgraph-not-synced-${local.env_short}"
-  alarm_description   = "WARNING: One or more subgraphs not synced for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = local.subgraph_alarm_evaluation_periods  # unhealthy_alarm_period / check_rate
-  threshold           = 2  # Expected number of synced subgraphs
-  treat_missing_data  = "breaching"
+#------------------------------------------------------------------------------
+# Per-Subgraph Indexing Errors Alarms
+#------------------------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "thegraph_indexing_errors" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+  provider = aws.use1
+
+  alarm_name          = "hpo-thegraph-${each.key}-indexing-errors-${local.env_short}"
+  alarm_description   = "WARNING: TheGraph ${each.key} subgraph reporting indexing errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods
+  threshold           = 0 # Any errors = alarm
+  treat_missing_data  = "notBreaching"
 
   metric_query {
-    id          = "synced"
+    id          = "errors"
     return_data = true
     metric {
-      metric_name = "subgraphs_synced"
+      metric_name = "thegraph_indexing_errors"
       namespace   = local.monitoring_namespace
-      period      = local.subgraph_alarm_period_seconds  # Match check rate
-      stat        = "Minimum"
+      period      = local.subgraph_alarm_period_seconds
+      stat        = "Maximum"
       dimensions = {
         Environment = local.env_short
+        Subgraph    = each.key
       }
     }
   }
 
-  # No direct notifications - rolls up to graph_indexer composite alarm
   alarm_actions = []
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Subgraph Not Synced Alarm"
+    Name     = "HPO TheGraph ${title(each.key)} Indexing Errors Alarm"
     Severity = "Warning"
+  })
+}
+
+#------------------------------------------------------------------------------
+# Per-Subgraph Response Time Alarms
+#------------------------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "thegraph_response_time" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+  provider = aws.use1
+
+  alarm_name          = "hpo-thegraph-${each.key}-slow-${local.env_short}"
+  alarm_description   = "WARNING: TheGraph ${each.key} subgraph response time > ${local.thegraph_response_time_threshold_ms}ms"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods
+  threshold           = local.thegraph_response_time_threshold_ms
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "response_time"
+    return_data = true
+    metric {
+      metric_name = "thegraph_response_time_ms"
+      namespace   = local.monitoring_namespace
+      period      = local.subgraph_alarm_period_seconds
+      stat        = "Average"
+      dimensions = {
+        Environment = local.env_short
+        Subgraph    = each.key
+      }
+    }
+  }
+
+  alarm_actions = []
+  ok_actions    = []
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO TheGraph ${title(each.key)} Slow Response Alarm"
+    Severity = "Warning"
+  })
+}
+
+#------------------------------------------------------------------------------
+# Per-Subgraph Data Age Alarms (staleness in seconds)
+#------------------------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "thegraph_data_stale" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+  provider = aws.use1
+
+  alarm_name          = "hpo-thegraph-${each.key}-stale-${local.env_short}"
+  alarm_description   = "CRITICAL: TheGraph ${each.key} subgraph data older than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods
+  threshold           = local.thegraph_data_age_threshold_seconds
+  treat_missing_data  = "breaching"
+
+  metric_query {
+    id          = "data_age"
+    return_data = true
+    metric {
+      metric_name = "thegraph_data_age_seconds"
+      namespace   = local.monitoring_namespace
+      period      = local.subgraph_alarm_period_seconds
+      stat        = "Maximum"
+      dimensions = {
+        Environment = local.env_short
+        Subgraph    = each.key
+      }
+    }
+  }
+
+  alarm_actions = []
+  ok_actions    = []
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO TheGraph ${title(each.key)} Data Stale Alarm"
+    Severity = "Critical"
   })
 }
