@@ -32,25 +32,6 @@ spot_indexer = {
   friendly_name   = "indexer"
 }
 
-graph_indexer = {
-  create                     = true
-  protect                    = false
-  imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
-  task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
-  task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
-  db_instance_class          = "db.t3.small"
-  db_allocated_storage       = 50
-  db_max_allocated_storage   = 200
-  db_backup_retention_period = 7
-  db_backup_window           = "03:00-04:00"
-  db_maintenance_window      = "sun:04:00-sun:05:00"
-  db_max_connections         = "200"
-  # RPC tuning - STG: balanced between dev speed and prod cost savings
-  rpc_polling_interval_ms    = "2000" # Poll every 1.5s
-  rpc_max_concurrent_receipts = "150" # Moderate concurrency
-}
-
 oracle_lambda = {
   create       = true
   protect      = false
