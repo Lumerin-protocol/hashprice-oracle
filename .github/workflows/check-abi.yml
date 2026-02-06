@@ -18,6 +18,9 @@ jobs:
   check-abi:
     name: 🔍 Verify ABIs are up-to-date
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
 
     steps:
       - name: Checkout code
@@ -34,15 +37,12 @@ jobs:
           cache-dependency-path: contracts/pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: ./contracts
         run: pnpm install --frozen-lockfile
 
       - name: Compile contracts and generate ABIs
-        working-directory: ./contracts
         run: pnpm compile
 
       - name: Check for ABI differences
-        working-directory: ./contracts
         run: |
           if [ -n "$(git diff --name-only -- abi/)" ]; then
             echo "::error::Generated ABIs do not match committed ABIs. Please run 'pnpm compile' in contracts/ and commit the updated ABI files."
