@@ -9,7 +9,7 @@ wallets = {
   hashrate_oracle_address = "0x2c1db79d2f3df568275c940dac81ad251871faf4"
   futures_address         = "0xe11594879beb6c28c67bc251aa5e26ce126b82ba"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+  btcusd_oracle_address   = "0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 
 }
 
