@@ -2,12 +2,17 @@
 pragma solidity >0.8.10;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract BTCPriceOracleMock is AggregatorV3Interface {
+contract BTCPriceOracleMock is AggregatorV3Interface, Ownable {
     uint8 _decimals = 8;
     int256 _price = 100 * int256(10 ** _decimals);
     uint256 _version = 0;
     string _description = "BTC Price Oracle Mock";
+    uint256 _updatedAt = 0;
+    uint80 _roundId = 0;
+
+    constructor() Ownable(msg.sender) { }
 
     function decimals() external view returns (uint8) {
         return _decimals;
@@ -34,11 +39,13 @@ contract BTCPriceOracleMock is AggregatorV3Interface {
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        return (0, _price, 0, 0, 0);
+        return (_roundId, _price, _updatedAt, _updatedAt, _roundId);
     }
 
     function setPrice(int256 price, uint8 ndecimals) external {
         _price = price;
         _decimals = ndecimals;
+        _updatedAt = block.timestamp;
+        _roundId++;
     }
 }

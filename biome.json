@@ -1,14 +1,14 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
   "overrides": [
     {
-      "include": [
-        "subgraph/src"
+      "includes": [
+        "indexer/src"
       ],
       "linter": {
         "rules": {
           "complexity": {
-            "noForEach": "off",
+            "noForEach": "off"
           },
           "style": {
             "useImportType": "off"
@@ -20,9 +20,6 @@
       }
     }
   ],
-  "organizeImports": {
-    "enabled": true
-  },
   "linter": {
     "enabled": true,
     "rules": {
@@ -43,5 +40,12 @@
     "enabled": false,
     "indentStyle": "space",
     "indentWidth": 2
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "off"
+      }
+    }
   }
 }
