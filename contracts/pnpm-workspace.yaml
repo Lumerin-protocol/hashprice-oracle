@@ -1,0 +1,6 @@
+onlyBuiltDependencies:
+  - '@arbitrum/nitro-contracts'
+  - '@cyfrin/aderyn'
+  - esbuild
+  - keccak
+  - secp256k1

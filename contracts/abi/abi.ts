@@ -94,6 +94,7 @@ export const hashrateOracleAbi = [
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'NotImplemented' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   {
     type: 'error',
@@ -196,6 +197,20 @@ export const hashrateOracleAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'decimals',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'description',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'getHashesForBTC',
     outputs: [
       {
@@ -247,6 +262,19 @@ export const hashrateOracleAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'uint80', type: 'uint80' }],
+    name: 'getRoundData',
+    outputs: [
+      { name: '', internalType: 'uint80', type: 'uint80' },
+      { name: '', internalType: 'int256', type: 'int256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint80', type: 'uint80' },
+    ],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'hashesForBTCTTL',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
@@ -258,6 +286,19 @@ export const hashrateOracleAbi = [
     name: 'initialize',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'latestRoundData',
+    outputs: [
+      { name: 'roundId', internalType: 'uint80', type: 'uint80' },
+      { name: 'answer', internalType: 'int256', type: 'int256' },
+      { name: 'startedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'updatedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'answeredInRound', internalType: 'uint80', type: 'uint80' },
+    ],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -329,6 +370,13 @@ export const hashrateOracleAbi = [
     name: 'upgradeToAndCall',
     outputs: [],
     stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'version',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
   },
 ] as const
 
