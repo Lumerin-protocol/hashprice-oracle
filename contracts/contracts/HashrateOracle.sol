@@ -12,7 +12,7 @@ import { Versionable } from "./Versionable.sol";
 /// @dev This contract provides functions to calculate hashrate requirements based on BTC price and mining difficulty
 contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, AggregatorV3Interface {
     AggregatorV3Interface public immutable btcTokenOracle;
-    uint8 private immutable oracleDecimals;
+    uint8 private immutable btcOracleDecimals;
     uint8 private immutable tokenDecimals;
 
     Result private hashesForBTC;
@@ -27,7 +27,7 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
     // 100 TH/s per day = 100 * 10^12 hashes/sec * 24 hours * 3600 sec/hour = 8.64 * 10^18 hashes/day
     uint256 private constant HASHES_PER_100_THS_PER_DAY = 864;
     uint256 private constant HASHES_PER_100_THS_PER_DAY_DECIMALS = 16;
-    string public constant VERSION = "3.0.3";
+    string public constant VERSION = "3.0.4";
 
     /// @dev deprecated
     struct Feed {
@@ -51,7 +51,7 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
     /// @param _tokenDecimals Number of decimals for the token that we are pricing in
     constructor(address _btcTokenOracleAddress, uint8 _tokenDecimals) {
         btcTokenOracle = AggregatorV3Interface(_btcTokenOracleAddress);
-        oracleDecimals = btcTokenOracle.decimals();
+        btcOracleDecimals = btcTokenOracle.decimals();
         tokenDecimals = _tokenDecimals;
         _disableInitializers();
     }
@@ -89,7 +89,7 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
             revert StaleData();
         }
 
-        return (hashesForBTC.value * (10 ** (BTC_DECIMALS + oracleDecimals - tokenDecimals))) / uint256(btcPrice);
+        return (hashesForBTC.value * (10 ** (BTC_DECIMALS + btcOracleDecimals - tokenDecimals))) / uint256(btcPrice);
     }
 
     /// @dev deprecated
@@ -102,13 +102,13 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
     /// @dev Deprecated. This function does not check for stale data
     function getHashesForTokenUnchecked() external view returns (uint256) {
         (, int256 btcPrice,,,) = btcTokenOracle.latestRoundData();
-        return (hashesForBTC.value * (10 ** (BTC_DECIMALS + oracleDecimals - tokenDecimals))) / uint256(btcPrice);
+        return (hashesForBTC.value * (10 ** (BTC_DECIMALS + btcOracleDecimals - tokenDecimals))) / uint256(btcPrice);
     }
 
     function getHashesForTokenV2() external view returns (uint256 value, uint256 updatedAt) {
         (, int256 btcPrice,, uint256 _updatedAt,) = btcTokenOracle.latestRoundData();
         uint256 price =
-            (hashesForBTC.value * (10 ** (BTC_DECIMALS + oracleDecimals - tokenDecimals))) / uint256(btcPrice);
+            (hashesForBTC.value * (10 ** (BTC_DECIMALS + btcOracleDecimals - tokenDecimals))) / uint256(btcPrice);
         uint256 timestamp = min(_updatedAt, hashesForBTC.updatedAt);
         return (price, timestamp);
     }
@@ -132,12 +132,12 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
         _;
     }
 
-    function decimals() external pure returns (uint8) {
+    function decimals() public pure returns (uint8) {
         return 8;
     }
 
     function description() external pure returns (string memory) {
-        return "Hashprice Oracle";
+        return "The price of 100 TH/s per day in USDC";
     }
 
     function version() external pure returns (uint256) {
@@ -162,7 +162,7 @@ contract HashrateOracle is UUPSUpgradeable, OwnableUpgradeable, Versionable, Agg
         // This gives the token price for a 100 TH/s per day contract
         uint256 price = (
             HASHES_PER_100_THS_PER_DAY * uint256(btcPrice)
-                * (10 ** (tokenDecimals + HASHES_PER_100_THS_PER_DAY_DECIMALS - BTC_DECIMALS - oracleDecimals))
+                * (10 ** (HASHES_PER_100_THS_PER_DAY_DECIMALS + decimals() - BTC_DECIMALS - btcOracleDecimals))
         ) / hashesForBTC.value;
 
         // Create a composite roundId that encodes information from both oracles
