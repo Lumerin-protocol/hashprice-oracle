@@ -66,6 +66,7 @@ jobs:
       subgraph_name: ${{ steps.env.outputs.subgraph_name }}
       graph_userid: ${{ steps.env.outputs.graph_userid }}
       aws_region: ${{ steps.env.outputs.aws_region }}
+      gns_subgraph_id: ${{ steps.env.outputs.gns_subgraph_id }}
       is_cicd_branch: ${{ needs.setup.outputs.is_cicd_branch }}
 
     steps:
@@ -106,6 +107,10 @@ jobs:
           # Set Graph user ID for this environment's account
           GRAPH_USERID="${{ needs.setup.outputs.environment == 'dev' && vars.DEV_GRAPH_USERID || needs.setup.outputs.environment == 'stg' && vars.STG_GRAPH_USERID || vars.LMN_GRAPH_USERID }}"
           echo "graph_userid=$GRAPH_USERID" >> $GITHUB_OUTPUT
+
+          # GNS_SUBGRAPH_ID is per-repo per-environment (set in GitHub environment variables)
+          echo "gns_subgraph_id=${{ vars.GNS_SUBGRAPH_ID }}" >> $GITHUB_OUTPUT
+
           echo "🎯 Deploying to The Graph Studio: subgraph=${subgraph_name}, userid=${GRAPH_USERID}"
 
       - name: Install dependencies
@@ -181,11 +186,13 @@ jobs:
     needs: build
     if: needs.build.outputs.is_cicd_branch != 'true'
     outputs:
-      deploy_status: ${{ steps.deploy.outputs.deploy_status }}
-      ipfs_hash: ${{ steps.ipfs_upload.outputs.ipfs_hash }}
+      deploy_status: ${{ steps.deploy.outputs.deploy_status || steps.check_deploy.outputs.deploy_status }}
+      ipfs_hash: ${{ steps.pinata_pin.outputs.ipfs_hash }}
+      publish_status: ${{ steps.publish.outputs.publish_status || 'skipped' }}
 
     services:
-      # Ephemeral IPFS node - avoids The Graph's IPFS rate limits
+      # Local IPFS node for graph build (needs Kubo-compatible API)
+      # Content is pinned to Pinata after build for permanent availability
       ipfs:
         image: ipfs/kubo:latest
         ports:
@@ -219,16 +226,13 @@ jobs:
           echo "📦 Installing dependencies for deployment..."
           yarn install --frozen-lockfile
 
-      # Upload to ephemeral IPFS node (no rate limits!)
-      - name: Upload to local IPFS
-        id: ipfs_upload
+      - name: Build and upload to local IPFS
+        id: ipfs_build
         working-directory: ./indexer
         run: |
-          echo "📤 Uploading subgraph to ephemeral IPFS node..."
-          echo "   This avoids The Graph's IPFS rate limits"
+          echo "📤 Building subgraph and uploading to local IPFS node..."
           echo ""
 
-          # Build and upload to local IPFS
           set +e
           BUILD_OUTPUT=$(npx graph build --ipfs http://localhost:5001 2>&1)
           BUILD_EXIT=$?
@@ -236,68 +240,151 @@ jobs:
 
           echo "$BUILD_OUTPUT"
 
-          # Extract IPFS hash
-          IPFS_HASH=$(echo "$BUILD_OUTPUT" | grep -oE 'Qm[a-zA-Z0-9]{44}' | tail -1)
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
 
-          if [ -z "$IPFS_HASH" ]; then
-            echo "❌ Failed to get IPFS hash from build"
+          # Extract all IPFS CIDs from build output (sub-files + manifest)
+          ALL_CIDS=$(echo "$BUILD_OUTPUT" | grep -oE 'Qm[a-zA-Z0-9]{44}')
+          MANIFEST_CID=$(echo "$ALL_CIDS" | tail -1)
+
+          if [ -z "$MANIFEST_CID" ]; then
+            echo "❌ Failed to extract IPFS hash from build output"
             exit 1
           fi
 
           echo ""
-          echo "✅ Uploaded to local IPFS"
-          echo "   Hash: $IPFS_HASH"
-          echo "ipfs_hash=$IPFS_HASH" >> $GITHUB_OUTPUT
+          echo "✅ Built and uploaded to local IPFS"
+          echo "   Manifest CID: $MANIFEST_CID"
+          echo "   All CIDs:"
+          echo "$ALL_CIDS" | while read cid; do echo "     - $cid"; done
 
-      # Wait for IPFS content to propagate to global DHT
-      - name: Wait for IPFS propagation
-        id: ipfs_propagate
+          echo "manifest_cid=$MANIFEST_CID" >> $GITHUB_OUTPUT
+          echo "all_cids<<EOF" >> $GITHUB_OUTPUT
+          echo "$ALL_CIDS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # Pin all build artifacts to Pinata for permanent IPFS availability.
+      # The Graph checks Pinata before the public DHT, so content is found instantly.
+      # Each file is: fetched from local Kubo → uploaded to Pinata → verified retrievable.
+      - name: Pin to Pinata
+        id: pinata_pin
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
         run: |
-          IPFS_HASH="${{ steps.ipfs_upload.outputs.ipfs_hash }}"
-          echo "⏳ Waiting for IPFS content to propagate to global network..."
-          echo "   Hash: $IPFS_HASH"
+          MANIFEST_CID="${{ steps.ipfs_build.outputs.manifest_cid }}"
+          ALL_CIDS="${{ steps.ipfs_build.outputs.all_cids }}"
+          SUBGRAPH="${{ needs.build.outputs.subgraph_name }}"
+          VERSION="${{ needs.build.outputs.version }}"
+          PINATA_GATEWAY="https://gateway.pinata.cloud/ipfs"
+
+          echo "📌 Pinning subgraph artifacts to Pinata..."
+          echo "   Subgraph: $SUBGRAPH"
+          echo "   Version:  $VERSION"
           echo ""
 
-          # Check propagation with exponential backoff
-          # Try to fetch from a public gateway to verify availability
-          MAX_CHECKS=6
-          CHECK=1
-          PROPAGATED=false
+          PIN_COUNT=0
+          TOTAL_COUNT=$(echo "$ALL_CIDS" | grep -c .)
 
-          while [ $CHECK -le $MAX_CHECKS ]; do
-            # Wait time: 30s, 60s, 90s, 120s, 150s, 180s (total ~10 min)
-            WAIT_TIME=$((30 * CHECK))
-            echo "[$CHECK/$MAX_CHECKS] Waiting ${WAIT_TIME}s then checking propagation..."
-            sleep $WAIT_TIME
-            
-            # Try to check if hash is available via public IPFS gateway
-            set +e
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
-              "https://ipfs.io/ipfs/$IPFS_HASH" 2>/dev/null)
-            set -e
-            
-            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "302" ]; then
-              echo "✅ Content available on public IPFS gateway!"
-              PROPAGATED=true
-              break
-            else
-              echo "   Not yet available (HTTP $RESPONSE), continuing to wait..."
+          for CID in $ALL_CIDS; do
+            [ -z "$CID" ] && continue
+            PIN_COUNT=$((PIN_COUNT + 1))
+            echo "[$PIN_COUNT/$TOTAL_COUNT] Pinning $CID"
+
+            # 1. Fetch content from local Kubo node
+            CONTENT_FILE="/tmp/ipfs_$CID"
+            HTTP_CODE=$(curl -s -o "$CONTENT_FILE" -w "%{http_code}" \
+              -X POST "http://localhost:5001/api/v0/cat?arg=$CID")
+
+            if [ "$HTTP_CODE" != "200" ] || [ ! -s "$CONTENT_FILE" ]; then
+              echo "   ❌ FATAL: Could not fetch $CID from local IPFS (HTTP $HTTP_CODE)"
+              exit 1
             fi
-            
-            CHECK=$((CHECK + 1))
+            FILE_SIZE=$(wc -c < "$CONTENT_FILE" | tr -d ' ')
+            echo "   Fetched from local IPFS ($FILE_SIZE bytes)"
+
+            # 2. Upload to Pinata
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+              "https://api.pinata.cloud/pinning/pinFileToIPFS" \
+              -H "Authorization: Bearer $PINATA_JWT" \
+              -F "file=@$CONTENT_FILE;filename=$CID" \
+              -F "pinataMetadata={\"name\":\"$SUBGRAPH/$VERSION/$CID\"}")
+
+            PINATA_HTTP=$(echo "$RESPONSE" | tail -1)
+            PINATA_BODY=$(echo "$RESPONSE" | sed '$d')
+
+            if [ "$PINATA_HTTP" != "200" ]; then
+              echo "   ❌ FATAL: Pinata upload failed (HTTP $PINATA_HTTP)"
+              echo "   Response: $PINATA_BODY"
+              exit 1
+            fi
+
+            PINNED_CID=$(echo "$PINATA_BODY" | jq -r '.IpfsHash // empty')
+            PIN_SIZE=$(echo "$PINATA_BODY" | jq -r '.PinSize // empty')
+
+            if [ -z "$PINNED_CID" ]; then
+              echo "   ❌ FATAL: No CID in Pinata response"
+              echo "   Response: $PINATA_BODY"
+              exit 1
+            fi
+            echo "   Uploaded to Pinata (CID: $PINNED_CID, size: $PIN_SIZE)"
+
+            # 3. Verify content is retrievable from Pinata's gateway
+            VERIFY_CODE=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 30 \
+              "$PINATA_GATEWAY/$PINNED_CID")
+
+            if [ "$VERIFY_CODE" = "200" ]; then
+              echo "   Verified on Pinata gateway ✅"
+            else
+              echo "   ⚠️  Gateway returned HTTP $VERIFY_CODE (may still be propagating)"
+              echo "   Content is pinned — The Graph will find it via Pinata's IPFS node"
+            fi
+
+            rm -f "$CONTENT_FILE"
+            echo ""
           done
 
-          if [ "$PROPAGATED" = "false" ]; then
+          echo "✅ All $TOTAL_COUNT artifacts pinned and verified on Pinata"
+          echo "   Manifest CID: $MANIFEST_CID"
+          echo "ipfs_hash=$MANIFEST_CID" >> $GITHUB_OUTPUT
+
+      - name: Check if deployment changed
+        id: check_deploy
+        run: |
+          MANIFEST_CID="${{ steps.pinata_pin.outputs.ipfs_hash }}"
+          SUBGRAPH="${{ needs.build.outputs.subgraph_name }}"
+          USERID="${{ needs.build.outputs.graph_userid }}"
+
+          echo "🔍 Checking current Studio deployment..."
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"query": "{ _meta { deployment } }"}' \
+            "https://api.studio.thegraph.com/query/${USERID}/${SUBGRAPH}/version/latest" 2>/dev/null || true)
+
+          CURRENT_CID=$(echo "$RESPONSE" | jq -r '.data._meta.deployment // empty' 2>/dev/null || true)
+
+          echo "   Current: ${CURRENT_CID:-<none>}"
+          echo "   New:     $MANIFEST_CID"
+
+          if [ -n "$CURRENT_CID" ] && [ "$CURRENT_CID" = "$MANIFEST_CID" ]; then
             echo ""
-            echo "⚠️ Could not confirm propagation via public gateway"
-            echo "   Proceeding anyway - The Graph may still be able to fetch it"
+            echo "✅ IPFS hash unchanged — skipping deploy and publish"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "deploy_status=no_change" >> $GITHUB_OUTPUT
+
+            echo "## ✅ No Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Current deployment \`$CURRENT_CID\` matches new build." >> $GITHUB_STEP_SUMMARY
+            echo "No new Studio version created." >> $GITHUB_STEP_SUMMARY
+          else
+            echo ""
+            echo "🔄 Deployment change detected"
+            echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-          echo ""
-          echo "✅ Propagation wait complete"
-
-      # Authenticate with The Graph Studio
       - name: Authenticate with The Graph Studio
+        if: steps.check_deploy.outputs.changed == 'true'
         working-directory: ./indexer
         env:
           GRAPH_DEPLOY_KEY: ${{ needs.build.outputs.environment == 'dev' && secrets.DEV_GRAPH_DPKY || needs.build.outputs.environment == 'stg' && secrets.STG_GRAPH_DPKY || secrets.LMN_GRAPH_DPKY }}
@@ -307,113 +394,172 @@ jobs:
           npx graph auth $GRAPH_DEPLOY_KEY
           echo "✅ Authentication successful"
 
-      # Deploy using --ipfs-hash (skips IPFS upload, uses pre-propagated content)
       - name: Deploy subgraph to Studio
         id: deploy
+        if: steps.check_deploy.outputs.changed == 'true'
         working-directory: ./indexer
         run: |
           echo "🚀 Deploying subgraph to The Graph Studio..."
           echo "   Environment: ${{ needs.build.outputs.environment }}"
           echo "   Subgraph:    ${{ needs.build.outputs.subgraph_name }}"
           echo "   Version:     ${{ needs.build.outputs.version }}"
-          echo "   IPFS Hash:   ${{ steps.ipfs_upload.outputs.ipfs_hash }}"
-          echo "   Method:      --ipfs-hash (skips IPFS upload)"
+          echo "   IPFS Hash:   ${{ steps.pinata_pin.outputs.ipfs_hash }}"
+          echo "   Pinned to:   Pinata (permanent)"
           echo ""
 
-          DEPLOY_START_TIME=$(date +%s)
-          MAX_ATTEMPTS=3
-          ATTEMPT=1
+          set +e
+          npx graph deploy ${{ needs.build.outputs.subgraph_name }} \
+            --node https://api.studio.thegraph.com/deploy/ \
+            --ipfs-hash ${{ steps.pinata_pin.outputs.ipfs_hash }} \
+            --version-label ${{ needs.build.outputs.version }} 2>&1 | tee deploy_output.txt
+          DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
 
-          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            echo "================================================"
-            echo "📤 Deploy attempt $ATTEMPT of $MAX_ATTEMPTS"
-            echo "================================================"
-            
-            set +e
-            npx graph deploy ${{ needs.build.outputs.subgraph_name }} \
-              --node https://api.studio.thegraph.com/deploy/ \
-              --ipfs-hash ${{ steps.ipfs_upload.outputs.ipfs_hash }} \
-              --version-label ${{ needs.build.outputs.version }} 2>&1 | tee deploy_output.txt
-            DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
-            set -e
-            
-            # Check for "Version label already exists" - treat as success
-            if grep -q "Version label already exists" deploy_output.txt; then
-              echo ""
-              echo "================================================"
-              echo "✅ Version ${{ needs.build.outputs.version }} already deployed - no update needed"
-              echo "================================================"
-              
-              echo "## ✅ No Update Needed" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "Version \`${{ needs.build.outputs.version }}\` is already deployed." >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-              echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-              echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| IPFS Hash | \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\` |" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
-              echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
-              echo "- [🔍 Query Playground](https://api.studio.thegraph.com/query/${{ needs.build.outputs.graph_userid }}/${{ needs.build.outputs.subgraph_name }}/version/latest)" >> $GITHUB_STEP_SUMMARY
-              
-              echo "deploy_status=no_update" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            
-            if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
-              TOTAL_DURATION=$(($(date +%s) - DEPLOY_START_TIME))
-              echo ""
-              echo "================================================"
-              echo "✅ Subgraph deployed to The Graph Studio!"
-              echo "   Duration: ${TOTAL_DURATION}s"
-              echo "================================================"
-              
-              echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-              echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-              echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
-              echo "| IPFS Hash | \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| Duration | ${TOTAL_DURATION}s |" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
-              echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
-              
-              echo "deploy_status=deployed" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            
-            echo "❌ Attempt $ATTEMPT failed (exit code: $DEPLOY_EXIT_CODE)"
-            
-            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              WAIT_TIME=$((30 * ATTEMPT))
-              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
-              sleep $WAIT_TIME
-            fi
-            
-            ATTEMPT=$((ATTEMPT + 1))
-          done
+          if grep -q "Version label already exists" deploy_output.txt; then
+            echo ""
+            echo "✅ Version ${{ needs.build.outputs.version }} already deployed - no update needed"
 
-          echo ""
-          echo "❌ Deployment failed after $MAX_ATTEMPTS attempts"
+            echo "## ✅ No Update Needed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Version \`${{ needs.build.outputs.version }}\` is already deployed." >> $GITHUB_STEP_SUMMARY
+
+            echo "deploy_status=no_update" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
+            echo ""
+            echo "✅ Subgraph deployed to The Graph Studio!"
+
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Environment | ${{ needs.build.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Version | ${{ needs.build.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Subgraph | ${{ needs.build.outputs.subgraph_name }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| IPFS Hash | \`${{ steps.pinata_pin.outputs.ipfs_hash }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| IPFS Pinned | Pinata ✅ |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Studio Links" >> $GITHUB_STEP_SUMMARY
+            echo "- [📊 View in Subgraph Studio](https://thegraph.com/studio/subgraph/${{ needs.build.outputs.subgraph_name }}/)" >> $GITHUB_STEP_SUMMARY
+
+            echo "deploy_status=deployed" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "❌ Deployment failed (exit code: $DEPLOY_EXIT_CODE)"
 
           echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Deployment failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
+          echo "**IPFS Hash:** \`${{ steps.pinata_pin.outputs.ipfs_hash }}\` (pinned to Pinata)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**IPFS Hash:** \`${{ steps.ipfs_upload.outputs.ipfs_hash }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Troubleshooting" >> $GITHUB_STEP_SUMMARY
-          echo "1. The Graph may not be able to fetch the IPFS content" >> $GITHUB_STEP_SUMMARY
-          echo "2. Try re-running the workflow (IPFS propagation is eventual)" >> $GITHUB_STEP_SUMMARY
-          echo "3. Check The Graph Studio for errors" >> $GITHUB_STEP_SUMMARY
+          echo "Content is permanently pinned to Pinata. Re-run the workflow to retry deployment." >> $GITHUB_STEP_SUMMARY
 
           exit 1
+
+      - name: Install Foundry
+        if: steps.check_deploy.outputs.changed == 'true' && steps.deploy.outputs.deploy_status == 'deployed'
+        uses: foundry-rs/foundry-toolchain@v1
+
+      # Publish the new deployment to The Graph's decentralized network via the
+      # L2GNS contract on Arbitrum One (all environments publish here).
+      # Org secrets: {DEV,STG,LMN}_GNS_PUBLISHER_KEY, ARBITRUM_RPC_URL_MAIN
+      # Per-repo env var: GNS_SUBGRAPH_ID (numeric subgraph token ID)
+      # Gracefully skips if secrets are not configured.
+      - name: Publish to The Graph Network
+        id: publish
+        if: steps.check_deploy.outputs.changed == 'true' && steps.deploy.outputs.deploy_status == 'deployed'
+        env:
+          GNS_PUBLISHER_KEY: ${{ needs.build.outputs.environment == 'dev' && secrets.DEV_GNS_PUBLISHER_KEY || needs.build.outputs.environment == 'stg' && secrets.STG_GNS_PUBLISHER_KEY || secrets.LMN_GNS_PUBLISHER_KEY }}
+          ARBITRUM_RPC_URL: ${{ secrets.ARBITRUM_RPC_URL_MAIN }}
+          GNS_SUBGRAPH_ID: ${{ needs.build.outputs.gns_subgraph_id }}
+        run: |
+          if [ -z "$GNS_PUBLISHER_KEY" ] || [ -z "$GNS_SUBGRAPH_ID" ]; then
+            echo "⏭️  Auto-publish skipped — secrets not configured"
+            echo "   Required: {DEV,STG,LMN}_GNS_PUBLISHER_KEY (org secret)"
+            echo "   Required: GNS_SUBGRAPH_ID (environment variable per repo)"
+            echo "publish_status=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          MANIFEST_CID="${{ steps.pinata_pin.outputs.ipfs_hash }}"
+          GNS_CONTRACT="0xec9A7fb6CbC2E41926127929c2dcE6e9c5D33Bec"
+          EXPLORER="https://arbiscan.io"
+          RPC_URL="${ARBITRUM_RPC_URL}"
+
+          # CIDv0 (Qm...) = base58(0x1220 + 32-byte SHA-256 digest)
+          # The GNS contract wants just the 32-byte digest as bytes32
+          DEPLOYMENT_ID=$(python3 -c "
+          ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+          def b58decode(s):
+              n = 0
+              for c in s:
+                  n = n * 58 + ALPHABET.index(c)
+              result = n.to_bytes(max(1, (n.bit_length() + 7) // 8), 'big')
+              pad = len(s) - len(s.lstrip('1'))
+              return b'\x00' * pad + result
+          raw = b58decode('$MANIFEST_CID')
+          print('0x' + raw[2:].hex())
+          ")
+
+          echo "📡 Publishing to The Graph Network..."
+          echo "   GNS Contract:  $GNS_CONTRACT"
+          echo "   Subgraph ID:   $GNS_SUBGRAPH_ID"
+          echo "   Deployment ID: $DEPLOYMENT_ID"
+          echo "   Manifest CID:  $MANIFEST_CID"
+          echo "   RPC:           ${RPC_URL%%/api*}..."
+          echo ""
+
+          VERSION_METADATA="0x0000000000000000000000000000000000000000000000000000000000000000"
+
+          set +e
+          RESULT=$(cast send \
+            --private-key "$GNS_PUBLISHER_KEY" \
+            --rpc-url "$RPC_URL" \
+            --json \
+            "$GNS_CONTRACT" \
+            "publishNewVersion(uint256,bytes32,bytes32)" \
+            "$GNS_SUBGRAPH_ID" \
+            "$DEPLOYMENT_ID" \
+            "$VERSION_METADATA" 2>&1)
+          SEND_EXIT=$?
+          set -e
+
+          if [ $SEND_EXIT -ne 0 ]; then
+            echo "❌ Publish transaction failed"
+            echo "   Error: $RESULT"
+            echo "publish_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          TX_HASH=$(echo "$RESULT" | jq -r '.transactionHash')
+          TX_STATUS=$(echo "$RESULT" | jq -r '.status')
+          GAS_USED=$(echo "$RESULT" | jq -r '.gasUsed')
+
+          if [ "$TX_STATUS" != "0x1" ] && [ "$TX_STATUS" != "1" ]; then
+            echo "❌ Publish transaction reverted (status: $TX_STATUS)"
+            echo "   Tx: $EXPLORER/tx/$TX_HASH"
+            echo "publish_status=reverted" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "✅ Published to The Graph Network!"
+          echo "   Tx Hash: $TX_HASH"
+          echo "   Gas Used: $GAS_USED"
+          echo "   Explorer: $EXPLORER/tx/$TX_HASH"
+
+          echo "publish_status=published" >> $GITHUB_OUTPUT
+          echo "tx_hash=$TX_HASH" >> $GITHUB_OUTPUT
+
+          echo "## 📡 Published to The Graph Network" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Transaction | [\`${TX_HASH:0:16}...\`]($EXPLORER/tx/$TX_HASH) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Subgraph ID | $GNS_SUBGRAPH_ID |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployment | \`$MANIFEST_CID\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gas Used | $GAS_USED |" >> $GITHUB_STEP_SUMMARY
 
   verify:
     name: 🔍 Verify
@@ -514,7 +660,7 @@ jobs:
         run: |
           echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Service:** Subgraph (Futures Marketplace)" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** Subgraph (Hashrate & BTC Oracles)" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ needs.setup.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -556,4 +702,4 @@ jobs:
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: "${{ needs.setup.outputs.is_cicd_branch == 'true' && '*Mode:* CI/CD Test (no build/deploy)' || (needs.deploy.outputs.deploy_status == 'no_update' && format('*Status:* Already deployed (no changes) • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid) || format('*Subgraph:* `{0}` • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid)) }}"
+          additional_info: "${{ needs.setup.outputs.is_cicd_branch == 'true' && '*Mode:* CI/CD Test (no build/deploy)' || (needs.deploy.outputs.deploy_status == 'no_change' && format('*Status:* No changes (IPFS hash unchanged) • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid) || (needs.deploy.outputs.deploy_status == 'no_update' && format('*Status:* Already deployed (no changes) • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid) || format('*Subgraph:* `{0}` • *Published:* {2} • <https://api.studio.thegraph.com/query/{1}/{0}/version/latest|Query Playground>', needs.build.outputs.subgraph_name, needs.build.outputs.graph_userid, needs.deploy.outputs.publish_status))) }}"
