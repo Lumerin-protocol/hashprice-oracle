@@ -52,13 +52,13 @@ export const btcPriceOracleMockAbi = [
     inputs: [{ name: '', internalType: 'uint80', type: 'uint80' }],
     name: 'getRoundData',
     outputs: [
-      { name: 'roundId', internalType: 'uint80', type: 'uint80' },
-      { name: 'answer', internalType: 'int256', type: 'int256' },
-      { name: 'startedAt', internalType: 'uint256', type: 'uint256' },
-      { name: 'updatedAt', internalType: 'uint256', type: 'uint256' },
-      { name: 'answeredInRound', internalType: 'uint80', type: 'uint80' },
+      { name: '', internalType: 'uint80', type: 'uint80' },
+      { name: '', internalType: 'int256', type: 'int256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint80', type: 'uint80' },
     ],
-    stateMutability: 'view',
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -89,11 +89,28 @@ export const btcPriceOracleMockAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'price', internalType: 'int256', type: 'int256' },
-      { name: 'ndecimals', internalType: 'uint8', type: 'uint8' },
-    ],
+    inputs: [{ name: 'newDecimals', internalType: 'uint8', type: 'uint8' }],
+    name: 'setDecimals',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'price', internalType: 'int256', type: 'int256' }],
     name: 'setPrice',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'roundId', internalType: 'uint80', type: 'uint80' },
+      { name: 'answer', internalType: 'int256', type: 'int256' },
+      { name: 'startedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'updatedAt', internalType: 'uint256', type: 'uint256' },
+      { name: 'answeredInRound', internalType: 'uint80', type: 'uint80' },
+    ],
+    name: 'setRound',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -437,6 +454,17 @@ export const hashrateOracleAbi = [
 
 export const usdcMockAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
+  { type: 'error', inputs: [], name: 'ECDSAInvalidSignature' },
+  {
+    type: 'error',
+    inputs: [{ name: 'length', internalType: 'uint256', type: 'uint256' }],
+    name: 'ECDSAInvalidSignatureLength',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 's', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ECDSAInvalidSignatureS',
+  },
   {
     type: 'error',
     inputs: [
@@ -476,6 +504,33 @@ export const usdcMockAbi = [
     name: 'ERC20InvalidSpender',
   },
   {
+    type: 'error',
+    inputs: [{ name: 'deadline', internalType: 'uint256', type: 'uint256' }],
+    name: 'ERC2612ExpiredSignature',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'signer', internalType: 'address', type: 'address' },
+      { name: 'owner', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC2612InvalidSigner',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'account', internalType: 'address', type: 'address' },
+      { name: 'currentNonce', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InvalidAccountNonce',
+  },
+  { type: 'error', inputs: [], name: 'InvalidShortString' },
+  {
+    type: 'error',
+    inputs: [{ name: 'str', internalType: 'string', type: 'string' }],
+    name: 'StringTooLong',
+  },
+  {
     type: 'event',
     anonymous: false,
     inputs: [
@@ -500,6 +555,7 @@ export const usdcMockAbi = [
     ],
     name: 'Approval',
   },
+  { type: 'event', anonymous: false, inputs: [], name: 'EIP712DomainChanged' },
   {
     type: 'event',
     anonymous: false,
@@ -514,6 +570,13 @@ export const usdcMockAbi = [
       },
     ],
     name: 'Transfer',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'DOMAIN_SEPARATOR',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -552,9 +615,46 @@ export const usdcMockAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'eip712Domain',
+    outputs: [
+      { name: 'fields', internalType: 'bytes1', type: 'bytes1' },
+      { name: 'name', internalType: 'string', type: 'string' },
+      { name: 'version', internalType: 'string', type: 'string' },
+      { name: 'chainId', internalType: 'uint256', type: 'uint256' },
+      { name: 'verifyingContract', internalType: 'address', type: 'address' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'extensions', internalType: 'uint256[]', type: 'uint256[]' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'name',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'nonces',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'owner', internalType: 'address', type: 'address' },
+      { name: 'spender', internalType: 'address', type: 'address' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
+      { name: 'v', internalType: 'uint8', type: 'uint8' },
+      { name: 'r', internalType: 'bytes32', type: 'bytes32' },
+      { name: 's', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'permit',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',

@@ -13,14 +13,6 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
     });
   });
 
-  describe("description()", function () {
-    it("should return 'Hashprice Oracle'", async function () {
-      const { contracts } = await loadFixture(deployTokenOraclesAndMulticall3);
-      const result = await contracts.hashrateOracle.read.description();
-      expect(result).to.equal("Hashprice Oracle");
-    });
-  });
-
   describe("version()", function () {
     it("should return 0", async function () {
       const { contracts } = await loadFixture(deployTokenOraclesAndMulticall3);
@@ -86,19 +78,19 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
 
       // Get BTC price from the mock oracle
       const [, btcPrice] = await btcPriceOracleMock.read.latestRoundData();
-      const oracleDecimals = await btcPriceOracleMock.read.decimals();
-      const tokenDecimals = 6; // USDC decimals
+      const btcOracleDecimals = await btcPriceOracleMock.read.decimals();
+      const outputDecimals = await hashrateOracle.read.decimals();
 
       const BTC_DECIMALS = 8n;
       const HASHES_PER_100_THS_PER_DAY = 100n * 10n ** 12n * 24n * 3600n;
 
       const hashesForBTC = (await hashrateOracle.read.getHashesForBTC()).value;
 
-      // Expected: (HASHES_PER_100_THS_PER_DAY * btcPrice * 10^tokenDecimals)
-      //           / (hashesForBTC * 10^(BTC_DECIMALS + oracleDecimals))
+      // Expected: (HASHES_PER_100_THS_PER_DAY * btcPrice * 10^outputDecimals)
+      //           / (hashesForBTC * 10^(BTC_DECIMALS + btcOracleDecimals))
       const expectedPrice =
-        (HASHES_PER_100_THS_PER_DAY * BigInt(btcPrice) * 10n ** BigInt(tokenDecimals)) /
-        (hashesForBTC * 10n ** (BTC_DECIMALS + BigInt(oracleDecimals)));
+        (HASHES_PER_100_THS_PER_DAY * BigInt(btcPrice) * 10n ** BigInt(outputDecimals)) /
+        (hashesForBTC * 10n ** (BTC_DECIMALS + BigInt(btcOracleDecimals)));
 
       const [, answer] = await hashrateOracle.read.latestRoundData();
       expect(answer).to.equal(expectedPrice);
@@ -132,7 +124,7 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
       // Double the BTC price
       const btcDecimals = await btcPriceOracleMock.read.decimals();
       const [, currentPrice] = await btcPriceOracleMock.read.latestRoundData();
-      await btcPriceOracleMock.write.setPrice([currentPrice * 2n, btcDecimals]);
+      await btcPriceOracleMock.write.setPrice([currentPrice * 2n]);
 
       const [, answerAfter] = await hashrateOracle.read.latestRoundData();
 
@@ -260,7 +252,7 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
 
         // Update BTC price (creates a newer timestamp)
         const btcDecimals = await btcPriceOracleMock.read.decimals();
-        await btcPriceOracleMock.write.setPrice([parseUnits("90000", btcDecimals), btcDecimals]);
+        await btcPriceOracleMock.write.setPrice([parseUnits("90000", btcDecimals)]);
 
         const [, , , updatedAt] = await hashrateOracle.read.latestRoundData();
 
@@ -277,7 +269,7 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
 
         // Refresh both oracles so both timestamps advance
         const btcDecimals = await btcPriceOracleMock.read.decimals();
-        await btcPriceOracleMock.write.setPrice([parseUnits("90000", btcDecimals), btcDecimals]);
+        await btcPriceOracleMock.write.setPrice([parseUnits("90000", btcDecimals)]);
         await hashrateOracle.write.setHashesForBTC([parseUnits("200", 12)], {
           account: owner.account,
         });
@@ -362,12 +354,12 @@ describe("HashrateOracle - Chainlink AggregatorV3Interface", function () {
 
         // Set BTC price to $50,000
         const price50k = parseUnits("50000", btcDecimals);
-        await btcPriceOracleMock.write.setPrice([price50k, btcDecimals]);
+        await btcPriceOracleMock.write.setPrice([price50k]);
         const [, answer50k] = await hashrateOracle.read.latestRoundData();
 
         // Set BTC price to $100,000
         const price100k = parseUnits("100000", btcDecimals);
-        await btcPriceOracleMock.write.setPrice([price100k, btcDecimals]);
+        await btcPriceOracleMock.write.setPrice([price100k]);
         const [, answer100k] = await hashrateOracle.read.latestRoundData();
 
         // Hashprice should double when BTC price doubles

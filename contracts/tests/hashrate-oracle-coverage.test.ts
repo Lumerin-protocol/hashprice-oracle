@@ -190,16 +190,16 @@ describe("HashrateOracle Coverage Tests", function () {
     const { contracts, config } = await loadFixture(deployTokenOraclesAndMulticall3);
     const hashrateOracle = contracts.hashrateOracle;
 
-    const { btcPrice, decimals } = config.oracle;
+    const { btcPrice } = config.oracle;
+    const btcOracleDecimals = await contracts.btcPriceOracleMock.read.decimals();
 
     // Get reward in token
     const hashesForToken = await hashrateOracle.read.getHashesforToken();
     const hashesForBTC = await hashrateOracle.read.getHashesForBTC();
 
-    // oracle has its own decimals
     const btcDecimals = 8;
     const usdcDecimals = 6;
-    const resultDecimals = btcDecimals - usdcDecimals + decimals;
+    const resultDecimals = btcDecimals - usdcDecimals + btcOracleDecimals;
     const result = (Number(hashesForBTC.value) / Number(btcPrice)) * 10 ** resultDecimals;
 
     expect(Number(hashesForToken)).to.approximately(result, 1);
@@ -280,7 +280,7 @@ describe("HashrateOracle Coverage Tests", function () {
     const hashrateOracle = contracts.hashrateOracle;
 
     await contracts.hashrateOracle.write.setHashesForBTC([1720236047322671n]);
-    await contracts.btcPriceOracleMock.write.setPrice([70590000000n, 6]);
+    await contracts.btcPriceOracleMock.write.setPrice([7059000000000n]);
 
     const [, price] = await hashrateOracle.read.latestRoundData();
     const decimals = await hashrateOracle.read.decimals();

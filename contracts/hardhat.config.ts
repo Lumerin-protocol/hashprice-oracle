@@ -5,7 +5,7 @@ import "@nomiclabs/hardhat-ethers";
 import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-abi-exporter";
-import "dotenv/config";
+import dotenv from "dotenv";
 import "@nomicfoundation/hardhat-viem";
 import "hardhat-storage-layout";
 import "hardhat-gas-reporter";
@@ -14,6 +14,8 @@ import chai from "chai";
 import chaiAsPromised from "chai-as-promised";
 
 chai.use(chaiAsPromised);
+
+dotenv.config({ path: "../.env" });
 
 // Base config is used for local deployment and/or contract build
 const config: HardhatUserConfig = {
