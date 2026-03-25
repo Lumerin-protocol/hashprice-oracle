@@ -1,14 +1,10 @@
 ################################################################################
-# THEGRAPH SUBGRAPH HEALTH MONITOR
-# Lambda to query TheGraph Gateway endpoints for health and data freshness
-# Uses production Gateway with API key from Secrets Manager
+# GOLDSKY SUBGRAPH HEALTH MONITOR
+# Lambda to query Goldsky public endpoints for health and data freshness
 ################################################################################
 
 locals {
   subgraph_health_monitor_name = "hpo-subgraph-health-${local.env_short}"
-
-  # TheGraph Gateway base URL
-  thegraph_gateway_base = "https://gateway.thegraph.com/api"
 }
 
 ################################################################################
@@ -30,7 +26,7 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
   count         = local.should_create_subgraph_monitor ? 1 : 0
   provider      = aws.use1
   function_name = local.subgraph_health_monitor_name
-  description   = "Monitors TheGraph Gateway subgraph health via _meta queries"
+  description   = "Monitors Goldsky subgraph health via _meta queries"
   role          = aws_iam_role.monitoring_lambda[0].arn
   handler       = "72_subgraph_health_monitor.lambda_handler"
   runtime       = "python3.12"
@@ -42,10 +38,11 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
 
   environment {
     variables = {
-      THEGRAPH_GATEWAY_BASE = local.thegraph_gateway_base
-      THEGRAPH_SECRET_ARN   = aws_secretsmanager_secret.thegraph_monitor[0].arn
-      CW_NAMESPACE          = local.monitoring_namespace
-      ENVIRONMENT           = local.env_short
+      GS_FUTURES_URL     = var.gs_subgraphs.futures
+      GS_ORACLES_URL     = var.gs_subgraphs.oracles
+      GS_DERIVATIVES_URL = var.gs_subgraphs.derivatives
+      CW_NAMESPACE       = local.monitoring_namespace
+      ENVIRONMENT        = local.env_short
     }
   }
 
@@ -53,7 +50,7 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
     var.default_tags,
     var.foundation_tags,
     {
-      Name       = "HPO TheGraph Subgraph Health Monitor"
+      Name       = "HPO Goldsky Subgraph Health Monitor"
       Capability = "Monitoring"
     }
   )
@@ -69,14 +66,14 @@ resource "aws_cloudwatch_event_rule" "subgraph_health_monitor" {
   count               = local.should_create_subgraph_monitor ? 1 : 0
   provider            = aws.use1
   name                = "${local.subgraph_health_monitor_name}-schedule"
-  description         = "Trigger TheGraph Subgraph Health Monitor every ${var.monitoring_schedule.subgraph_health_rate_minutes} minutes"
+  description         = "Trigger Goldsky Subgraph Health Monitor every ${var.monitoring_schedule.subgraph_health_rate_minutes} minutes"
   schedule_expression = "rate(${var.monitoring_schedule.subgraph_health_rate_minutes} minutes)"
 
   tags = merge(
     var.default_tags,
     var.foundation_tags,
     {
-      Name       = "HPO TheGraph Subgraph Health Monitor Schedule"
+      Name       = "HPO Goldsky Subgraph Health Monitor Schedule"
       Capability = "Monitoring"
     }
   )

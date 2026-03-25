@@ -15,7 +15,7 @@ locals {
       width  = 8
       height = 4
       properties = {
-        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n* **TheGraph**: External subgraph data\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
+        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n* **Subgraphs**: Goldsky-hosted indexers\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
       }
     },
     # Service Status - Task Counts
@@ -211,8 +211,8 @@ locals {
       }
     },
 
-    # Row 4: TheGraph Monitoring
-    # TheGraph Status - Availability
+    # Row 4: Subgraph Monitoring (Goldsky)
+    # Subgraph Status - Availability
     {
       type   = "metric"
       x      = 0
@@ -220,7 +220,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title     = "TheGraph - Subgraph Status"
+        title     = "Subgraphs - Status"
         view      = "singleValue"
         stacked   = false
         region    = var.default_region
@@ -228,12 +228,12 @@ locals {
         period    = var.monitoring.dashboard_period
         sparkline = true
         metrics = [
-          [local.monitoring_namespace, "thegraph_subgraphs_available", "Environment", local.env_short, { "label" : "Available", "color" : "#2ca02c" }],
-          [local.monitoring_namespace, "thegraph_subgraphs_with_errors", "Environment", local.env_short, { "label" : "With Errors", "color" : "#d62728" }],
+          [local.monitoring_namespace, "subgraphs_available", "Environment", local.env_short, { "label" : "Available", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "subgraphs_with_errors", "Environment", local.env_short, { "label" : "With Errors", "color" : "#d62728" }],
         ]
       }
     },
-    # TheGraph Response Time
+    # Subgraph Response Time
     {
       type   = "metric"
       x      = 8
@@ -241,7 +241,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "TheGraph - Response Time"
+        title   = "Subgraphs - Response Time"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -249,8 +249,9 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "ms" } }
         metrics = [
-          [local.monitoring_namespace, "thegraph_response_time_ms", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
-          [local.monitoring_namespace, "thegraph_response_time_ms", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
+          [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
+          [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "derivatives", { "label" : "Derivatives", "color" : "#2ca02c" }],
         ]
         annotations = {
           horizontal = [
@@ -259,7 +260,7 @@ locals {
         }
       }
     },
-    # TheGraph Data Age
+    # Subgraph Data Age
     {
       type   = "metric"
       x      = 16
@@ -267,7 +268,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "TheGraph - Data Age"
+        title   = "Subgraphs - Data Age"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -275,8 +276,9 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "Seconds" } }
         metrics = [
-          [local.monitoring_namespace, "thegraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
-          [local.monitoring_namespace, "thegraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
+          [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
+          [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "derivatives", { "label" : "Derivatives", "color" : "#2ca02c" }],
         ]
         annotations = {
           horizontal = [
@@ -287,7 +289,6 @@ locals {
     },
 
     # Row 5: Entity Counts (Futures subgraph business data)
-    # Futures Entity Counts - track business activity
     {
       type   = "metric"
       x      = 0
@@ -295,7 +296,7 @@ locals {
       width  = 24
       height = 5
       properties = {
-        title   = "TheGraph - Futures Entity Counts"
+        title   = "Futures - Entity Counts"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -303,9 +304,9 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "Count" } }
         metrics = [
-          [local.monitoring_namespace, "thegraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "futures", { "label" : "Futures Contracts", "color" : "#1f77b4" }],
-          [local.monitoring_namespace, "thegraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "participants", { "label" : "Participants", "color" : "#ff7f0e" }],
-          [local.monitoring_namespace, "thegraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "positions", { "label" : "Positions", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "futures", { "label" : "Futures Contracts", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "participants", { "label" : "Participants", "color" : "#ff7f0e" }],
+          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "positions", { "label" : "Positions", "color" : "#2ca02c" }],
         ]
       }
     },
