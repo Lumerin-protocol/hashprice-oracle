@@ -1,6 +1,6 @@
 import { requireEnvsSet } from "../lib/env";
-import { viem } from "hardhat";
-import { encodeFunctionData } from "viem";
+import { viem, artifacts } from "hardhat";
+import { encodeFunctionData, getAddress } from "viem";
 import { writeAndWait } from "../lib/writeContract";
 import { verifyContract } from "../lib/verify";
 
@@ -17,6 +17,7 @@ async function main() {
 
   const SAFE_OWNER_ADDRESS = process.env.SAFE_OWNER_ADDRESS as `0x${string}` | undefined;
 
+  const pc = await viem.getPublicClient();
   const [deployer] = await viem.getWalletClients();
   console.log("Deployer:", deployer.account.address);
   console.log("Safe owner address:", SAFE_OWNER_ADDRESS);
@@ -26,7 +27,7 @@ async function main() {
   console.log("Getting payment token decimals...");
   const paymentToken = await viem.getContractAt(
     "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol:IERC20Metadata",
-    env.USDC_TOKEN_ADDRESS
+    env.USDC_TOKEN_ADDRESS,
   );
   const tokenDecimals = await paymentToken.read.decimals();
   console.log("Name:", await paymentToken.read.name());
@@ -38,7 +39,7 @@ async function main() {
   console.log("Getting Oracle details...");
   const btcusdOracle = await viem.getContractAt(
     "AggregatorV3Interface",
-    env.BTCUSDC_ORACLE_ADDRESS
+    env.BTCUSDC_ORACLE_ADDRESS,
   );
   const oracleDecimals = await btcusdOracle.read.decimals();
   const btcPrice = Number((await btcusdOracle.read.latestRoundData())[1]) / 10 ** oracleDecimals;
@@ -53,10 +54,6 @@ async function main() {
     tokenDecimals,
   ]);
   console.log("Deployed at:", hashrateOracleImpl.address);
-  // const hashrateOracleImpl = await viem.getContractAt(
-  //   "HashrateOracle",
-  //   "0xfd9e680c92514a7d433d10d0ca3f1ffa6f212559"
-  // );
   await verifyContract(hashrateOracleImpl.address, [env.BTCUSDC_ORACLE_ADDRESS, tokenDecimals]);
 
   // Deploy ERC1967Proxy
@@ -67,13 +64,20 @@ async function main() {
     args: [],
   });
 
-  const proxy = await viem.deployContract(
+  const proxyArtifact = await artifacts.readArtifact(
     "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy",
-    [hashrateOracleImpl.address, encodedInitFn]
   );
-  console.log("Deployed at:", proxy.address);
-  // Get the proxy contract instance
-  const hashrateOracle = await viem.getContractAt("HashrateOracle", proxy.address);
+  const proxyHash = await deployer.deployContract({
+    abi: proxyArtifact.abi,
+    bytecode: proxyArtifact.bytecode as `0x${string}`,
+    args: [hashrateOracleImpl.address as `0x${string}`, encodedInitFn],
+  });
+  const proxyReceipt = await pc.waitForTransactionReceipt({ hash: proxyHash });
+  if (!proxyReceipt.contractAddress) throw new Error("Proxy deploy failed");
+  const proxyAddress = getAddress(proxyReceipt.contractAddress);
+  console.log("Proxy deployed at:", proxyAddress);
+
+  const hashrateOracle = await viem.getContractAt("HashrateOracle", proxyAddress);
   console.log("Version:", await hashrateOracle.read.VERSION());
 
   console.log();

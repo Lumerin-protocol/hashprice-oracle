@@ -1,7 +1,7 @@
 import { env } from "./env";
 import { createClient, createPublicClient, getContract, http, parseUnits } from "viem";
 import { getChain } from "./chain";
-import { hashrateOracleAbi, priceOracleAbi } from "./abi";
+import { hashrateOracleAbi, btcPriceOracleMockAbi as priceOracleAbi } from "./abi";
 import pino from "pino";
 import { privateKeyToAccount } from "viem/accounts";
 import { BitcoinClient } from "./bitcoin";
@@ -60,7 +60,7 @@ export async function main() {
       latest.difficulty,
       latest.averageTxFees,
       latest.hashesPerBlock,
-      latest.hashesForBTC
+      latest.hashesForBTC,
     );
     const oldHashesForBTC = await oracleContract.read.getHashesForBTC();
 
@@ -99,7 +99,7 @@ export async function main() {
         return;
       }
 
-      const tx = await oracle.write.setPrice([exchangeRateBigInt, oracleDecimals]);
+      const tx = await oracle.write.setPrice([exchangeRateBigInt]);
       log.info("Transaction hash: %s", tx);
 
       await pc.waitForTransactionReceipt({ hash: tx });

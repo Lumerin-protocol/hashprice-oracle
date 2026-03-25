@@ -6,13 +6,16 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract BTCPriceOracleMock is AggregatorV3Interface, Ownable {
     uint8 _decimals = 8;
-    int256 _price = 100 * int256(10 ** _decimals);
-    uint256 _version = 0;
+    uint256 _version = 1;
     string _description = "BTC Price Oracle Mock";
-    uint256 _updatedAt = 0;
-    uint80 _roundId = 0;
 
-    constructor() Ownable(msg.sender) { }
+    uint80 _roundId = 0;
+    int256 _answer = 0;
+    uint256 _startedAt = 0;
+    uint256 _updatedAt = 0;
+    uint80 _answeredInRound = 0;
+
+    constructor() Ownable(msg.sender) {}
 
     function decimals() external view returns (uint8) {
         return _decimals;
@@ -28,10 +31,10 @@ contract BTCPriceOracleMock is AggregatorV3Interface, Ownable {
 
     function getRoundData(uint80)
         external
-        view
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        pure
+        returns (uint80, int256, uint256, uint256, uint80)
     {
-        return (0, _price, 0, 0, 0);
+        revert("getRoundData not supported");
     }
 
     function latestRoundData()
@@ -39,13 +42,34 @@ contract BTCPriceOracleMock is AggregatorV3Interface, Ownable {
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        return (_roundId, _price, _updatedAt, _updatedAt, _roundId);
+        return (_roundId, _answer, _startedAt, _updatedAt, _answeredInRound);
     }
 
-    function setPrice(int256 price, uint8 ndecimals) external {
-        _price = price;
-        _decimals = ndecimals;
-        _updatedAt = block.timestamp;
+    function setPrice(int256 price) external {
         _roundId++;
+        _answer = price;
+        _startedAt = block.timestamp;
+        _updatedAt = block.timestamp;
+        _answeredInRound = _roundId;
+    }
+
+    /// @notice Set all round fields to simulate stale feeds, zero prices,
+    ///         mismatched answeredInRound, etc.
+    function setRound(
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    ) external {
+        _roundId = roundId;
+        _answer = answer;
+        _startedAt = startedAt;
+        _updatedAt = updatedAt;
+        _answeredInRound = answeredInRound;
+    }
+
+    function setDecimals(uint8 newDecimals) external {
+        _decimals = newDecimals;
     }
 }

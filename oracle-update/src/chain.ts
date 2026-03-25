@@ -1,9 +1,11 @@
-import { arbitrumSepolia, arbitrum, hardhat } from "viem/chains";
+import { arbitrumSepolia, arbitrum, hardhat, baseSepolia, base } from "viem/chains";
 
 const chainMap = {
   [arbitrumSepolia.id]: arbitrumSepolia,
   [arbitrum.id]: arbitrum,
   [hardhat.id]: hardhat,
+  [baseSepolia.id]: baseSepolia,
+  [base.id]: base,
 } as const;
 
 export function getChain(chainId: number) {
