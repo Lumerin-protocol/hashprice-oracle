@@ -265,37 +265,37 @@ resource "aws_cloudwatch_metric_alarm" "oracle_throttled" {
 }
 
 ################################################################################
-# THEGRAPH SUBGRAPH HEALTH ALARMS (from health monitor Lambda)
+# SUBGRAPH HEALTH ALARMS (from Goldsky health monitor Lambda)
 # Per-subgraph alarms for: indexing errors, response time, data age
 ################################################################################
 
 locals {
   # Subgraph names for per-subgraph alarms
-  thegraph_subgraphs = ["futures", "oracles"]
+  goldsky_subgraphs = ["futures", "oracles", "derivatives"]
 
   # Data age threshold in seconds (convert from minutes threshold)
-  thegraph_data_age_threshold_seconds = var.alarm_thresholds.oracle_stale_threshold_minutes * 60
+  subgraph_data_age_threshold_seconds = var.alarm_thresholds.oracle_stale_threshold_minutes * 60
 
   # Response time threshold in milliseconds (5 seconds = concerning)
-  thegraph_response_time_threshold_ms = 5000
+  subgraph_response_time_threshold_ms = 5000
 }
 
-# TheGraph Unavailable - aggregate check that both subgraphs respond
-resource "aws_cloudwatch_metric_alarm" "thegraph_unavailable" {
+# Subgraphs Unavailable - aggregate check that all subgraphs respond
+resource "aws_cloudwatch_metric_alarm" "subgraph_unavailable" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? 1 : 0
   provider            = aws.use1
-  alarm_name          = "hpo-thegraph-unavailable-${local.env_short}"
-  alarm_description   = "CRITICAL: TheGraph subgraphs unavailable for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
+  alarm_name          = "hpo-subgraph-unavailable-${local.env_short}"
+  alarm_description   = "CRITICAL: Goldsky subgraphs unavailable for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = local.subgraph_alarm_evaluation_periods
-  threshold           = 2 # Expected: both futures + oracles available
+  threshold           = 3 # Expected: futures + oracles + derivatives available
   treat_missing_data  = "breaching"
 
   metric_query {
     id          = "available"
     return_data = true
     metric {
-      metric_name = "thegraph_subgraphs_available"
+      metric_name = "subgraphs_available"
       namespace   = local.monitoring_namespace
       period      = local.subgraph_alarm_period_seconds
       stat        = "Minimum"
@@ -309,7 +309,7 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_unavailable" {
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO TheGraph Unavailable Alarm"
+    Name     = "HPO Subgraph Unavailable Alarm"
     Severity = "Critical"
   })
 }
@@ -317,12 +317,12 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_unavailable" {
 #------------------------------------------------------------------------------
 # Per-Subgraph Indexing Errors Alarms
 #------------------------------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "thegraph_indexing_errors" {
-  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+resource "aws_cloudwatch_metric_alarm" "subgraph_indexing_errors" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.goldsky_subgraphs) : toset([])
   provider = aws.use1
 
-  alarm_name          = "hpo-thegraph-${each.key}-indexing-errors-${local.env_short}"
-  alarm_description   = "WARNING: TheGraph ${each.key} subgraph reporting indexing errors"
+  alarm_name          = "hpo-subgraph-${each.key}-indexing-errors-${local.env_short}"
+  alarm_description   = "WARNING: ${each.key} subgraph reporting indexing errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = local.subgraph_alarm_evaluation_periods
   threshold           = 0 # Any errors = alarm
@@ -332,7 +332,7 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_indexing_errors" {
     id          = "errors"
     return_data = true
     metric {
-      metric_name = "thegraph_indexing_errors"
+      metric_name = "subgraph_indexing_errors"
       namespace   = local.monitoring_namespace
       period      = local.subgraph_alarm_period_seconds
       stat        = "Maximum"
@@ -347,7 +347,7 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_indexing_errors" {
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO TheGraph ${title(each.key)} Indexing Errors Alarm"
+    Name     = "HPO ${title(each.key)} Subgraph Indexing Errors Alarm"
     Severity = "Warning"
   })
 }
@@ -355,22 +355,22 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_indexing_errors" {
 #------------------------------------------------------------------------------
 # Per-Subgraph Response Time Alarms
 #------------------------------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "thegraph_response_time" {
-  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+resource "aws_cloudwatch_metric_alarm" "subgraph_response_time" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.goldsky_subgraphs) : toset([])
   provider = aws.use1
 
-  alarm_name          = "hpo-thegraph-${each.key}-slow-${local.env_short}"
-  alarm_description   = "WARNING: TheGraph ${each.key} subgraph response time > ${local.thegraph_response_time_threshold_ms}ms"
+  alarm_name          = "hpo-subgraph-${each.key}-slow-${local.env_short}"
+  alarm_description   = "WARNING: ${each.key} subgraph response time > ${local.subgraph_response_time_threshold_ms}ms"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = local.subgraph_alarm_evaluation_periods
-  threshold           = local.thegraph_response_time_threshold_ms
+  threshold           = local.subgraph_response_time_threshold_ms
   treat_missing_data  = "notBreaching"
 
   metric_query {
     id          = "response_time"
     return_data = true
     metric {
-      metric_name = "thegraph_response_time_ms"
+      metric_name = "subgraph_response_time_ms"
       namespace   = local.monitoring_namespace
       period      = local.subgraph_alarm_period_seconds
       stat        = "Average"
@@ -385,7 +385,7 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_response_time" {
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO TheGraph ${title(each.key)} Slow Response Alarm"
+    Name     = "HPO ${title(each.key)} Subgraph Slow Response Alarm"
     Severity = "Warning"
   })
 }
@@ -393,22 +393,22 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_response_time" {
 #------------------------------------------------------------------------------
 # Per-Subgraph Data Age Alarms (staleness in seconds)
 #------------------------------------------------------------------------------
-resource "aws_cloudwatch_metric_alarm" "thegraph_data_stale" {
-  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.thegraph_subgraphs) : toset([])
+resource "aws_cloudwatch_metric_alarm" "subgraph_data_stale" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.goldsky_subgraphs) : toset([])
   provider = aws.use1
 
-  alarm_name          = "hpo-thegraph-${each.key}-stale-${local.env_short}"
-  alarm_description   = "CRITICAL: TheGraph ${each.key} subgraph data older than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes"
+  alarm_name          = "hpo-subgraph-${each.key}-stale-${local.env_short}"
+  alarm_description   = "CRITICAL: ${each.key} subgraph data older than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = local.subgraph_alarm_evaluation_periods
-  threshold           = local.thegraph_data_age_threshold_seconds
+  threshold           = local.subgraph_data_age_threshold_seconds
   treat_missing_data  = "breaching"
 
   metric_query {
     id          = "data_age"
     return_data = true
     metric {
-      metric_name = "thegraph_data_age_seconds"
+      metric_name = "subgraph_data_age_seconds"
       namespace   = local.monitoring_namespace
       period      = local.subgraph_alarm_period_seconds
       stat        = "Maximum"
@@ -423,7 +423,7 @@ resource "aws_cloudwatch_metric_alarm" "thegraph_data_stale" {
   ok_actions    = []
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO TheGraph ${title(each.key)} Data Stale Alarm"
+    Name     = "HPO ${title(each.key)} Subgraph Data Stale Alarm"
     Severity = "Critical"
   })
 }

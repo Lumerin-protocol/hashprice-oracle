@@ -3,39 +3,39 @@
 # Combine multiple alarm states into higher-level health indicators
 ################################################################################
 
-# TheGraph Subgraph Overall Health
+# Subgraph Overall Health (Goldsky)
 # ALARM if: subgraphs unavailable OR any subgraph has stale data OR indexing errors OR slow response
-resource "aws_cloudwatch_composite_alarm" "thegraph_unhealthy" {
+resource "aws_cloudwatch_composite_alarm" "subgraph_unhealthy" {
   count             = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? 1 : 0
   provider          = aws.use1
-  alarm_name        = "hpo-thegraph-${local.env_short}"
-  alarm_description = "COMPOSITE: TheGraph subgraphs unhealthy - check component alarms"
+  alarm_name        = "hpo-subgraph-${local.env_short}"
+  alarm_description = "COMPOSITE: Goldsky subgraphs unhealthy - check component alarms"
 
   # Combine: unavailable OR any per-subgraph alarm (stale, errors, slow)
   alarm_rule = join(" OR ", concat(
     # Aggregate unavailable alarm
-    ["ALARM(${aws_cloudwatch_metric_alarm.thegraph_unavailable[0].alarm_name})"],
+    ["ALARM(${aws_cloudwatch_metric_alarm.subgraph_unavailable[0].alarm_name})"],
     # Per-subgraph data stale alarms
-    [for name in local.thegraph_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.thegraph_data_stale[name].alarm_name})"],
+    [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_data_stale[name].alarm_name})"],
     # Per-subgraph indexing errors alarms
-    [for name in local.thegraph_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.thegraph_indexing_errors[name].alarm_name})"],
+    [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_indexing_errors[name].alarm_name})"],
     # Per-subgraph slow response alarms
-    [for name in local.thegraph_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.thegraph_response_time[name].alarm_name})"]
+    [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_response_time[name].alarm_name})"]
   ))
 
   alarm_actions = local.composite_alarm_actions
   ok_actions    = local.composite_alarm_actions
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO TheGraph Unhealthy Composite"
+    Name     = "HPO Subgraph Unhealthy Composite"
     Severity = "Critical"
   })
 
   depends_on = [
-    aws_cloudwatch_metric_alarm.thegraph_unavailable,
-    aws_cloudwatch_metric_alarm.thegraph_data_stale,
-    aws_cloudwatch_metric_alarm.thegraph_indexing_errors,
-    aws_cloudwatch_metric_alarm.thegraph_response_time,
+    aws_cloudwatch_metric_alarm.subgraph_unavailable,
+    aws_cloudwatch_metric_alarm.subgraph_data_stale,
+    aws_cloudwatch_metric_alarm.subgraph_indexing_errors,
+    aws_cloudwatch_metric_alarm.subgraph_response_time,
   ]
 }
 
