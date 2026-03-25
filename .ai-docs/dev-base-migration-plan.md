@@ -1,8 +1,10 @@
-# DEV environment: Arbitrum → Base (planning)
+# DEV environment: Arbitrum → Base
 
-This document inventories **`.bedrock`** and **`.github`** touchpoints across **hashprice-oracle**, **futures-marketplace**, and **derivatives-marketplace** for cutting DEV over from Arbitrum testnet (today: **Arbitrum Sepolia**, chain id **421614**) to **Base** (typically **Base Sepolia** for DEV, chain id **84532**—confirm with smart contracts). It is a checklist for sequencing work once addresses, start blocks, and RPC endpoints exist.
+> **Status: DEV migration COMPLETE (March 25, 2026).** This document now serves as both the historical record of the DEV migration and the **playbook for promoting to STG and LMN/PROD**. Sections marked ✅ are done for DEV; sections with ⏳ note STG/LMN considerations.
 
-**Assumption:** For most services, the change is **configuration** (Terraform vars, GitHub Actions variables/secrets, Secrets Manager values) plus **redeploy / task restart** so new env propagates. The main exception is **subgraph hosting**: moving to **GoldSky** may require **URL shape and auth** changes, not only new IDs.
+This document inventories **`.bedrock`** and **`.github`** touchpoints across **hashprice-oracle**, **futures-marketplace**, and **derivatives-marketplace** for cutting over from Arbitrum testnet (**Arbitrum Sepolia**, chain id **421614**) to **Base** (**Base Sepolia** for DEV, chain id **84532**; **Base mainnet** for LMN/PROD, chain id **8453**).
+
+**What was confirmed:** The migration was primarily **configuration** (Terraform vars, GitHub Actions variables/secrets, Secrets Manager values) plus **redeploy / task restart**. The major exception was **subgraph hosting**: moving from **The Graph** to **Goldsky** required **CI/CD workflow rewrites**, **Terraform URL builder changes**, and **health monitor Lambda refactoring** — not just new IDs.
 
 ### Goldsky project: DEV-Exchange (DEV subgraph host)
 
@@ -154,7 +156,7 @@ goldsky subgraph tag create "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
 
 **Prepare step reminder:** In CI, either **export** all template variables before `yarn prepare:env`, or **generate `.env`** and run the same prepare pattern as local (`prepare-local` is interactive-file-oriented; many pipelines already inject env and call `prepare:env` — see [step 3](#steps) above).
 
-### CI/CD refactor: Goldsky workflows (completed)
+### CI/CD refactor: Goldsky workflows ✅
 
 All three subgraph deploy workflows have been rewritten to use Goldsky, completely replacing The Graph Studio, IPFS/Kubo, Pinata, and GNS on-chain publishing:
 
@@ -232,28 +234,38 @@ From infrastructure:
 
 ---
 
-## Sequencing (dependency order)
+## Sequencing (dependency order) — ✅ DEV complete
 
-1. **RPC and keys** — Create Base app(s) in Alchemy; store URLs in the places listed under “Secrets” (GitHub org/repo secrets and `secret.auto.tfvars` / AWS Secrets Manager). Until this exists, nothing can talk to Base.
-2. **Contracts on Base** — Deploy and freeze addresses + start blocks.
-3. **Subgraphs** — Stand up indexing on GoldSky (or redeploy to The Graph against Base). Obtain **stable query URLs** and/or **subgraph identifiers** compatible with how apps and Terraform build URLs today.
-4. **GitHub variables & secrets** — Update per-repo and per-environment (`dev`) values: chain, addresses, blocks, RPC secret contents, subgraph-related vars, block explorer URLs, Chainlink (or other) price feed for keeper if applicable.
-5. **`.bedrock` git changes** — Commit updates to `02-dev/terraform.tfvars` (and any code/Terraform if GoldSky URLs are not Gateway-shaped).
-6. **Terraform / Terragrunt apply** — Apply in each AWS account for `02-dev` so Lambda env, ECS task secrets, and constructed secret JSON (e.g. subgraph URLs) match Base.
-7. **Application redeploys** — Lambdas (new code only if needed; often **update function** or **force ECS deployment** picks up new secrets). Rebuild and deploy **futures UI** so `REACT_APP_*` embeds Base config.
-8. **Verification** — On-chain reads/writes, subgraph `_meta` / entity queries, health monitor Lambdas, and end-to-end UI flows.
+1. ✅ **RPC and keys** — Alchemy Base Sepolia app created. **Gotcha:** Base Sepolia must be **explicitly enabled** per Alchemy app — it returns plain text errors otherwise, crashing viem's JSON parser.
+2. ✅ **Contracts on Base** — All addresses and start blocks finalized (see `dev-base-conversion.md`).
+3. ✅ **Subgraphs on Goldsky** — All three deployed and healthy. **Gotchas:** (a) Goldsky CLI needs `-f` flag for non-interactive CI; (b) "already deployed" errors require auto-delete-and-retry in CI; (c) `gen-tag` action should not append git SHA to version strings.
+4. ✅ **GitHub variables & secrets** — Updated per-repo/environment. **Gotcha:** `NETWORK` variable controls subgraph indexing chain — if stale, the subgraph indexes the wrong chain silently.
+5. ✅ **`.bedrock` git changes** — All three repos merged via `infra/base-conversion` branches.
+6. ✅ **Terraform apply** — Flash-cut all three repos together. **Gotcha:** ECS `lifecycle { ignore_changes }` on task definitions blocks env var propagation — remove before apply.
+7. ✅ **Application redeploys** — All services redeployed. **Gotcha:** `baseSepolia` + `base` must be added to viem chain maps in UI, market makers, and keeper. Missing chains cause "Chain X not supported" crashes.
+8. ✅ **Verification** — All services operational, UI rendering, order books populating.
 
-Parallel track: GoldSky project creation and subgraph sync can run **before** contract finality if you use placeholder manifests; final **start blocks** and **addresses** must match production deployment.
+### Lessons for STG/LMN promotion
 
----
+- **Flash-cut** all three repos' Terraform together, then merge code to trigger CI/CD rebuilds.
+- Base **mainnet** chain ID is `8453` (vs `84532` for Sepolia). Double-check all config — easy to confuse.
+- Real USDC instead of USDCMock. Contract addresses will all be different.
+- Separate Goldsky projects with `STG_GOLDSKY_API_KEY` / `LMN_GOLDSKY_API_KEY` (already created at org level).
+- Rolling tags: `stg-latest` / `lmn-latest`.
+- Consider **private** Goldsky endpoints for production.
+- Ensure Alchemy app has Base **mainnet** enabled.
+- Block polling intervals: 150 blocks works for Base Sepolia (2s blocks ≈ 5min). Base mainnet also has 2s blocks, so the same interval should work.
+- The Perps MM Docker image has `NODE_ENV=production` baked in, causing it to auto-sweep all USDC in the shared wallet into perps collateral. Fund Futures margin **directly via the contract/UI** rather than sending tokens to the wallet, or stop the Perps MM briefly during initial funding.
+- Remove ECS `lifecycle { ignore_changes }` rules before applying, or manually force new deployments after.
+- CloudWatch alarms were renamed from `thegraph_*` → `subgraph_*` and `derivatives` was added to the monitored subgraph list. Terraform will destroy old alarms and create new ones on next apply.
+- The `deploy-futures-ui.yml` workflow needed its `paths` filter updated to include `ui/.cicd_trigger`, and its subgraph URL construction replaced from TheGraph Gateway concatenation to direct Goldsky variable lookups.
+## hashprice-oracle ✅
 
-## hashprice-oracle
+### `.bedrock/02-dev/terraform.tfvars` (version-controlled) ✅
 
-### `.bedrock/02-dev/terraform.tfvars` (version-controlled)
-
-- **`wallets`**: every address that points at Arbitrum Sepolia today must be updated to Base Sepolia (or confirmed unchanged if shared across chains—unlikely for deployment-specific contracts).
-- **`oracle_lambda.chain_id`**: currently `"421614"` → Base Sepolia **`84532`** (or chosen DEV chain).
-- Comments referencing Arbitrum should be updated to avoid operational confusion.
+- ✅ **`wallets`**: Updated to Base Sepolia contract addresses.
+- ✅ **`oracle_lambda.chain_id`**: Changed to `"84532"`.
+- ✅ **`gs_subgraphs`**: New variable added with Goldsky public URLs for futures, oracles, and derivatives.
 
 ### Sensitive / local Terraform inputs (`secret.auto.tfvars` — not in repo; see README)
 
@@ -263,12 +275,13 @@ Typically includes:
 
 All **EVM RPC URLs** used here should switch to **Base** endpoints. **Subgraph IDs / API keys** change if subgraphs are redeployed or if GoldSky replaces Gateway auth.
 
-### Subgraph health monitor (The Graph Gateway today)
+### Subgraph health monitor ✅
 
-- **`.bedrock/.terragrunt/72_subgraph_health_monitor.tf`** sets `THEGRAPH_GATEWAY_BASE` to `https://gateway.thegraph.com/api` and passes the monitor secret ARN.
-- **`.bedrock/.terragrunt/72_subgraph_health_monitor.py`** builds URLs as `{THEGRAPH_GATEWAY_BASE}/{api_key}/subgraphs/id/{subgraph_id}`.
-
-If GoldSky endpoints **do not** follow that path pattern, this is **not** a variables-only change: you need either **configurable full base URL + auth**, or a **separate health check** implementation. If GoldSky exposes a Gateway-compatible URL, you may only update secrets/vars.
+- ✅ **`72_subgraph_health_monitor.py`**: Rewritten to read `GS_FUTURES_URL`, `GS_ORACLES_URL`, `GS_DERIVATIVES_URL` from environment variables. No more TheGraph Gateway dependency. Metrics renamed from `thegraph_*` → `subgraph_*`.
+- ✅ **`72_subgraph_health_monitor.tf`**: Updated to pass Goldsky URLs from `var.gs_subgraphs` as Lambda env vars.
+- ✅ **`80_alarms.tf`**: All alarm metric names updated from `thegraph_*` → `subgraph_*`. Added `"derivatives"` to monitored subgraph list. Unavailable threshold bumped from 2 → 3.
+- ✅ **`81_composite_alarms.tf`**: Updated to reference renamed alarm resources.
+- ✅ **`89_dashboards.tf`**: Dashboard widget titles and metric names updated to reflect Goldsky.
 
 ### `.github` — `deploy-hr-btc-oracles.yml`
 
@@ -291,13 +304,14 @@ Other workflows: **`deploy-oracle-update.yml`** uses `AWS_ROLE_ARN_*` only for L
 
 ---
 
-## futures-marketplace
+## futures-marketplace ✅
 
-### `.bedrock/02-dev/terraform.tfvars` (version-controlled)
+### `.bedrock/02-dev/terraform.tfvars` (version-controlled) ✅
 
-- **`market_maker.chain_id`**: `421614` → Base DEV chain id.
-- **Contract addresses**: `clone_factory_address`, `hashrate_oracle_address`, `futures_address`, `multicall_address` — update to Base deployment (**verify Multicall3 on Base**; many chains use `0xcA11bde05977b3631167028862bE2a173976CA11` but confirm).
-- **`market_maker` comment** referencing Arbitrum Sepolia / Graph lag — update for accuracy if still relevant.
+- ✅ **`market_maker.chain_id`**: Changed to `84532`.
+- ✅ **Contract addresses**: Updated to Base Sepolia. Multicall3 confirmed at canonical address.
+- ✅ **`gs_subgraphs`**: Added with Goldsky URLs.
+- ✅ **`float_amount`**: Increased from `300000000` to `800000000` (800 USDC) for deeper order book ladder.
 
 ### `secret.auto.tfvars` / Terraform variables
 
@@ -328,12 +342,14 @@ Subgraph URLs in the workflow are built as **The Graph Gateway** URLs today; if 
 
 ---
 
-## derivatives-marketplace
+## derivatives-marketplace ✅
 
-### `.bedrock/02-dev/terraform.tfvars` (version-controlled)
+### `.bedrock/02-dev/terraform.tfvars` (version-controlled) ✅
 
-- **`perpskeeper_service.network`** and **`marketmaker_service.network`**: currently `"arbitrum-sepolia"` → whatever string the **keeper** and **market maker** images expect for Base (e.g. `base-sepolia` or project-specific alias—**must match application code**).
-- **Contract addresses:** `clone_factory_address`, `hashrate_oracle_address`, `perps_address`, `multicall_address`.
+- ✅ **`perpskeeper_service.network`** and **`marketmaker_service.network`**: Changed to `"base-sepolia"`. **Gotcha:** ECS lifecycle rules initially blocked propagation — had to remove `lifecycle { ignore_changes }` from `04_perps_keeper_svc.tf` and `04_market_maker_svc.tf`.
+- ✅ **Contract addresses**: Updated. `perps_address` = `0x0d412BC34a48e434144687Aac03b9C593F5237B6`.
+- ✅ **`gs_subgraphs`**: Added with Goldsky URLs.
+- ✅ **`baseSepolia` + `base`**: Added to chain maps in `market-maker/src/client.ts` and `keeper/src/client.ts`.
 
 ### `secret.auto.tfvars`
 
