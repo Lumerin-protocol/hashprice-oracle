@@ -13,6 +13,11 @@ variable "wallets" {
   }
 }
 
+variable "gs_subgraphs" {
+  description = "Goldsky subgraphs"
+  type        = map(string)
+}
+
 ################################################################################
 # Detailed Resource variabeles
 ################################################################################
@@ -69,26 +74,26 @@ variable "oracle_lambda_secrets" {
 }
 
 ################################################################################
-# THEGRAPH CONFIGURATION (for external subgraph monitoring)
+# LEGACY THEGRAPH VARIABLES (retained for backward compatibility)
+# Health monitor now uses var.gs_subgraphs directly.
+# These can be removed once no other Terraform consumers reference them.
 ################################################################################
 variable "graph_api_key" {
-  description = "TheGraph Gateway API key for querying production subgraphs"
+  description = "Legacy — TheGraph Gateway API key (no longer used by health monitor)"
   type        = string
   sensitive   = true
   default     = ""
 }
 
 variable "futures_subgraph_id" {
-  description = "TheGraph subgraph ID for futures contract (from TheGraph Studio)"
+  description = "Legacy — futures subgraph URL (superseded by var.gs_subgraphs.futures)"
   type        = string
-  sensitive   = true
   default     = ""
 }
 
 variable "oracles_subgraph_id" {
-  description = "TheGraph subgraph ID for oracles contract (from TheGraph Studio)"
+  description = "Legacy — oracles subgraph URL (superseded by var.gs_subgraphs.oracles)"
   type        = string
-  sensitive   = true
   default     = ""
 }
 

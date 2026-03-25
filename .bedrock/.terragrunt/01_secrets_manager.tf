@@ -5,7 +5,7 @@
 
 # IAM policy to allow ECS task execution role to read secrets
 resource "aws_iam_policy" "hpo_secret_access" {
-  count       = (var.spot_indexer.create || var.oracle_lambda.create || local.should_create_subgraph_monitor) ? 1 : 0
+  count       = (var.spot_indexer.create || var.oracle_lambda.create) ? 1 : 0
   provider    = aws.use1
   name        = "hpo-secret-access-${substr(var.account_shortname, 8, 3)}"
   description = "Allow ECS tasks and Lambdas to read Hashprice Oracle secrets from Secrets Manager"
@@ -22,7 +22,6 @@ resource "aws_iam_policy" "hpo_secret_access" {
         Resource = compact([
           var.spot_indexer.create ? aws_secretsmanager_secret.spot_indexer.arn : "",
           var.oracle_lambda.create ? aws_secretsmanager_secret.oracle_lambda.arn : "",
-          local.should_create_subgraph_monitor ? aws_secretsmanager_secret.thegraph_monitor[0].arn : ""
         ])
       }
     ]
@@ -40,7 +39,7 @@ resource "aws_iam_policy" "hpo_secret_access" {
 
 # Attach the policy to the bedrock foundation role
 resource "aws_iam_role_policy_attachment" "hpo_secret_access" {
-  count      = (var.spot_indexer.create || var.oracle_lambda.create || local.should_create_subgraph_monitor) ? 1 : 0
+  count      = (var.spot_indexer.create || var.oracle_lambda.create) ? 1 : 0
   provider   = aws.use1
   role       = "bedrock-foundation-role"
   policy_arn = aws_iam_policy.hpo_secret_access[0].arn
@@ -94,26 +93,19 @@ resource "aws_secretsmanager_secret_version" "oracle_lambda" {
 }
 
 ################################################################################
-# THEGRAPH MONITORING SECRETS
-# API key for querying production TheGraph Gateway endpoints
+# SUBGRAPH MONITORING
+# Health monitor Lambda now reads Goldsky URLs from environment variables
+# (var.gs_subgraphs in terraform.tfvars), not from Secrets Manager.
+# The thegraph_monitor secret is retained for backward compatibility but
+# is no longer consumed by the Lambda. Safe to remove after confirming
+# no other consumers reference it.
 ################################################################################
 resource "aws_secretsmanager_secret" "thegraph_monitor" {
   count       = local.should_create_subgraph_monitor ? 1 : 0
   provider    = aws.use1
   name        = "thegraph-monitor-secrets-${substr(var.account_shortname, 8, 3)}"
-  description = "TheGraph Gateway API key for subgraph health monitoring"
+  description = "Legacy — subgraph URLs now in Lambda env vars via var.gs_subgraphs"
   tags = merge(var.default_tags, var.foundation_tags, {
     Name = "thegraph-monitor-secrets-${substr(var.account_shortname, 8, 3)}"
-  })
-}
-
-resource "aws_secretsmanager_secret_version" "thegraph_monitor" {
-  count     = (local.should_create_subgraph_monitor && var.graph_api_key != "") ? 1 : 0
-  provider  = aws.use1
-  secret_id = aws_secretsmanager_secret.thegraph_monitor[0].id
-  secret_string = jsonencode({
-    api_key             = var.graph_api_key
-    futures_subgraph_id = var.futures_subgraph_id
-    oracles_subgraph_id = var.oracles_subgraph_id
   })
 }

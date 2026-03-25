@@ -18,6 +18,24 @@ This document inventories **`.bedrock`** and **`.github`** touchpoints across **
 
 **Secrets:** Keep **API keys only** in GitHub Actions secrets, `secret.auto.tfvars`, or AWS Secrets Manager—**never** in this repo. If a key was pasted into chat, docs, or screenshots, **rotate it** in [Project settings](https://app.goldsky.com/dashboard/settings#general) and update consumers.
 
+### Live DEV endpoints (Base Sepolia)
+
+| Subgraph | Tag | Chain | Public GraphQL URL |
+|---|---|---|---|
+| `lumerin-oracles` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-oracles/dev-latest/gn` |
+| `lumerin-futures` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-futures/dev-latest/gn` |
+| `lumerin-derivatives` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-derivatives/dev-latest/gn` |
+
+### Base Sepolia contract addresses (DEV)
+
+| Name | Address | Start block |
+|---|---|---|
+| `HASHRATE_ORACLE_ADDRESS` | `0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f` | `39295132` |
+| `BTCUSDC_ORACLE_ADDRESS` | `0x614dcafa33af0705c7b4a37667ef511f400f36d0` | `39294964` |
+| `USDC_TOKEN_ADDRESS` | `0xdd15eed84065a58c9e9ff9e95fb996be0fff22aa` | — |
+| `FUTURES_ADDRESS` | `0x56d8d4a03a0f34b93b86e0b7941aff29178d0479` | `39295843` |
+| `PERPS_ADDRESS` | `0x0d412BC34a48e434144687Aac03b9C593F5237B6` | `39298170` |
+
 ---
 
 ## Goldsky: deploy from source — worked example (oracles / DEV-Exchange)
@@ -42,19 +60,25 @@ Matches existing CI (`graph codegen` / `graph build`), keeps **ABI + mappings** 
 
 5. **Goldsky CLI auth** — `goldsky login` and paste the **API key for the Goldsky project** you are deploying into (e.g. DEV-Exchange for dev). Keys are **project-scoped**—use the key that belongs to that project.
 
-6. **Deploy bundle + stable URL (`--tag`)** — from `indexer/`, pass **`--tag`** so apps can use a **fixed** path while you bump semver on each release ([CLI reference](https://docs.goldsky.com/reference/cli); [Subgraph tags](https://docs.goldsky.com/subgraphs/tags)):
+6. **Deploy bundle** — from `indexer/`:
    ```bash
-   goldsky subgraph deploy <subgraph-name>/<semver> --path . --tag <env>
+   goldsky subgraph deploy <subgraph-name>/<semver> --path . --token "$GOLDSKY_API_KEY"
    ```
-   **Example:** `goldsky subgraph deploy lumerin-oracles/1.0.0 --path . --tag dev`  
-   Multiple tags: comma-separated, e.g. `--tag dev,staging`.  
-   CLI returns a **public** GraphQL URL for the version; consumers should target the **tag** URL, e.g.  
-   `https://api.goldsky.com/api/public/project_<id>/subgraphs/lumerin-oracles/dev/gn`.
+   **Example:** `goldsky subgraph deploy lumerin-oracles/1.0.1 --path . --token "$GOLDSKY_API_KEY"`  
+   CLI returns a **public** GraphQL URL for the version.
 
-   **Repointing a tag** after a newer semver deploy (without changing the tag URL):  
-   `goldsky subgraph tag create lumerin-oracles/1.0.1 --tag dev` — moves `dev` to the new build.
+7. **Tag for stable URL (separate step)** — `--tag` on `deploy` fails if the deployment takes longer than expected (Goldsky creates the version asynchronously). Run **`tag create`** as a second command after deploy completes ([Subgraph tags](https://docs.goldsky.com/subgraphs/tags)):
+   ```bash
+   goldsky subgraph tag create <subgraph-name>/<semver> --tag <rolling-tag> --token "$GOLDSKY_API_KEY"
+   ```
+   **Example:** `goldsky subgraph tag create lumerin-oracles/1.0.1 --tag dev-latest --token "$GOLDSKY_API_KEY"`  
+   Consumers use the **tag** URL, e.g.  
+   `https://api.goldsky.com/api/public/project_<id>/subgraphs/lumerin-oracles/dev-latest/gn`.
 
-7. **Public by default** — New subgraphs enable **public** GraphQL and leave **private** off until you toggle (dashboard or `goldsky subgraph update`) ([GraphQL endpoints](https://docs.goldsky.com/subgraphs/graphql-endpoints)). Fine for early DEV; tighten for STG/LMN as needed.
+   **Repointing a tag** after a newer semver deploy (without changing the consumer URL):  
+   `goldsky subgraph tag create lumerin-oracles/1.0.2 --tag dev-latest` — moves `dev-latest` to the new build.
+
+8. **Public by default** — New subgraphs enable **public** GraphQL and leave **private** off until you toggle (dashboard or `goldsky subgraph update`) ([GraphQL endpoints](https://docs.goldsky.com/subgraphs/graphql-endpoints)). Fine for early DEV; tighten for STG/LMN as needed.
 
 ### Naming template (adjust for project layout)
 
@@ -69,9 +93,8 @@ If you use **one Goldsky project per environment** (e.g. DEV-Exchange), keep sub
 **Command pattern:**
 
 ```bash
-goldsky subgraph deploy lumerin-<product>/<semver> --path . --tag <env>
-# optional: repoint tag after a later semver deploy
-goldsky subgraph tag create lumerin-<product>/<new-semver> --tag <env>
+goldsky subgraph deploy lumerin-<product>/<semver> --path . --token "$GOLDSKY_API_KEY"
+goldsky subgraph tag create lumerin-<product>/<semver> --tag <rolling-tag> --token "$GOLDSKY_API_KEY"
 ```
 
 ### Compared to The Graph Studio (practical)
@@ -90,27 +113,20 @@ Use this when replacing The Graph Studio / IPFS steps (see current `deploy-hr-bt
 | `GOLDSKY_SUBGRAPH_NAME` | Repo or env **variable** (e.g. `lumerin-oracles`) | First segment of `name/version` |
 | `SUBGRAPH_SEMVER` | Pipeline output (e.g. existing **gen-tag** / release semver) | Second segment; must be a **new** version string for each deploy Goldsky should treat as distinct |
 | `GOLDSKY_ROLLING_TAG` | Constant, e.g. `dev-latest` | Tag updated every run → stable URL `.../subgraphs/<name>/dev-latest/gn` |
-| `GOLDSKY_EXTRA_TAGS` | Optional, e.g. `dev` | Comma-separated additional tags ([CLI `--tag`](https://docs.goldsky.com/reference/cli)) |
-
 **Semver in the pipeline:** Reuse whatever you already compute for releases (hashprice-oracle `.github/actions/gen-tag` or equivalent). Goldsky identifies a deployment as `<name>/<semver>`; if you **re-deploy the same semver**, confirm Goldsky’s behavior for your account (overwrite vs error). Safer patterns if duplicates bite: bump patch per CI run, append prerelease (e.g. `1.2.3-ci.4821`), or use build metadata.
 
-**`dev-latest`:** Pass `--tag dev-latest` on every `subgraph deploy`. Each successful run moves that tag to the new `<semver>`, so consumers keep one URL while you retain versioned deployments in the dashboard. Optionally combine tags, e.g. `--tag dev,dev-latest`, if you want both a short env alias and a clearly named rolling pointer.
+**Auth in CI:** Use **`--token "$GOLDSKY_API_KEY"`** on every command ([CLI](https://docs.goldsky.com/reference/cli)) instead of `goldsky login`. The org secret **`DEV_GOLDSKY_API_KEY`** (set at the GitHub organization level) provides this for all repos.
 
-**Auth in CI:** Prefer **`goldsky subgraph deploy ... --token "$GOLDSKY_API_KEY"`** ([CLI](https://docs.goldsky.com/reference/cli)) instead of `goldsky login`.
-
-**Shell core** (runs from `indexer/` after `subgraph.yaml` is valid and `yarn codegen` + `yarn build` have succeeded):
+**Two-step deploy + tag** — deploy and tag must be **separate commands**. Goldsky creates versions asynchronously; `--tag` on `deploy` races against version creation and fails if the version isn’t ready yet:
 
 ```bash
-# Rolling tag only (recommended default for “always latest” consumers)
 goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
   --path . \
-  --token "${GOLDSKY_API_KEY}" \
-  --tag "${GOLDSKY_ROLLING_TAG}"
+  --token "${GOLDSKY_API_KEY}"
 
-# Optional: also tag a short env alias in the same deploy
-# TAGS="${GOLDSKY_EXTRA_TAGS},${GOLDSKY_ROLLING_TAG}"
-# goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
-#   --path . --token "${GOLDSKY_API_KEY}" --tag "${TAGS}"
+goldsky subgraph tag create "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
+  --tag "${GOLDSKY_ROLLING_TAG}" \
+  --token "${GOLDSKY_API_KEY}"
 ```
 
 **GitHub Actions sketch** (drop into a deploy job after build artifacts exist; install CLI once per job):
@@ -122,18 +138,81 @@ goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
 - name: Deploy subgraph to Goldsky
   working-directory: indexer
   env:
-    GOLDSKY_API_KEY: ${{ secrets.GOLDSKY_API_KEY }} # e.g. DEV-Exchange key for dev workflow
+    GOLDSKY_API_KEY: ${{ secrets.DEV_GOLDSKY_API_KEY }}
     GOLDSKY_SUBGRAPH_NAME: ${{ vars.GOLDSKY_SUBGRAPH_NAME }}
-    SUBGRAPH_SEMVER: ${{ needs.version.outputs.semver }} # wire to your gen-tag / release step
+    SUBGRAPH_SEMVER: ${{ needs.version.outputs.semver }}
     GOLDSKY_ROLLING_TAG: dev-latest
   run: |
     goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
       --path . \
-      --token "${GOLDSKY_API_KEY}" \
-      --tag "${GOLDSKY_ROLLING_TAG}"
+      --token "${GOLDSKY_API_KEY}"
+
+    goldsky subgraph tag create "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" \
+      --tag "${GOLDSKY_ROLLING_TAG}" \
+      --token "${GOLDSKY_API_KEY}"
 ```
 
 **Prepare step reminder:** In CI, either **export** all template variables before `yarn prepare:env`, or **generate `.env`** and run the same prepare pattern as local (`prepare-local` is interactive-file-oriented; many pipelines already inject env and call `prepare:env` — see [step 3](#steps) above).
+
+### CI/CD refactor: Goldsky workflows (completed)
+
+All three subgraph deploy workflows have been rewritten to use Goldsky, completely replacing The Graph Studio, IPFS/Kubo, Pinata, and GNS on-chain publishing:
+
+| Repo | Workflow | Goldsky subgraph name |
+|------|----------|-----------------------|
+| hashprice-oracle | `deploy-hr-btc-oracles.yml` | `lumerin-oracles` |
+| futures-marketplace | `update-futures-oracle.yml` | `lumerin-futures` |
+| derivatives-marketplace | `update-derivatives-oracle.yml` | `lumerin-derivatives` |
+
+**Pipeline flow:** `setup` → `build` → `deploy` → `verify` → `cleanup` → `notify`
+
+The deploy job:
+1. Installs the Goldsky CLI (`curl https://goldsky.com | sh`)
+2. Queries the current deployment (pre-flight check via the tagged public endpoint)
+3. Deploys with semver from `gen-tag` — handles "already exists" gracefully (pipeline re-runs)
+4. Rolls the rolling tag to the new version (moves tag from old version if needed)
+5. Verify job polls the tagged endpoint for `_meta` health for up to 60s
+
+**Removed dependencies** (no longer needed for subgraph deploy):
+- `ipfs/kubo` Docker service container
+- `PINATA_JWT` secret
+- `{DEV,STG,LMN}_GRAPH_DPKY` secrets (The Graph deploy keys)
+- `{DEV,STG,LMN}_GNS_PUBLISHER_KEY` secrets
+- `ARBITRUM_RPC_URL_MAIN` secret (was for GNS on-chain publish only)
+- `DEV_GRAPH_USERID` / `STG_GRAPH_USERID` / `LMN_GRAPH_USERID` vars
+- `GNS_SUBGRAPH_ID` var
+- Foundry (`cast`) — was only for GNS contract calls
+- Python3 base58 decode — was only for CID→bytes32 conversion
+
+**New org-level secrets (already set):**
+
+| Secret | Scope | Purpose |
+|--------|-------|---------|
+| `DEV_GOLDSKY_API_KEY` | Org | Goldsky project auth for DEV deploys |
+| `STG_GOLDSKY_API_KEY` | Org | (future) Goldsky project auth for STG |
+| `LMN_GOLDSKY_API_KEY` | Org | (future) Goldsky project auth for PROD |
+
+**New org-level variables (to set):**
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `DEV_GS_ORACLES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-oracles/dev-latest/gn` | Oracles endpoint for verify step + app config |
+| `DEV_GS_FUTURES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-futures/dev-latest/gn` | Futures endpoint for verify step + app config |
+| `DEV_GS_DERIVATIVES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-derivatives/dev-latest/gn` | Derivatives endpoint for verify step + app config |
+
+**Optional per-repo environment variable:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GOLDSKY_SUBGRAPH_NAME` | Falls back to hardcoded default per repo | Override Goldsky subgraph name if naming convention changes |
+
+**Rolling tag convention per environment:**
+
+| Environment | Rolling tag | API key secret |
+|-------------|-------------|----------------|
+| `dev` | `dev-latest` | `DEV_GOLDSKY_API_KEY` |
+| `stg` | `stg-latest` | `STG_GOLDSKY_API_KEY` |
+| `main` | `lmn-latest` | `LMN_GOLDSKY_API_KEY` |
 
 ---
 
