@@ -22,11 +22,13 @@ This document inventories **`.bedrock`** and **`.github`** touchpoints across **
 
 ### Live DEV endpoints (Base Sepolia)
 
+Subgraph **names** use the **`hpow-*`** prefix (hashpower). Older **`lumerin-*`** deployments may still exist in Goldsky until removed; CI and org variables should point at **`hpow-*`** rolling-tag URLs.
+
 | Subgraph | Tag | Chain | Public GraphQL URL |
 |---|---|---|---|
-| `lumerin-oracles` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-oracles/dev-latest/gn` |
-| `lumerin-futures` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-futures/dev-latest/gn` |
-| `lumerin-derivatives` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-derivatives/dev-latest/gn` |
+| `hpow-oracles` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-oracles/dev-latest/gn` |
+| `hpow-futures` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-futures/dev-latest/gn` |
+| `hpow-derivatives` | `dev-latest` | base-sepolia | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-derivatives/dev-latest/gn` |
 
 ### Base Sepolia contract addresses (DEV)
 
@@ -66,19 +68,19 @@ Matches existing CI (`graph codegen` / `graph build`), keeps **ABI + mappings** 
    ```bash
    goldsky subgraph deploy <subgraph-name>/<semver> --path . --token "$GOLDSKY_API_KEY"
    ```
-   **Example:** `goldsky subgraph deploy lumerin-oracles/1.0.1 --path . --token "$GOLDSKY_API_KEY"`  
+   **Example:** `goldsky subgraph deploy hpow-oracles/1.0.1 --path . --token "$GOLDSKY_API_KEY"`  
    CLI returns a **public** GraphQL URL for the version.
 
 7. **Tag for stable URL (separate step)** — `--tag` on `deploy` fails if the deployment takes longer than expected (Goldsky creates the version asynchronously). Run **`tag create`** as a second command after deploy completes ([Subgraph tags](https://docs.goldsky.com/subgraphs/tags)):
    ```bash
    goldsky subgraph tag create <subgraph-name>/<semver> --tag <rolling-tag> --token "$GOLDSKY_API_KEY"
    ```
-   **Example:** `goldsky subgraph tag create lumerin-oracles/1.0.1 --tag dev-latest --token "$GOLDSKY_API_KEY"`  
+   **Example:** `goldsky subgraph tag create hpow-oracles/1.0.1 --tag dev-latest --token "$GOLDSKY_API_KEY"`  
    Consumers use the **tag** URL, e.g.  
-   `https://api.goldsky.com/api/public/project_<id>/subgraphs/lumerin-oracles/dev-latest/gn`.
+   `https://api.goldsky.com/api/public/project_<id>/subgraphs/hpow-oracles/dev-latest/gn`.
 
    **Repointing a tag** after a newer semver deploy (without changing the consumer URL):  
-   `goldsky subgraph tag create lumerin-oracles/1.0.2 --tag dev-latest` — moves `dev-latest` to the new build.
+   `goldsky subgraph tag create hpow-oracles/1.0.2 --tag dev-latest` — moves `dev-latest` to the new build.
 
 8. **Public by default** — New subgraphs enable **public** GraphQL and leave **private** off until you toggle (dashboard or `goldsky subgraph update`) ([GraphQL endpoints](https://docs.goldsky.com/subgraphs/graphql-endpoints)). Fine for early DEV; tighten for STG/LMN as needed.
 
@@ -88,15 +90,15 @@ If you use **one Goldsky project per environment** (e.g. DEV-Exchange), keep sub
 
 | Repo | Subgraph `<name>` (example) | `<semver>` | Consumer **tag** (example) |
 |------|-----------------------------|------------|----------------------------|
-| hashprice-oracle | `lumerin-oracles` | `1.0.0`, `1.0.1`, … | `dev`, `stg`, `prod` |
-| futures-marketplace | `lumerin-futures` | semver | same |
-| derivatives-marketplace | `lumerin-derivatives` | semver | same |
+| hashprice-oracle | `hpow-oracles` | `1.0.0`, `1.0.1`, … | `dev`, `stg`, `prod` |
+| futures-marketplace | `hpow-futures` | semver | same |
+| derivatives-marketplace | `hpow-derivatives` | semver | same |
 
 **Command pattern:**
 
 ```bash
-goldsky subgraph deploy lumerin-<product>/<semver> --path . --token "$GOLDSKY_API_KEY"
-goldsky subgraph tag create lumerin-<product>/<semver> --tag <rolling-tag> --token "$GOLDSKY_API_KEY"
+goldsky subgraph deploy hpow-<product>/<semver> --path . --token "$GOLDSKY_API_KEY"
+goldsky subgraph tag create hpow-<product>/<semver> --tag <rolling-tag> --token "$GOLDSKY_API_KEY"
 ```
 
 ### Compared to The Graph Studio (practical)
@@ -112,7 +114,7 @@ Use this when replacing The Graph Studio / IPFS steps (see current `deploy-hr-bt
 | Variable | Example source | Purpose |
 |----------|----------------|---------|
 | `GOLDSKY_API_KEY` | GitHub Actions **secret** (per Goldsky project / env) | Non-interactive auth — **never** log or echo |
-| `GOLDSKY_SUBGRAPH_NAME` | Repo or env **variable** (e.g. `lumerin-oracles`) | First segment of `name/version` |
+| `GOLDSKY_SUBGRAPH_NAME` | Repo or env **variable** (e.g. `hpow-oracles`) | First segment of `name/version` |
 | `SUBGRAPH_SEMVER` | Pipeline output (e.g. existing **gen-tag** / release semver) | Second segment; must be a **new** version string for each deploy Goldsky should treat as distinct |
 | `GOLDSKY_ROLLING_TAG` | Constant, e.g. `dev-latest` | Tag updated every run → stable URL `.../subgraphs/<name>/dev-latest/gn` |
 **Semver in the pipeline:** Reuse whatever you already compute for releases (hashprice-oracle `.github/actions/gen-tag` or equivalent). Goldsky identifies a deployment as `<name>/<semver>`; if you **re-deploy the same semver**, confirm Goldsky’s behavior for your account (overwrite vs error). Safer patterns if duplicates bite: bump patch per CI run, append prerelease (e.g. `1.2.3-ci.4821`), or use build metadata.
@@ -162,9 +164,9 @@ All three subgraph deploy workflows have been rewritten to use Goldsky, complete
 
 | Repo | Workflow | Goldsky subgraph name |
 |------|----------|-----------------------|
-| hashprice-oracle | `deploy-hr-btc-oracles.yml` | `lumerin-oracles` |
-| futures-marketplace | `update-futures-oracle.yml` | `lumerin-futures` |
-| derivatives-marketplace | `update-derivatives-oracle.yml` | `lumerin-derivatives` |
+| hashprice-oracle | `deploy-hr-btc-oracles.yml` | `hpow-oracles` |
+| futures-marketplace | `update-futures-oracle.yml` | `hpow-futures` |
+| derivatives-marketplace | `update-derivatives-oracle.yml` | `hpow-derivatives` |
 
 **Pipeline flow:** `setup` → `build` → `deploy` → `verify` → `cleanup` → `notify`
 
@@ -198,15 +200,15 @@ The deploy job:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `DEV_GS_ORACLES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-oracles/dev-latest/gn` | Oracles endpoint for verify step + app config |
-| `DEV_GS_FUTURES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-futures/dev-latest/gn` | Futures endpoint for verify step + app config |
-| `DEV_GS_DERIVATIVES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-derivatives/dev-latest/gn` | Derivatives endpoint for verify step + app config |
+| `DEV_GS_ORACLES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-oracles/dev-latest/gn` | Oracles endpoint for verify step + app config |
+| `DEV_GS_FUTURES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-futures/dev-latest/gn` | Futures endpoint for verify step + app config |
+| `DEV_GS_DERIVATIVES` | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-derivatives/dev-latest/gn` | Derivatives endpoint for verify step + app config |
 
 **Optional per-repo environment variable:**
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GOLDSKY_SUBGRAPH_NAME` | Falls back to hardcoded default per repo | Override Goldsky subgraph name if naming convention changes |
+| `GOLDSKY_SUBGRAPH_NAME` | Falls back to `hpow-oracles` / `hpow-futures` / `hpow-derivatives` | Override only if the subgraph slug differs |
 
 **Rolling tag convention per environment:**
 
@@ -458,7 +460,7 @@ We need **nine indexers** (oracles, futures, derivatives × dev, stg, main), equ
 | **B. One project per environment (recommended)** | **Three** Goldsky projects (dev / stg / main), each with **three** subgraphs: oracles, futures, derivatives | Aligns with **titanio-dev / stg / lmn** and GitHub **environments**; CI secrets for dev never authenticate to prod. |
 | **C. One project per product** | Three projects (oracle / futures / derivatives), each holding three env subgraphs or tags | Splits ownership by repo; still need clear env naming or tags. |
 
-**Recommendation:** **B**—one Goldsky **project per environment**, three subgraphs per project, consistent names across projects (e.g. `lumerin-oracles`, `lumerin-futures`, `lumerin-derivatives`) plus a **stable tag** per consumer (or use tag name = env if you prefer).
+**Recommendation:** **B**—one Goldsky **project per environment**, three subgraphs per project, consistent names across projects (e.g. `hpow-oracles`, `hpow-futures`, `hpow-derivatives`) plus a **stable tag** per consumer (or use tag name = env if you prefer).
 
 Confirm with Goldsky whether Scale billing constraints affect number of projects.
 

@@ -73,9 +73,9 @@ All subgraphs are hosted on Goldsky with public GraphQL endpoints (no API key ne
 
 | Subgraph            | Endpoint                                                                                                           |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| lumerin-oracles     | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-oracles/dev-latest/gn`     |
-| lumerin-futures     | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-futures/dev-latest/gn`     |
-| lumerin-derivatives | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/lumerin-derivatives/dev-latest/gn` |
+| hpow-oracles     | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-oracles/dev-latest/gn`     |
+| hpow-futures     | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-futures/dev-latest/gn`     |
+| hpow-derivatives | `https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-derivatives/dev-latest/gn` |
 
 
 ## Services

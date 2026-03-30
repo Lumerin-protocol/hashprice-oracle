@@ -53,8 +53,6 @@ dataSources:
             kind: polling
             every: ${BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL}
       file: ./src/btc-token-oracle.ts
-# features:
-#   - grafting
-# graft:
-#   base: QmSagdeMzbrcwppgzTwsJk4uhKSXT5wXRDxWC3Bt1i4sQg
-#   block: 213834223
+# Required when deploying with `goldsky subgraph deploy ... --graft-from <name>/<version>`
+features:
+  - grafting
