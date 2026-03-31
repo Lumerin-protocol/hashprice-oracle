@@ -12,6 +12,11 @@ wallets = {
   btcusd_oracle_address   = "0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 }
 
+spot_indexer_contracts = {
+  clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
+  hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
+}
+
 core_resources = {
   create = true
 }

@@ -2,7 +2,7 @@
 # SHARED CONTRACT ADDRESSES (used across multiple services)
 ################################################################################
 variable "wallets" {
-  description = "Shared contract / wallet addresses"
+  description = "Shared contract / wallet addresses (oracle Lambda, staleness checks — target the hashpower/oracle chain, e.g. Base Sepolia in dev)"
   type        = map(string)
   default = {
     clone_factory_address   = ""
@@ -11,6 +11,15 @@ variable "wallets" {
     multicall_address       = ""
     btcusd_oracle_address   = ""
   }
+}
+
+# Spot marketplace stays on Arbitrum while oracle infra may use another chain in the same account.
+variable "spot_indexer_contracts" {
+  description = "Clone factory and hashrate oracle addresses for the spot indexer (Arbitrum Sepolia / Arbitrum One). Must match var.spot_eth_rpc_url chain."
+  type = object({
+    clone_factory_address   = string
+    hashrate_oracle_address = string
+  })
 }
 
 variable "gs_subgraphs" {

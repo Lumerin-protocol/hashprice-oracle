@@ -1,0 +1,20 @@
+PERPS_ADDRESS=0x794f9e63b7666985256f1d2763ee24cc0b528199
+PERPS_START_BLOCK=43872047
+
+PRICE_ORACLE_ADDRESS=0x614dCAfa33AF0705C7b4A37667eF511F400F36d0
+BTCUSDC_ORACLE_ADDRESS=0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F
+
+COLLATERAL_TOKEN_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+USDC_TOKEN_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+
+CHAIN_ID=8453
+
+FUTURES_ADDRESS=0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f
+
+START_BLOCK_FUTURES=43744464
+START_BLOCK_HASHRATE_ORACLE=43743806
+
+# Goldsky Subgraph Details
+Oracles: https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-oracles/stg-latest/gn
+Futures: https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-futures/stg-latest/gn
+Derivatives: https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-derivatives/stg-latest/gn

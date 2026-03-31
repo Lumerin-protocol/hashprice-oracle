@@ -199,15 +199,22 @@ def check_subgraph(name, url, metric_data):
         return {"name": name, "available": False, "response_time_ms": response_time_ms, "deployment_key": "error", "errors": result["errors"]}
 
     meta = result.get("data", {}).get("_meta", {})
-    block = meta.get("block", {})
-    block_timestamp = block.get("timestamp", 0)
+    block = meta.get("block") or {}
+    # Goldsky may return JSON null for block.timestamp; .get("timestamp", 0) still yields None
+    raw_ts = block.get("timestamp")
+    try:
+        block_timestamp = int(raw_ts) if raw_ts is not None else 0
+    except (TypeError, ValueError):
+        block_timestamp = 0
     deployment = meta.get("deployment", "unknown")
     has_indexing_errors = meta.get("hasIndexingErrors", False)
 
     deployment_key = shorten_deployment(deployment)
 
     current_timestamp = int(time.time())
-    data_age_seconds = current_timestamp - block_timestamp if block_timestamp > 0 else 0
+    data_age_seconds = (
+        (current_timestamp - block_timestamp) if block_timestamp > 0 else 0
+    )
 
     print(f"    OK: deployment={deployment_key}, age={data_age_seconds}s, errors={has_indexing_errors}, took {response_time_ms}ms")
 
