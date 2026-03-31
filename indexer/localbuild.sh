@@ -25,8 +25,9 @@ yarn build
 # goldsky subgraph delete "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --token "${GOLDSKY_API_KEY}" --force 2>/dev/null || true
 
 # New Deploy 
-# goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --path . --token "${GOLDSKY_API_KEY}"
+goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --path . --token "${GOLDSKY_API_KEY}"
 
 # Graft the subgraph to the Goldsky subgraph
-goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --path . --graft-from "${GRAFT_FROM}/${GRAFT_FROM_VERSION}" --token "${GOLDSKY_API_KEY}" 
+# goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --path . --graft-from "${GRAFT_FROM}/${GRAFT_FROM_VERSION}" --token "${GOLDSKY_API_KEY}" 
+
 goldsky subgraph tag create "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_SEMVER}" --tag "${GOLDSKY_ROLLING_TAG}" --token "${GOLDSKY_API_KEY}"
