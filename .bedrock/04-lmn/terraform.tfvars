@@ -9,7 +9,12 @@ wallets = {
   hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
   futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+  btcusd_oracle_address   = "0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+}
+
+spot_indexer_contracts = {
+  clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
+  hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
 }
 
 core_resources = {
@@ -29,25 +34,6 @@ spot_indexer = {
   task_ram        = 512
   ghcr_imagetag   = "latest"
   friendly_name   = "indexer"
-}
-
-graph_indexer = {
-  create                     = true
-  protect                    = false
-  imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
-  task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
-  task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
-  db_instance_class          = "db.t3.medium"
-  db_allocated_storage       = 100
-  db_max_allocated_storage   = 500
-  db_backup_retention_period = 7
-  db_backup_window           = "03:00-04:00"
-  db_maintenance_window      = "sun:04:00-sun:05:00"
-  db_max_connections         = "400"
-  # RPC tuning - LMN/PROD: optimized for cost savings
-  rpc_polling_interval_ms    = "2000" # Poll every 2s (75% reduction from default)
-  rpc_max_concurrent_receipts = "150" # Lower concurrency to reduce RPC load
 }
 
 oracle_lambda = {

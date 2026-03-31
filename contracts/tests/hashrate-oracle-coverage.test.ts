@@ -10,11 +10,11 @@ describe("HashrateOracle Coverage Tests", function () {
     it("should test _authorizeUpgrade function", async function () {
       const { contracts, accounts } = await loadFixture(deployTokenOraclesAndMulticall3);
       const { hashrateOracle } = contracts;
-      const { owner, user } = accounts;
+      const { user } = accounts;
 
       // Deploy a new implementation
       await viem.deployContract("contracts/HashrateOracle.sol:HashrateOracle", [
-        contracts.btcPriceOracleMock.address,
+        contracts.btcPriceOracleMock.address as `0x${string}`,
         6,
       ]);
 
@@ -36,7 +36,7 @@ describe("HashrateOracle Coverage Tests", function () {
       await expect(
         hashrateOracle.write.setHashesForBTC([0n], {
           account: owner.account,
-        })
+        }),
       ).to.be.rejectedWith("ValueCannotBeZero");
     });
 
@@ -68,7 +68,7 @@ describe("HashrateOracle Coverage Tests", function () {
       await expect(
         hashrateOracle.write.setHashesForBTC([newDifficulty], {
           account: user.account,
-        })
+        }),
       ).to.be.rejectedWith("Unauthorized");
     });
 
@@ -80,7 +80,7 @@ describe("HashrateOracle Coverage Tests", function () {
       await expect(
         hashrateOracle.write.setTTL([1n, 1n], {
           account: user.account,
-        })
+        }),
       ).to.be.rejectedWith("OwnableUnauthorizedAccount");
     });
   });
@@ -112,7 +112,7 @@ describe("HashrateOracle Coverage Tests", function () {
     const usdcTokenMock = await viem.deployContract("contracts/USDCMock.sol:USDCMock", []);
     const hashrateOracle = await viem.deployContract(
       "contracts/HashrateOracle.sol:HashrateOracle",
-      [usdcTokenMock.address, decimals]
+      [usdcTokenMock.address as `0x${string}`, decimals],
     );
 
     // Check initial values
@@ -190,16 +190,16 @@ describe("HashrateOracle Coverage Tests", function () {
     const { contracts, config } = await loadFixture(deployTokenOraclesAndMulticall3);
     const hashrateOracle = contracts.hashrateOracle;
 
-    const { btcPrice, decimals } = config.oracle;
+    const { btcPrice } = config.oracle;
+    const btcOracleDecimals = await contracts.btcPriceOracleMock.read.decimals();
 
     // Get reward in token
     const hashesForToken = await hashrateOracle.read.getHashesforToken();
     const hashesForBTC = await hashrateOracle.read.getHashesForBTC();
 
-    // oracle has its own decimals
     const btcDecimals = 8;
     const usdcDecimals = 6;
-    const resultDecimals = btcDecimals - usdcDecimals + decimals;
+    const resultDecimals = btcDecimals - usdcDecimals + btcOracleDecimals;
     const result = (Number(hashesForBTC.value) / Number(btcPrice)) * 10 ** resultDecimals;
 
     expect(Number(hashesForToken)).to.approximately(result, 1);
@@ -273,5 +273,19 @@ describe("HashrateOracle Coverage Tests", function () {
         account: nonOwner.account,
       });
     });
+  });
+
+  it("should calculate correct price for 100 TH/s per day", async function () {
+    const { contracts } = await loadFixture(deployTokenOraclesAndMulticall3);
+    const hashrateOracle = contracts.hashrateOracle;
+
+    await contracts.hashrateOracle.write.setHashesForBTC([1720236047322671n]);
+    await contracts.btcPriceOracleMock.write.setPrice([7059000000000n]);
+
+    const [, price] = await hashrateOracle.read.latestRoundData();
+    const decimals = await hashrateOracle.read.decimals();
+    const floatPrice = Number(price) / Number(10 ** decimals);
+
+    expect(floatPrice).to.approximately(3.54, 0.01);
   });
 });

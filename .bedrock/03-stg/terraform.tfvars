@@ -6,11 +6,22 @@
 # DEV uses Arbitrum Sepolia testnet, STG/LMN use Arbitrum mainnet
 wallets = {
   clone_factory_address   = "0xb5838586b43b50f9a739d1256a067859fe5b3234"
-  hashrate_oracle_address = "0x2c1db79d2f3df568275c940dac81ad251871faf4"
-  futures_address         = "0xe11594879beb6c28c67bc251aa5e26ce126b82ba"
+  hashrate_oracle_address = "0x614dCAfa33AF0705C7b4A37667eF511F400F36d0"
+  futures_address         = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+  btcusd_oracle_address   = "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" #"0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
 
+}
+
+spot_indexer_contracts = {
+  clone_factory_address   = "0xb5838586b43b50f9a739d1256a067859fe5b3234"
+  hashrate_oracle_address = "0x2c1db79d2f3df568275c940dac81ad251871faf4"
+}
+
+gs_subgraphs = {
+  oracles = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-oracles/stg-latest/gn"
+  futures = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-futures/stg-latest/gn"
+  derivatives = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-derivatives/stg-latest/gn"
 }
 
 core_resources = {
@@ -32,30 +43,11 @@ spot_indexer = {
   friendly_name   = "indexer"
 }
 
-graph_indexer = {
-  create                     = true
-  protect                    = false
-  imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
-  task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
-  task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
-  db_instance_class          = "db.t3.small"
-  db_allocated_storage       = 50
-  db_max_allocated_storage   = 200
-  db_backup_retention_period = 7
-  db_backup_window           = "03:00-04:00"
-  db_maintenance_window      = "sun:04:00-sun:05:00"
-  db_max_connections         = "200"
-  # RPC tuning - STG: balanced between dev speed and prod cost savings
-  rpc_polling_interval_ms    = "2000" # Poll every 1.5s
-  rpc_max_concurrent_receipts = "150" # Moderate concurrency
-}
-
 oracle_lambda = {
   create       = true
   protect      = false
   svc_name     = "oracle-lambda"
-  chain_id     = "42161" # arbitrum mainnet
+  chain_id     = "8453" # base mainnet
   log_level    = "info"
   job_interval = "5"
 }
@@ -111,10 +103,6 @@ account_number    = "464450398935" # 12 digit account number
 account_lifecycle = "stg"          # [sbx, dev, stg, prd] -used for NACL and other reference
 default_region    = "us-east-1"
 region_shortname  = "use1"
-
-########################################
-# Environment Specific Variables
-#######################################
 vpc_index            = 1
 devops_keypair       = "bedrock-titanio-stg-use1"
 titanio_net_edge_vpn = "172.18.16.0/20"

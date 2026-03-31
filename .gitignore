@@ -49,3 +49,6 @@ secret.*
 
 # hide any .internal.md files (LOcal AI discussion notes)
 *.internal.md
+
+# node_modules
+node_modules/

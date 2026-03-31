@@ -146,14 +146,16 @@ if [ -z "$ENV" ]; then
 fi
 
 # Generate version from git tags (same logic as CI/CD) or use override
+# Uses component-based versioning: indexer-v<semver>[-env]
 generate_version() {
     local env=$1
+    local component="indexer"
     cd "$REPO_DIR"
-    LAST_TAG=$(git tag -l "subgraph-v*" 2>/dev/null | sort -V | tail -n 1)
+    LAST_TAG=$(git tag -l "${component}-v*" 2>/dev/null | sort -V | tail -n 1)
     if [ -z "$LAST_TAG" ]; then
-        BASE_VERSION="2.0.0"
+        BASE_VERSION="3.1.0"
     else
-        LAST_VERSION=$(echo $LAST_TAG | sed 's/subgraph-v//' | sed 's/-.*$//')
+        LAST_VERSION=$(echo $LAST_TAG | sed "s/${component}-v//" | sed 's/-.*$//')
         IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
         PATCH=$((PATCH + 1))
         BASE_VERSION="${MAJOR}.${MINOR}.${PATCH}"

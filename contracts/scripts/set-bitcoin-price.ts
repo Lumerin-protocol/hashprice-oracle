@@ -7,7 +7,7 @@ async function main() {
   if (!oracleAddress) {
     console.error("BTCUSDC_ORACLE_ADDRESS environment variable is required");
     console.error(
-      "Usage: BTCUSDC_ORACLE_ADDRESS=0x... npx hardhat run scripts/set-bitcoin-price.ts --network localhost"
+      "Usage: BTCUSDC_ORACLE_ADDRESS=0x... npx hardhat run scripts/set-bitcoin-price.ts --network localhost",
     );
     process.exit(1);
   }
@@ -18,7 +18,7 @@ async function main() {
 
   const btcPriceOracleMock = await viem.getContractAt(
     "contracts/BTCPriceOracleMock.sol:BTCPriceOracleMock",
-    oracleAddress
+    oracleAddress,
   );
 
   // Read current price from oracle
@@ -69,7 +69,7 @@ async function main() {
       console.log(`$${currentPrice.toLocaleString()} → $${newPrice.toLocaleString()}`);
 
       try {
-        const hash = await btcPriceOracleMock.write.setPrice([newPriceScaled, decimals]);
+        const hash = await btcPriceOracleMock.write.setPrice([newPriceScaled]);
         await pc.waitForTransactionReceipt({ hash });
 
         // Verify the price was updated

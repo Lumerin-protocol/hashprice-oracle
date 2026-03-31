@@ -6,27 +6,24 @@ import { verifyContract } from "../lib/verify";
 async function main() {
   console.log("Deploying BTC/USD oracle mock...");
 
-  // Get wallet client
+  // // Get wallet client
   const [deployer] = await viem.getWalletClients();
   console.log("Deployer address:", deployer.account.address);
 
   // Deploy USDC Mock contract
   const btcPriceOracleMock = await viem.deployContract(
     "contracts/BTCPriceOracleMock.sol:BTCPriceOracleMock",
-    []
+    [],
   );
   console.log("Deployed at:", btcPriceOracleMock.address);
 
   await verifyContract(btcPriceOracleMock.address);
 
   const btcPrice = "96936.15";
-  const ORACLE_DECIMALS = 8;
+  const ORACLE_DECIMALS = await btcPriceOracleMock.read.decimals();
 
   console.log("Setting BTC price to:", btcPrice);
-  const sim = await btcPriceOracleMock.simulate.setPrice([
-    parseUnits(btcPrice, ORACLE_DECIMALS),
-    ORACLE_DECIMALS,
-  ]);
+  const sim = await btcPriceOracleMock.simulate.setPrice([parseUnits(btcPrice, ORACLE_DECIMALS)]);
   const receipt = await writeAndWait(deployer, sim);
   console.log("Transaction hash:", receipt.transactionHash);
 
@@ -34,7 +31,7 @@ async function main() {
   console.log(
     "BTC price:",
     Number((await btcPriceOracleMock.read.latestRoundData())[1]) /
-      10 ** (await btcPriceOracleMock.read.decimals())
+      10 ** (await btcPriceOracleMock.read.decimals()),
   );
 
   console.log("Done!");

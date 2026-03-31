@@ -101,12 +101,12 @@ resource "aws_ecs_task_definition" "spot_indexer" {
         },
         {
           name  = "CLONE_FACTORY_ADDRESS"
-          value = var.wallets.clone_factory_address
+          value = var.spot_indexer_contracts.clone_factory_address
         },
 
         {
           name  = "HASHRATE_ORACLE_ADDRESS"
-          value = var.wallets.hashrate_oracle_address
+          value = var.spot_indexer_contracts.hashrate_oracle_address
         }
       ]
       secrets = [

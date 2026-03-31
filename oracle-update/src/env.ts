@@ -1,6 +1,8 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { Type, Static } from "@sinclair/typebox";
 import Ajv from "ajv";
+
+dotenv.config({ path: "../.env" });
 
 const schema = Type.Object({
   HASHRATE_ORACLE_ADDRESS: Type.String(),
@@ -21,7 +23,7 @@ const schema = Type.Object({
       Type.Literal("error"),
       Type.Literal("fatal"),
     ],
-    { default: "info" }
+    { default: "info" },
   ),
   BTCUSD_ORACLE_ADDRESS: Type.Optional(Type.String()),
 });
@@ -36,7 +38,7 @@ if (!success) {
     "Invalid environment variables:\n" +
       validate.errors
         ?.map((e) => `${e.instancePath}: ${e.message} ${e.params?.allowedValue || ""}`)
-        .join("\n")
+        .join("\n"),
   );
 }
 

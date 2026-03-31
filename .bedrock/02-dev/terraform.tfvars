@@ -2,14 +2,26 @@
 # Shared Contract Addresses
 ########################################
 # Note: ethereum_rpc_url is defined in secret.auto.tfvars (contains API key)
-# Contract addresses for the environment
-# DEV uses Arbitrum Sepolia testnet, STG/LMN use Arbitrum mainnet
+# Oracle Lambda / subgraph monitoring: DEV targets Base Sepolia.
+# Spot indexer stays on Arbitrum Sepolia — use spot_indexer_contracts + spot_eth_rpc_url (secret).
 wallets = {
   clone_factory_address   = "0x998135c509b64083cd27ed976c1bcda35ab7a40b"
-  hashrate_oracle_address = "0x6f736186d2c93913721e2570c283dff2a08575e9"
-  futures_address         = "0xec76867e96d942282fc7aafe3f778de34d41a311"
+  hashrate_oracle_address = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
+  futures_address         = "0x56d8d4a03a0f34b93b86e0b7941aff29178d0479"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+  btcusd_oracle_address   = "0x614dcafa33af0705c7b4a37667ef511f400f36d0" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+}
+
+# Spot marketplace / proxy-indexer (Arbitrum Sepolia) — must match spot-marketplace .bedrock/02-dev
+spot_indexer_contracts = {
+  clone_factory_address   = "0x998135c509b64083cd27ed976c1bcda35ab7a40b"
+  hashrate_oracle_address = "0x6f736186d2c93913721e2570c283dff2a08575e9"
+}
+
+gs_subgraphs = {
+  futures     = "https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-futures/dev-latest/gn"
+  oracles     = "https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-oracles/dev-latest/gn"
+  derivatives = "https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-derivatives/dev-latest/gn"
 }
 
 core_resources = {
@@ -31,30 +43,11 @@ spot_indexer = {
   friendly_name   = "indexer"
 }
 
-graph_indexer = {
-  create                     = true
-  protect                    = false
-  imagetag                   = "graphprotocol/graph-node:v0.41.1" # Latest stable (Sept 2025)
-  task_cpu                   = 1024                               # 1 vCPU - increased for subgraph indexing
-  task_ram                   = 2048                               # 2 GB - minimum recommended by Graph Protocol
-  task_worker_qty            = 1
-  db_instance_class          = "db.t3.small"
-  db_allocated_storage       = 50
-  db_max_allocated_storage   = 200
-  db_backup_retention_period = 7
-  db_backup_window           = "03:00-04:00"
-  db_maintenance_window      = "sun:04:00-sun:05:00"
-  db_max_connections         = "200"
-  # RPC tuning - DEV: faster feedback, higher concurrency for quicker sync
-  rpc_polling_interval_ms    = "2000" # Poll every 1s (default 500ms)
-  rpc_max_concurrent_receipts = "150" # Higher concurrency for faster dev sync (default 1000)
-}
-
 oracle_lambda = {
   create       = true
   protect      = false
   svc_name     = "oracle-lambda"
-  chain_id     = "421614"
+  chain_id     = "84532"
   log_level    = "info"
   job_interval = "5"
 }

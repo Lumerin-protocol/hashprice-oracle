@@ -29,7 +29,7 @@ async function main() {
   console.log("Getting payment token decimals...");
   const paymentToken = await viem.getContractAt(
     "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol:IERC20Metadata",
-    env.USDC_TOKEN_ADDRESS
+    env.USDC_TOKEN_ADDRESS,
   );
   const tokenDecimals = await paymentToken.read.decimals();
   console.log("Name:", await paymentToken.read.name());
@@ -41,7 +41,7 @@ async function main() {
   console.log("Getting Oracle details...");
   const btcusdOracle = await viem.getContractAt(
     "AggregatorV3Interface",
-    env.BTCUSDC_ORACLE_ADDRESS
+    env.BTCUSDC_ORACLE_ADDRESS,
   );
   const oracleDecimals = await btcusdOracle.read.decimals();
   const btcPrice = Number((await btcusdOracle.read.latestRoundData())[1]) / 10 ** oracleDecimals;
