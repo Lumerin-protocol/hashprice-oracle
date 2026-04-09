@@ -13,7 +13,7 @@ contract BTCRelay is Initializable, OwnableUpgradeable {
     struct StoredHeader {
         bytes32 blockHashLE;
         bytes32 prevBlockHashLE;
-        bytes32 merkleRootLE;
+        bytes32 merkleRoot;
         uint32 timestamp;
         uint32 nBits;
         uint32 height;
@@ -65,7 +65,7 @@ contract BTCRelay is Initializable, OwnableUpgradeable {
         headers[blockHashLE] = StoredHeader({
             blockHashLE: blockHashLE,
             prevBlockHashLE: info.prevBlockHashLE,
-            merkleRootLE: info.merkleRootLE,
+            merkleRoot: info.merkleRoot,
             timestamp: info.timestamp,
             nBits: info.nBits,
             height: height,
@@ -124,7 +124,7 @@ contract BTCRelay is Initializable, OwnableUpgradeable {
             headers[blockHashLE] = StoredHeader({
                 blockHashLE: blockHashLE,
                 prevBlockHashLE: info.prevBlockHashLE,
-                merkleRootLE: info.merkleRootLE,
+                merkleRoot: info.merkleRoot,
                 timestamp: info.timestamp,
                 nBits: info.nBits,
                 height: height,
@@ -168,11 +168,10 @@ contract BTCRelay is Initializable, OwnableUpgradeable {
         return headers[hash].timestamp;
     }
 
-    /// @notice Get the merkle root at a specific block height
+    /// @notice Get the merkle root at a specific block height (returns bytes32(0) if unknown)
     function getMerkleRoot(uint32 height) external view returns (bytes32) {
         bytes32 hash = heightToHash[height];
-        if (hash == bytes32(0)) revert UnknownHeight();
-        return headers[hash].merkleRootLE;
+        return headers[hash].merkleRoot;
     }
 
     /// @notice Validate timestamp against MTP rule and 2-hour future limit

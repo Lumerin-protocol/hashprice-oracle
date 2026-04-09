@@ -40,20 +40,21 @@ contract CoinbaseVerifier {
     {
         if (isVerified[height]) revert AlreadyVerified();
 
+        console.log("height");
+        console.log(height);
+
         bytes32 expectedRoot = relay.getMerkleRoot(height);
+
         if (expectedRoot == bytes32(0)) revert BlockNotInRelay();
 
         // Compute coinbase txid (double-SHA256 of non-witness serialized tx)
         // Reverse to internal byte order for merkle tree computation (Bitcoin
         // merkle trees concatenate hashes in internal/LE order at the leaf level)
-        bytes32 current = BTCUtils.reverseBytes32(BTCUtils.dsha256(rawCoinbaseTx));
+        bytes32 current = BTCUtils.dsha256(rawCoinbaseTx);
         for (uint256 i = 0; i < merkleProof.length; i++) {
             current = _dsha256Pair(current, merkleProof[i]);
         }
-        console.log("current:");
-        console.logBytes32(current);
-        console.log("expectedRoot:");
-        console.logBytes32(expectedRoot);
+
         if (current != expectedRoot) revert InvalidMerkleProof();
 
         // Parse coinbase tx to get total output value

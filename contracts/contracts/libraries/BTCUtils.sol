@@ -6,7 +6,7 @@ pragma solidity >=0.8.0;
 library BTCUtils {
     struct HeaderInfo {
         bytes32 prevBlockHashLE;
-        bytes32 merkleRootLE;
+        bytes32 merkleRoot;
         uint32 timestamp;
         uint32 nBits;
     }
@@ -23,7 +23,7 @@ library BTCUtils {
         require(header.length == 80, "Invalid header length");
         return HeaderInfo({
             prevBlockHashLE: reverseBytes32(bytes32(header[4:36])),
-            merkleRootLE: reverseBytes32(bytes32(header[36:68])),
+            merkleRoot: bytes32(header[36:68]),
             timestamp: readUint32LE(header, 68),
             nBits: readUint32LE(header, 72)
         });

@@ -37,7 +37,6 @@ export async function deployRelayFixture() {
     .slice(1)
     .map((b) => b.rawHeader)
     .join("");
-  console.log("ancestorHash:", ancestorHash);
   await btcRelay.write.submitHeaders([prefixed0x(remainingHeaders), prefixed0x(ancestorHash)]);
 
   return {

@@ -319,7 +319,7 @@
       },
       {
         "internalType": "bytes32",
-        "name": "merkleRootLE",
+        "name": "merkleRoot",
         "type": "bytes32"
       },
       {
