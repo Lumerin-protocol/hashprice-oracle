@@ -63,7 +63,7 @@ const config: HardhatUserConfig = {
     clear: true,
     flat: true,
     spacing: 2,
-    only: ["AggregatorV3Interface", "HashrateOracle", "BTCPriceOracleMock"],
+    only: ["AggregatorV3Interface", "HashrateOracle", "HashrateOracleV2", "BTCRelay", "CoinbaseVerifier", "BTCPriceOracleMock"],
   },
   mocha: {},
   gasReporter: {
