@@ -32,23 +32,21 @@ export async function deployRelayFixture(conn: NetworkConnection) {
   const latestTimestamp = blocks[blocks.length - 1].timestamp;
   await tc.setNextBlockTimestamp({ timestamp: BigInt(latestTimestamp + 3600) });
 
+  const bootstrapBlocks = blocks.slice(1, -1);
   const ancestorHash = await btcRelay.read.chainTip();
-  const remainingHeaders = blocks
-    .slice(1)
-    .map((b) => b.rawHeader)
-    .join("");
+  const headers = bootstrapBlocks.map((b) => b.rawHeader).join("");
   const submitHeadersHash = await btcRelay.write.submitHeaders([
-    prefixed0x(remainingHeaders),
+    prefixed0x(headers),
     prefixed0x(ancestorHash),
   ]);
   const submitHeadersReceipt = await pc.waitForTransactionReceipt({ hash: submitHeadersHash });
   console.log(
-    `  submitHeaders (${blocks.length - 1} headers): ${Number(submitHeadersReceipt.gasUsed).toLocaleString()} gas`,
+    `  submitHeaders (${bootstrapBlocks.length} headers): ${Number(submitHeadersReceipt.gasUsed).toLocaleString()} gas`,
   );
 
   return {
     contracts: { btcRelay, btcRelayImpl },
-    accounts: { owner, user, pc },
+    accounts: { owner, user, pc, tc },
     config: { blocks, checkpoint },
   };
 }
@@ -68,7 +66,7 @@ export async function deployFullFixture(conn: NetworkConnection) {
   );
 
   let totalCoinbaseGas = 0n;
-  for (const block of blocks) {
+  for (const block of blocks.slice(0, -1)) {
     const proofHash = await coinbaseVerifier.write.submitCoinbaseProof([
       block.height,
       prefixed0x(block.coinbase.rawHexStripped),
@@ -78,7 +76,7 @@ export async function deployFullFixture(conn: NetworkConnection) {
     totalCoinbaseGas += proofReceipt.gasUsed;
   }
   console.log(
-    `  submitCoinbaseProof (${blocks.length} blocks): ${Number(totalCoinbaseGas).toLocaleString()} gas total, ${Math.round(Number(totalCoinbaseGas) / blocks.length).toLocaleString()} gas avg`,
+    `  submitCoinbaseProof (${blocks.length - 1} blocks): ${Number(totalCoinbaseGas).toLocaleString()} gas total, ${Math.round(Number(totalCoinbaseGas) / (blocks.length - 1)).toLocaleString()} gas avg`,
   );
 
   const feeWindow = 3;

@@ -16,17 +16,34 @@ export async function deployOracleFixture(conn: NetworkConnection) {
   const latestTimestamp = blocks[blocks.length - 1].timestamp;
   await tc.setNextBlockTimestamp({ timestamp: BigInt(latestTimestamp + 3600) });
 
-  const oracle = await viem.deployContract(
-    "contracts/HashrateOracleV3.sol:HashrateOracleV3",
-    [prefixed0x(checkpoint.hash), checkpoint.height, checkpoint.timestamp, checkpoint.nBits],
-  );
+  const oracle = await viem.deployContract("contracts/HashrateOracleV3.sol:HashrateOracleV3", [
+    prefixed0x(checkpoint.hash),
+    checkpoint.height,
+    checkpoint.timestamp,
+    checkpoint.nBits,
+  ]);
 
-  const remainingHeaders = blocks
-    .slice(1)
-    .map((b) => b.rawHeader)
-    .join("");
-  const coinbaseTxs = blocks.slice(1).map((b) => prefixed0x(b.coinbase.rawHexStripped));
-  const merkleProofs = blocks.slice(1).map((b) => b.merkleProof.map((h) => prefixed0x(h)));
+  let remainingHeaders = "";
+  const coinbaseTxs: `0x${string}`[] = [];
+  const merkleProofs: `0x${string}`[][] = [];
+
+  // Submit all blocks except the last one, we use it in tests
+  for (let i = 1; i < blocks.length - 1; i++) {
+    const b = blocks[i];
+    remainingHeaders += b.rawHeader;
+    coinbaseTxs.push(prefixed0x(b.coinbase.rawHexStripped));
+    merkleProofs.push(b.merkleProof.map((h) => prefixed0x(h)));
+  }
+
+  const _lastBlock = blocks[blocks.length - 1];
+
+  const lastBlock = {
+    height: _lastBlock.height,
+    timestamp: _lastBlock.timestamp,
+    header: prefixed0x(_lastBlock.rawHeader),
+    coinbaseTx: prefixed0x(_lastBlock.coinbase.rawHexStripped),
+    merkleProof: _lastBlock.merkleProof.map((h) => prefixed0x(h)),
+  };
 
   const submitHash = await oracle.write.submitBlocks([
     checkpoint.height,
@@ -42,6 +59,6 @@ export async function deployOracleFixture(conn: NetworkConnection) {
   return {
     contracts: { oracle },
     accounts: { owner, user, pc, tc },
-    config: { blocks, checkpoint },
+    config: { blocks, checkpoint, lastBlock },
   };
 }

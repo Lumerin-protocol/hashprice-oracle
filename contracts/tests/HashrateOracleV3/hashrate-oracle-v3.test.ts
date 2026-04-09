@@ -15,26 +15,26 @@ describe("HashrateOracleV3", function () {
   describe("Chain state", function () {
     it("should set chain tip to the last submitted block hash", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const lastBlock = config.blocks[config.blocks.length - 1];
+      const beforeLastBlock = config.blocks[config.blocks.length - 2];
       const chainTip = await contracts.oracle.read.chainTip();
-      assert.equal(chainTip.toLowerCase(), hex(lastBlock.hash).toLowerCase());
+      assert.equal(chainTip.toLowerCase(), hex(beforeLastBlock.hash).toLowerCase());
     });
 
     it("should set chain height to the last submitted block height", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const lastBlock = config.blocks[config.blocks.length - 1];
-      assert.equal(await contracts.oracle.read.chainHeight(), lastBlock.height);
+      const beforeLastBlock = config.blocks[config.blocks.length - 2];
+      assert.equal(await contracts.oracle.read.chainHeight(), beforeLastBlock.height);
     });
 
     it("should return confirmedHeight = chainHeight - 6", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const lastBlock = config.blocks[config.blocks.length - 1];
-      assert.equal(await contracts.oracle.read.confirmedHeight(), lastBlock.height - 6);
+      const beforeLastBlock = config.blocks[config.blocks.length - 2];
+      assert.equal(await contracts.oracle.read.confirmedHeight(), beforeLastBlock.height - 6);
     });
 
     it("should track block count", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      assert.equal(await contracts.oracle.read.blockCount(), config.blocks.length - 1);
+      assert.equal(await contracts.oracle.read.blockCount(), config.blocks.length - 2);
     });
   });
 
@@ -70,21 +70,16 @@ describe("HashrateOracleV3", function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
 
       await catchError(contracts.oracle.abi, "InvalidHeaderLength", async () => {
-        await contracts.oracle.write.submitBlocks([
-          config.blocks[0].height,
-          "0xdeadbeef",
-          [],
-          [],
-        ]);
+        await contracts.oracle.write.submitBlocks([config.blocks[0].height, "0xdeadbeef", [], []]);
       });
     });
 
     it("should revert when ancestor is not in buffer", async function () {
       const { contracts } = await loadFixture(deployOracleFixture);
       const fakeHeight = 1;
-      const fakeHeader = "0x" + "00".repeat(80) as `0x${string}`;
+      const fakeHeader = ("0x" + "00".repeat(80)) as `0x${string}`;
 
-      await catchError(contracts.oracle.abi, "AncestorNotInBuffer", async () => {
+      await catchError(contracts.oracle.abi, "AncestorTooOld", async () => {
         await contracts.oracle.write.submitBlocks([fakeHeight, fakeHeader, ["0x00"], [[]]]);
       });
     });
@@ -168,7 +163,7 @@ describe("HashrateOracleV3", function () {
 
       const subsidy = getBlockSubsidy(confirmedHeight);
 
-      const submittedBlocks = config.blocks.slice(1);
+      const submittedBlocks = config.blocks.slice(1, -1);
       let totalFees = 0n;
       for (const b of submittedBlocks) {
         totalFees += BigInt(b.coinbase.totalOutputValue) - subsidy;
@@ -193,17 +188,47 @@ describe("HashrateOracleV3", function () {
     });
   });
 
-  // ─── Gas: submitBlock ─────────────────────────────────────────────
+  // ─── Gas benchmark ──────────────────────────────────────────────
 
-  describe("Gas: submitBlock", function () {
-    it("should log gas for a single submitBlock", async function () {
-      const { contracts, accounts, config } = await loadFixture(deployOracleFixture);
+  describe("Gas benchmark (single block)", function () {
+    it.only("submitBlock vs submitBlocks", async function () {
+      console.log("HERE");
+      const {
+        contracts: { oracle },
+        accounts: { pc },
+        config,
+      } = await loadFixture(deployOracleFixture);
+      const { lastBlock } = config;
+      console.log("fixture load success");
+      const tc = await viem.getTestClient();
 
-      const lastBlock = config.blocks[config.blocks.length - 1];
-      const nextHeader = "0x" + "00".repeat(80) as `0x${string}`;
+      const ancestorHeight = lastBlock.height - 1;
 
-      const gasUsed = await contracts.oracle.read.blockCount();
-      console.log(`  blockCount after bootstrap: ${gasUsed}`);
+      const snap = await tc.snapshot();
+
+      const hashA = await oracle.write.submitBlock([
+        lastBlock.header,
+        lastBlock.coinbaseTx,
+        lastBlock.merkleProof,
+      ]);
+      const receiptA = await pc.waitForTransactionReceipt({ hash: hashA });
+
+      await tc.revert({ id: snap });
+      await tc.setNextBlockTimestamp({ timestamp: BigInt(lastBlock.timestamp + 7200) });
+
+      const hashB = await oracle.write.submitBlocks([
+        ancestorHeight,
+        lastBlock.header,
+        [lastBlock.coinbaseTx],
+        [lastBlock.merkleProof],
+      ]);
+      const receiptB = await pc.waitForTransactionReceipt({ hash: hashB });
+
+      console.log(`  submitBlock  (1 block): ${Number(receiptA.gasUsed).toLocaleString()} gas`);
+      console.log(`  submitBlocks (1 block): ${Number(receiptB.gasUsed).toLocaleString()} gas`);
+      console.log(
+        `  overhead: ${Number(receiptB.gasUsed - receiptA.gasUsed).toLocaleString()} gas`,
+      );
     });
   });
 });
@@ -227,6 +252,6 @@ function nBitsToTarget(nBits: number): bigint {
 
 function nBitsToDifficulty(nBits: number): bigint {
   const target = nBitsToTarget(nBits);
-  const diff1Target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000n;
+  const diff1Target = 0x00000000ffff0000000000000000000000000000000000000000000000000000n;
   return diff1Target / target;
 }

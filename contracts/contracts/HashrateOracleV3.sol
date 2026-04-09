@@ -71,7 +71,7 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
     error InvalidRetarget();
     error InvalidMerkleProof();
     error NotHeaviestChain();
-    error AncestorNotInBuffer();
+    error AncestorTooOld();
     error InsufficientData();
     error ArrayLengthMismatch();
     error NotImplemented();
@@ -163,7 +163,7 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         if (coinbaseTxs.length != count || merkleProofs.length != count) revert ArrayLengthMismatch();
 
         BlockEntry storage ancestor = _blocks[ancestorHeight & 31];
-        if (ancestor.height != ancestorHeight) revert AncestorNotInBuffer();
+        if (ancestor.height != ancestorHeight) revert AncestorTooOld();
 
         ChainCursor memory cur = ChainCursor({
             prevHash: ancestor.blockHashLE,
@@ -302,10 +302,9 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         uint64 oldFee = _fees[idx];
         _fees[idx] = fees;
 
+        feeRunningSum += uint256(fees);
         if (blockCount >= FEE_WINDOW) {
-            feeRunningSum = feeRunningSum - uint256(oldFee) + uint256(fees);
-        } else {
-            feeRunningSum += uint256(fees);
+            feeRunningSum -= uint256(oldFee);
         }
     }
 
