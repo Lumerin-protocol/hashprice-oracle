@@ -37,7 +37,14 @@ export async function deployRelayFixture(conn: NetworkConnection) {
     .slice(1)
     .map((b) => b.rawHeader)
     .join("");
-  await btcRelay.write.submitHeaders([prefixed0x(remainingHeaders), prefixed0x(ancestorHash)]);
+  const submitHeadersHash = await btcRelay.write.submitHeaders([
+    prefixed0x(remainingHeaders),
+    prefixed0x(ancestorHash),
+  ]);
+  const submitHeadersReceipt = await pc.waitForTransactionReceipt({ hash: submitHeadersHash });
+  console.log(
+    `  submitHeaders (${blocks.length - 1} headers): ${Number(submitHeadersReceipt.gasUsed).toLocaleString()} gas`,
+  );
 
   return {
     contracts: { btcRelay, btcRelayImpl },
@@ -60,13 +67,19 @@ export async function deployFullFixture(conn: NetworkConnection) {
     [btcRelay.address as Hex],
   );
 
+  let totalCoinbaseGas = 0n;
   for (const block of blocks) {
-    await coinbaseVerifier.write.submitCoinbaseProof([
+    const proofHash = await coinbaseVerifier.write.submitCoinbaseProof([
       block.height,
       prefixed0x(block.coinbase.rawHexStripped),
       block.merkleProof.map((h) => prefixed0x(h)),
     ]);
+    const proofReceipt = await accounts.pc.waitForTransactionReceipt({ hash: proofHash });
+    totalCoinbaseGas += proofReceipt.gasUsed;
   }
+  console.log(
+    `  submitCoinbaseProof (${blocks.length} blocks): ${Number(totalCoinbaseGas).toLocaleString()} gas total, ${Math.round(Number(totalCoinbaseGas) / blocks.length).toLocaleString()} gas avg`,
+  );
 
   const feeWindow = 3;
   const oracleImpl = await viem.deployContract("contracts/HashrateOracleV2.sol:HashrateOracleV2", [

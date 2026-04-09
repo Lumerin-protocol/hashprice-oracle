@@ -11,6 +11,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const API_BASE = "https://blockstream.info/api";
 const RATE_LIMIT_MS = 300;
@@ -80,7 +81,6 @@ function buildMerkleProof(txids: string[]): string[] {
     const nextLevel: Buffer[] = [];
     for (let i = 0; i < level.length; i += 2) {
       const concat = Buffer.concat([level[i], level[i + 1]]);
-      const { createHash } = require("node:crypto");
       const hash = createHash("sha256")
         .update(createHash("sha256").update(concat).digest())
         .digest();
@@ -153,16 +153,11 @@ function stripWitness(rawHex: string): string {
   return Buffer.concat([version, buf.subarray(vinStart, vinVoutEnd), locktime]).toString("hex");
 }
 
-function readVarint(
-  buf: Buffer,
-  offset: number,
-): { value: number; size: number } {
+function readVarint(buf: Buffer, offset: number): { value: number; size: number } {
   const first = buf[offset];
   if (first < 0xfd) return { value: first, size: 1 };
-  if (first === 0xfd)
-    return { value: buf.readUInt16LE(offset + 1), size: 3 };
-  if (first === 0xfe)
-    return { value: buf.readUInt32LE(offset + 1), size: 5 };
+  if (first === 0xfd) return { value: buf.readUInt16LE(offset + 1), size: 3 };
+  if (first === 0xfe) return { value: buf.readUInt32LE(offset + 1), size: 5 };
   return { value: Number(buf.readBigUInt64LE(offset + 1)), size: 9 };
 }
 
@@ -198,7 +193,9 @@ async function main() {
 
     await sleep(RATE_LIMIT_MS);
     const blockInfo = await getBlock(hash);
-    console.log(`  nBits: ${blockInfo.bits}, nTx: ${blockInfo.tx_count}, timestamp: ${blockInfo.timestamp}`);
+    console.log(
+      `  nBits: ${blockInfo.bits}, nTx: ${blockInfo.tx_count}, timestamp: ${blockInfo.timestamp}`,
+    );
 
     await sleep(RATE_LIMIT_MS);
     const txids = await getBlockTxids(hash);
@@ -208,14 +205,13 @@ async function main() {
     await sleep(RATE_LIMIT_MS);
     const coinbaseRawHex = await getCoinbaseTxHex(coinbaseTxid);
     const coinbaseStripped = stripWitness(coinbaseRawHex);
-    console.log(`  coinbase raw: ${coinbaseRawHex.length / 2} bytes, stripped: ${coinbaseStripped.length / 2} bytes`);
+    console.log(
+      `  coinbase raw: ${coinbaseRawHex.length / 2} bytes, stripped: ${coinbaseStripped.length / 2} bytes`,
+    );
 
     await sleep(RATE_LIMIT_MS);
     const coinbaseTxInfo = await getTxInfo(coinbaseTxid);
-    const totalOutputValue = coinbaseTxInfo.vout.reduce(
-      (sum: number, o: any) => sum + o.value,
-      0,
-    );
+    const totalOutputValue = coinbaseTxInfo.vout.reduce((sum: number, o: any) => sum + o.value, 0);
     console.log(`  coinbase total output: ${totalOutputValue} sats`);
 
     const merkleProof = buildMerkleProof(txids);

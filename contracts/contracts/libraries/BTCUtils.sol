@@ -19,13 +19,19 @@ library BTCUtils {
     ///   [68..72) timestamp
     ///   [72..76) nBits (compact target)
     ///   [76..80) nonce
-    function parseHeader(bytes calldata header) internal pure returns (HeaderInfo memory) {
+    function parseHeader(bytes memory header) internal pure returns (HeaderInfo memory) {
         require(header.length == 80, "Invalid header length");
+
+        bytes32 prevBlockHash = readBytes32Mem(header, 4);
+        bytes32 merkleRootVal = readBytes32Mem(header, 36);
+        uint32 ts = readUint32LEMem(header, 68);
+        uint32 bits = readUint32LEMem(header, 72);
+
         return HeaderInfo({
-            prevBlockHashLE: reverseBytes32(bytes32(header[4:36])),
-            merkleRoot: bytes32(header[36:68]),
-            timestamp: readUint32LE(header, 68),
-            nBits: readUint32LE(header, 72)
+            prevBlockHashLE: reverseBytes32(prevBlockHash),
+            merkleRoot: merkleRootVal,
+            timestamp: ts,
+            nBits: bits
         });
     }
 
@@ -44,6 +50,12 @@ library BTCUtils {
             return coefficient >> (8 * (3 - exponent));
         }
         return coefficient << (8 * (exponent - 3));
+    }
+
+    /// @notice Expected number of hashes to mine a block at the given target
+    /// @dev work = 2^256 / (target + 1)
+    function targetToWork(uint256 target) internal pure returns (uint256) {
+        return type(uint256).max / (target + 1);
     }
 
     /// @notice Convert nBits to difficulty
@@ -134,6 +146,19 @@ library BTCUtils {
 
     /// @notice Read a uint32 in little-endian from calldata
     function readUint32LE(bytes calldata data, uint256 offset) internal pure returns (uint32) {
+        return uint32(uint8(data[offset])) | (uint32(uint8(data[offset + 1])) << 8)
+            | (uint32(uint8(data[offset + 2])) << 16) | (uint32(uint8(data[offset + 3])) << 24);
+    }
+
+    /// @notice Read a bytes32 from memory at the given byte offset
+    function readBytes32Mem(bytes memory data, uint256 offset) internal pure returns (bytes32 result) {
+        assembly {
+            result := mload(add(add(data, 32), offset))
+        }
+    }
+
+    /// @notice Read a uint32 in little-endian from memory
+    function readUint32LEMem(bytes memory data, uint256 offset) internal pure returns (uint32) {
         return uint32(uint8(data[offset])) | (uint32(uint8(data[offset + 1])) << 8)
             | (uint32(uint8(data[offset + 2])) << 16) | (uint32(uint8(data[offset + 3])) << 24);
     }
