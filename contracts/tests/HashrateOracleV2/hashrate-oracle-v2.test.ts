@@ -1,15 +1,14 @@
-import { expect } from "chai";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { catchError } from "../../lib/lib";
-import { deployFullFixture, deployRelayFixture } from "./fixtures";
+import { catchError } from "../../lib/lib.ts";
+import { deployFullFixture, deployRelayFixture } from "./fixtures.ts";
+import { network } from "hardhat";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { zeroHash } from "viem";
 
-const hex = (s: string): `0x${string}` => `0x${s}`;
-
-function getBlockSubsidy(height: number): bigint {
-  const halvings = Math.floor(height / 210_000);
-  if (halvings >= 64) return 0n;
-  return 5_000_000_000n >> BigInt(halvings);
-}
+const {
+  viem,
+  networkHelpers: { loadFixture },
+} = await network.connect();
 
 describe("HashrateOracleV2", function () {
   // ─── BTCRelay ──────────────────────────────────────────────────────
@@ -19,49 +18,47 @@ describe("HashrateOracleV2", function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       const lastBlock = config.blocks[config.blocks.length - 1];
       const chainTip = await contracts.btcRelay.read.chainTip();
-      expect(chainTip.toLowerCase()).to.equal(hex(lastBlock.hash).toLowerCase());
+      assert.equal(chainTip.toLowerCase(), hex(lastBlock.hash).toLowerCase());
     });
 
     it("should set chain height to the last submitted block height", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       const lastBlock = config.blocks[config.blocks.length - 1];
-      expect(await contracts.btcRelay.read.chainHeight()).to.equal(lastBlock.height);
+      assert.equal(await contracts.btcRelay.read.chainHeight(), lastBlock.height);
     });
 
     it("should return confirmedHeight = chainHeight - 6", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       const lastBlock = config.blocks[config.blocks.length - 1];
-      expect(await contracts.btcRelay.read.confirmedHeight()).to.equal(lastBlock.height - 6);
+      assert.equal(await contracts.btcRelay.read.confirmedHeight(), lastBlock.height - 6);
     });
 
     it("should store correct timestamps for all blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       for (const block of config.blocks) {
         const ts = await contracts.btcRelay.read.getTimestamp([block.height]);
-        expect(ts).to.equal(block.timestamp);
+        assert.equal(ts, block.timestamp);
       }
     });
 
     it("should return positive difficulty for stored blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       const diff = await contracts.btcRelay.read.getDifficulty([config.blocks[0].height]);
-      expect(diff > 0n).to.be.true;
+      assert.ok(diff > 0n);
     });
 
     it("should return consistent difficulty across same-epoch blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       const diff0 = await contracts.btcRelay.read.getDifficulty([config.blocks[0].height]);
       const diff1 = await contracts.btcRelay.read.getDifficulty([config.blocks[1].height]);
-      expect(diff0).to.equal(diff1);
+      assert.equal(diff0, diff1);
     });
 
     it("should return non-zero merkle roots for stored blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       for (const block of config.blocks) {
         const root = await contracts.btcRelay.read.getMerkleRoot([block.height]);
-        expect(root).to.not.equal(
-          "0x0000000000000000000000000000000000000000000000000000000000000000",
-        );
+        assert.notEqual(root, zeroHash);
       }
     });
 
@@ -69,7 +66,7 @@ describe("HashrateOracleV2", function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
       for (const block of config.blocks) {
         const hash = await contracts.btcRelay.read.heightToHash([block.height]);
-        expect(hash.toLowerCase()).to.equal(hex(block.hash).toLowerCase());
+        assert.equal(hash.toLowerCase(), hex(block.hash).toLowerCase());
       }
     });
 
@@ -122,14 +119,14 @@ describe("HashrateOracleV2", function () {
       for (const block of config.blocks) {
         const fees = await contracts.coinbaseVerifier.read.blockFees([block.height]);
         const expectedFees = BigInt(block.coinbase.totalOutputValue) - subsidy;
-        expect(fees).to.equal(expectedFees);
+        assert.equal(fees, expectedFees);
       }
     });
 
     it("should mark blocks as verified", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       for (const block of config.blocks) {
-        expect(await contracts.coinbaseVerifier.read.isVerified([block.height])).to.be.true;
+        assert.ok(await contracts.coinbaseVerifier.read.isVerified([block.height]));
       }
     });
 
@@ -137,13 +134,14 @@ describe("HashrateOracleV2", function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       const oldest = await contracts.coinbaseVerifier.read.oldestVerifiedHeight();
       const newest = await contracts.coinbaseVerifier.read.newestVerifiedHeight();
-      expect(oldest).to.equal(config.blocks[0].height);
-      expect(newest).to.equal(config.blocks[config.blocks.length - 1].height);
+      assert.equal(oldest, config.blocks[0].height);
+      assert.equal(newest, config.blocks[config.blocks.length - 1].height);
     });
 
     it("should track verified block count", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
-      expect(await contracts.coinbaseVerifier.read.verifiedBlockCount()).to.equal(
+      assert.equal(
+        await contracts.coinbaseVerifier.read.verifiedBlockCount(),
         config.blocks.length,
       );
     });
@@ -161,7 +159,7 @@ describe("HashrateOracleV2", function () {
       const expectedAvg = totalFees / BigInt(feeWindow);
 
       const avgFees = await contracts.coinbaseVerifier.read.getAverageFees([feeWindow]);
-      expect(avgFees).to.equal(expectedAvg);
+      assert.equal(avgFees, expectedAvg);
     });
 
     it("should compute correct average fees for the full range", async function () {
@@ -175,7 +173,7 @@ describe("HashrateOracleV2", function () {
       const expectedAvg = totalFees / BigInt(config.blocks.length);
 
       const avgFees = await contracts.coinbaseVerifier.read.getAverageFees([config.blocks.length]);
-      expect(avgFees).to.equal(expectedAvg);
+      assert.equal(avgFees, expectedAvg);
     });
 
     it("should revert when submitting a duplicate proof", async function () {
@@ -206,19 +204,20 @@ describe("HashrateOracleV2", function () {
     describe("AggregatorV3Interface", function () {
       it("decimals() should return 8", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
-        expect(await contracts.oracle.read.decimals()).to.equal(8);
+        assert.equal(await contracts.oracle.read.decimals(), 8);
       });
 
       it('description() should return "The price of 100 TH/s per day in BTC"', async function () {
         const { contracts } = await loadFixture(deployFullFixture);
-        expect(await contracts.oracle.read.description()).to.equal(
+        assert.equal(
+          await contracts.oracle.read.description(),
           "The price of 100 TH/s per day in BTC",
         );
       });
 
       it("version() should return 1", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
-        expect(await contracts.oracle.read.version()).to.equal(1n);
+        assert.equal(await contracts.oracle.read.version(), 1n);
       });
 
       it("getRoundData() should revert with NotImplemented", async function () {
@@ -230,7 +229,7 @@ describe("HashrateOracleV2", function () {
 
       it('VERSION() should return "1.0.0"', async function () {
         const { contracts } = await loadFixture(deployFullFixture);
-        expect(await contracts.oracle.read.VERSION()).to.equal("1.0.0");
+        assert.equal(await contracts.oracle.read.VERSION(), "1.0.0");
       });
     });
 
@@ -238,20 +237,20 @@ describe("HashrateOracleV2", function () {
       it("should return a positive hashprice", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
         const [, answer] = await contracts.oracle.read.latestRoundData();
-        expect(answer > 0n).to.be.true;
+        assert.ok(answer > 0n);
       });
 
       it("should set roundId to confirmedHeight", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
         const confirmedHeight = await contracts.btcRelay.read.confirmedHeight();
         const [roundId] = await contracts.oracle.read.latestRoundData();
-        expect(roundId).to.equal(BigInt(confirmedHeight));
+        assert.equal(roundId, BigInt(confirmedHeight));
       });
 
       it("should set answeredInRound equal to roundId", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
         const [roundId, , , , answeredInRound] = await contracts.oracle.read.latestRoundData();
-        expect(answeredInRound).to.equal(roundId);
+        assert.equal(answeredInRound, roundId);
       });
 
       it("should set timestamps to the confirmed block timestamp", async function () {
@@ -259,8 +258,8 @@ describe("HashrateOracleV2", function () {
         const confirmedHeight = await contracts.btcRelay.read.confirmedHeight();
         const expectedTs = await contracts.btcRelay.read.getTimestamp([confirmedHeight]);
         const [, , startedAt, updatedAt] = await contracts.oracle.read.latestRoundData();
-        expect(startedAt).to.equal(BigInt(expectedTs));
-        expect(updatedAt).to.equal(BigInt(expectedTs));
+        assert.equal(startedAt, BigInt(expectedTs));
+        assert.equal(updatedAt, BigInt(expectedTs));
       });
 
       it("should compute hashprice matching the on-chain formula", async function () {
@@ -276,14 +275,14 @@ describe("HashrateOracleV2", function () {
           (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (difficulty * (1n << 32n));
 
         const [, answer] = await contracts.oracle.read.latestRoundData();
-        expect(answer).to.equal(expectedHashprice);
+        assert.equal(answer, expectedHashprice);
       });
 
       it("should return hashprice in a plausible range", async function () {
         const { contracts } = await loadFixture(deployFullFixture);
         const [, answer] = await contracts.oracle.read.latestRoundData();
-        expect(answer > 100n).to.be.true;
-        expect(answer < 1_000_000n).to.be.true;
+        assert.ok(answer > 100n);
+        assert.ok(answer < 1_000_000n);
       });
     });
 
@@ -293,7 +292,7 @@ describe("HashrateOracleV2", function () {
         await contracts.oracle.write.setFeeWindow([5], {
           account: accounts.owner.account,
         });
-        expect(await contracts.oracle.read.feeWindow()).to.equal(5);
+        assert.equal(await contracts.oracle.read.feeWindow(), 5);
       });
 
       it("should affect the hashprice when fee window changes", async function () {
@@ -307,21 +306,26 @@ describe("HashrateOracleV2", function () {
 
         const [, answerAll] = await contracts.oracle.read.latestRoundData();
 
-        expect(answer3).to.not.equal(answerAll);
+        assert.notEqual(answer3, answerAll);
       });
 
       it("should revert when called by non-owner", async function () {
         const { contracts, accounts } = await loadFixture(deployFullFixture);
 
-        try {
+        await catchError(contracts.oracle.abi, "OwnableUnauthorizedAccount", async () => {
           await contracts.oracle.write.setFeeWindow([5], {
             account: accounts.user.account,
           });
-          expect.fail("Expected revert");
-        } catch {
-          // OwnableUnauthorizedAccount revert expected
-        }
+        });
       });
     });
   });
 });
+
+const hex = (s: string): `0x${string}` => `0x${s}`;
+
+function getBlockSubsidy(height: number): bigint {
+  const halvings = Math.floor(height / 210_000);
+  if (halvings >= 64) return 0n;
+  return 5_000_000_000n >> BigInt(halvings);
+}

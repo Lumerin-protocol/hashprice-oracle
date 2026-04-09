@@ -40,9 +40,6 @@ contract CoinbaseVerifier {
     {
         if (isVerified[height]) revert AlreadyVerified();
 
-        console.log("height");
-        console.log(height);
-
         bytes32 expectedRoot = relay.getMerkleRoot(height);
 
         if (expectedRoot == bytes32(0)) revert BlockNotInRelay();

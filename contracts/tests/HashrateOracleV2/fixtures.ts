@@ -1,13 +1,13 @@
-import { viem } from "hardhat";
 import { encodeFunctionData, type Hex } from "viem";
-import btcBlocks from "./btc-blocks.json";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import btcBlocks from "./btc-blocks.json" with { type: "json" };
+import type { NetworkConnection } from "hardhat/types";
 
 function prefixed0x(s: string): `0x${string}` {
   return `0x${s.replace(/^0x/, "")}`;
 }
 
-export async function deployRelayFixture() {
+export async function deployRelayFixture(conn: NetworkConnection) {
+  const { viem } = conn;
   const [owner, user] = await viem.getWalletClients();
   const pc = await viem.getPublicClient();
   const tc = await viem.getTestClient();
@@ -46,7 +46,11 @@ export async function deployRelayFixture() {
   };
 }
 
-export async function deployFullFixture() {
+export async function deployFullFixture(conn: NetworkConnection) {
+  const {
+    viem,
+    networkHelpers: { loadFixture },
+  } = conn;
   const { contracts, accounts, config } = await loadFixture(deployRelayFixture);
   const { btcRelay } = contracts;
   const { blocks } = config;

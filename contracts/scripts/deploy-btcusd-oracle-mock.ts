@@ -1,7 +1,9 @@
-import { viem } from "hardhat";
+import hre from "hardhat";
 import { parseUnits } from "viem";
-import { writeAndWait } from "../lib/writeContract";
-import { verifyContract } from "../lib/verify";
+import { writeAndWait } from "../lib/writeContract.ts";
+import { verifyContract } from "../lib/verify.ts";
+
+const { viem } = await hre.network.connect();
 
 async function main() {
   console.log("Deploying BTC/USD oracle mock...");

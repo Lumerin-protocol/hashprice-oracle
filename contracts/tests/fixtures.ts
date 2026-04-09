@@ -1,11 +1,19 @@
-import { viem } from "hardhat";
+import type { NetworkConnection } from "hardhat/types";
 import { parseUnits, maxUint256, encodeFunctionData } from "viem";
 
-export async function deployTokenOraclesAndMulticall3() {
+export async function deployTokenOraclesAndMulticall3(conn: NetworkConnection) {
+  const { viem } = conn;
   // Get wallet clients
   const [owner, user] = await viem.getWalletClients();
   const pc = await viem.getPublicClient();
   const tc = await viem.getTestClient();
+
+  function getIERC20Metadata(addr: `0x${string}`) {
+    return viem.getContractAt(
+      "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol:IERC20Metadata",
+      addr,
+    );
+  }
 
   // Deploy USDC Mock (for payments)
   const _usdcMock = await viem.deployContract("contracts/USDCMock.sol:USDCMock", []);
@@ -80,17 +88,3 @@ export async function deployTokenOraclesAndMulticall3() {
     },
   };
 }
-
-function getIERC20(addr: `0x${string}`) {
-  return viem.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", addr);
-}
-
-function getIERC20Metadata(addr: `0x${string}`) {
-  return viem.getContractAt(
-    "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol:IERC20Metadata",
-    addr,
-  );
-}
-
-type IERC20 = Awaited<ReturnType<typeof getIERC20>>;
-type IERC20Metadata = Awaited<ReturnType<typeof getIERC20Metadata>>;
