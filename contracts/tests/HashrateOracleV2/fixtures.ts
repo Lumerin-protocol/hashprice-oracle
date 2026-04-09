@@ -1,12 +1,12 @@
 import { encodeFunctionData, type Hex } from "viem";
-import btcBlocks from "./btc-blocks.json" with { type: "json" };
+import btcBlocks from "../fixtures/btc-blocks.json" with { type: "json" };
 import type { NetworkConnection } from "hardhat/types";
 
 function prefixed0x(s: string): `0x${string}` {
   return `0x${s.replace(/^0x/, "")}`;
 }
 
-export async function deployRelayFixture(conn: NetworkConnection) {
+export async function deployV2Fixture(conn: NetworkConnection) {
   const { viem } = conn;
   const [owner, user] = await viem.getWalletClients();
   const pc = await viem.getPublicClient();
@@ -29,26 +29,47 @@ export async function deployRelayFixture(conn: NetworkConnection) {
   );
   const btcRelay = await viem.getContractAt("BTCRelay", btcRelayProxy.address);
 
+  const coinbaseVerifier = await viem.deployContract(
+    "contracts/CoinbaseVerifier.sol:CoinbaseVerifier",
+    [btcRelay.address as Hex],
+  );
+
   const latestTimestamp = blocks[blocks.length - 1].timestamp;
   await tc.setNextBlockTimestamp({ timestamp: BigInt(latestTimestamp + 3600) });
 
-  const bootstrapBlocks = blocks.slice(1, -1);
+  return {
+    contracts: { btcRelay, btcRelayImpl, coinbaseVerifier },
+    accounts: { owner, user, pc, tc },
+    config: { blocks, checkpoint },
+  };
+}
+
+const BATCH_SIZE = 7;
+
+export async function deployRelayFixture(conn: NetworkConnection) {
+  const {
+    viem,
+    networkHelpers: { loadFixture },
+  } = conn;
+  const { contracts, accounts, config } = await loadFixture(deployV2Fixture);
+  const { btcRelay } = contracts;
+  const { blocks } = config;
+
+  const bootstrapBlocks = blocks.slice(1, BATCH_SIZE);
   const ancestorHash = await btcRelay.read.chainTip();
   const headers = bootstrapBlocks.map((b) => b.rawHeader).join("");
   const submitHeadersHash = await btcRelay.write.submitHeaders([
     prefixed0x(headers),
     prefixed0x(ancestorHash),
   ]);
-  const submitHeadersReceipt = await pc.waitForTransactionReceipt({ hash: submitHeadersHash });
+  const submitHeadersReceipt = await accounts.pc.waitForTransactionReceipt({
+    hash: submitHeadersHash,
+  });
   console.log(
     `  submitHeaders (${bootstrapBlocks.length} headers): ${Number(submitHeadersReceipt.gasUsed).toLocaleString()} gas`,
   );
 
-  return {
-    contracts: { btcRelay, btcRelayImpl },
-    accounts: { owner, user, pc, tc },
-    config: { blocks, checkpoint },
-  };
+  return { contracts, accounts, config: { ...config, batchEnd: BATCH_SIZE } };
 }
 
 export async function deployFullFixture(conn: NetworkConnection) {
@@ -57,16 +78,12 @@ export async function deployFullFixture(conn: NetworkConnection) {
     networkHelpers: { loadFixture },
   } = conn;
   const { contracts, accounts, config } = await loadFixture(deployRelayFixture);
+  const { coinbaseVerifier } = contracts;
   const { btcRelay } = contracts;
-  const { blocks } = config;
-
-  const coinbaseVerifier = await viem.deployContract(
-    "contracts/CoinbaseVerifier.sol:CoinbaseVerifier",
-    [btcRelay.address as Hex],
-  );
+  const { blocks, batchEnd } = config;
 
   let totalCoinbaseGas = 0n;
-  for (const block of blocks.slice(0, -1)) {
+  for (const block of blocks.slice(0, batchEnd)) {
     const proofHash = await coinbaseVerifier.write.submitCoinbaseProof([
       block.height,
       prefixed0x(block.coinbase.rawHexStripped),
@@ -76,7 +93,7 @@ export async function deployFullFixture(conn: NetworkConnection) {
     totalCoinbaseGas += proofReceipt.gasUsed;
   }
   console.log(
-    `  submitCoinbaseProof (${blocks.length - 1} blocks): ${Number(totalCoinbaseGas).toLocaleString()} gas total, ${Math.round(Number(totalCoinbaseGas) / (blocks.length - 1)).toLocaleString()} gas avg`,
+    `  submitCoinbaseProof (${batchEnd} blocks): ${Number(totalCoinbaseGas).toLocaleString()} gas total, ${Math.round(Number(totalCoinbaseGas) / batchEnd).toLocaleString()} gas avg`,
   );
 
   const feeWindow = 3;

@@ -1,5 +1,5 @@
 import { catchError } from "../../lib/lib.ts";
-import { deployOracleFixture } from "./fixtures.ts";
+import { deployOracleFixture, deployV3Fixture, prepareBlocks } from "./fixtures.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -15,26 +15,28 @@ describe("HashrateOracleV3", function () {
   describe("Chain state", function () {
     it("should set chain tip to the last submitted block hash", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const beforeLastBlock = config.blocks[config.blocks.length - 2];
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
       const chainTip = await contracts.oracle.read.chainTip();
-      assert.equal(chainTip.toLowerCase(), hex(beforeLastBlock.hash).toLowerCase());
+      assert.equal(chainTip.toLowerCase(), hex(lastSubmitted.hash).toLowerCase());
     });
 
     it("should set chain height to the last submitted block height", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const beforeLastBlock = config.blocks[config.blocks.length - 2];
-      assert.equal(await contracts.oracle.read.chainHeight(), beforeLastBlock.height);
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
+      const [chainHeight] = await contracts.oracle.read.state();
+      assert.equal(chainHeight, lastSubmitted.height);
     });
 
     it("should return confirmedHeight = chainHeight - 6", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      const beforeLastBlock = config.blocks[config.blocks.length - 2];
-      assert.equal(await contracts.oracle.read.confirmedHeight(), beforeLastBlock.height - 6);
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
+      assert.equal(await contracts.oracle.read.confirmedHeight(), lastSubmitted.height - 6);
     });
 
     it("should track block count", async function () {
       const { contracts, config } = await loadFixture(deployOracleFixture);
-      assert.equal(await contracts.oracle.read.blockCount(), config.blocks.length - 2);
+      const [, blockCount] = await contracts.oracle.read.state();
+      assert.equal(blockCount, config.batchEnd - 1);
     });
   });
 
@@ -152,7 +154,8 @@ describe("HashrateOracleV3", function () {
     it("should set updatedAt to the EVM submission timestamp", async function () {
       const { contracts } = await loadFixture(deployOracleFixture);
       const [, , , updatedAt] = await contracts.oracle.read.latestRoundData();
-      assert.equal(updatedAt, BigInt(await contracts.oracle.read.lastSubmittedAt()));
+      const [, , , , lastSubmittedAt] = await contracts.oracle.read.state();
+      assert.equal(updatedAt, BigInt(lastSubmittedAt));
       assert.ok(updatedAt > 0n);
     });
 
@@ -163,7 +166,7 @@ describe("HashrateOracleV3", function () {
 
       const subsidy = getBlockSubsidy(confirmedHeight);
 
-      const submittedBlocks = config.blocks.slice(1, -1);
+      const submittedBlocks = config.blocks.slice(1, config.batchEnd);
       let totalFees = 0n;
       for (const b of submittedBlocks) {
         totalFees += BigInt(b.coinbase.totalOutputValue) - subsidy;
@@ -190,45 +193,38 @@ describe("HashrateOracleV3", function () {
 
   // ─── Gas benchmark ──────────────────────────────────────────────
 
-  describe("Gas benchmark (single block)", function () {
-    it.only("submitBlock vs submitBlocks", async function () {
-      console.log("HERE");
-      const {
-        contracts: { oracle },
-        accounts: { pc },
-        config,
-      } = await loadFixture(deployOracleFixture);
-      const { lastBlock } = config;
-      console.log("fixture load success");
-      const tc = await viem.getTestClient();
+  describe("Gas benchmark", function () {
+    it("average gas per block (submit one-by-one)", async function () {
+      const { contracts, accounts, config } = await loadFixture(deployV3Fixture);
+      const { oracle } = contracts;
+      const { pc } = accounts;
+      const { blocks } = config;
+      const { formatBlock } = prepareBlocks(blocks);
 
-      const ancestorHeight = lastBlock.height - 1;
+      const FEE_WINDOW = 144;
+      let coldGas = 0n;
+      let warmGas = 0n;
+      let totalGas = 0n;
+      const toSubmit = blocks.slice(1);
 
-      const snap = await tc.snapshot();
+      for (let i = 0; i < toSubmit.length; i++) {
+        const fb = formatBlock(toSubmit[i]);
+        const hash = await oracle.write.submitBlock([fb.header, fb.coinbaseTx, fb.merkleProof]);
+        const receipt = await pc.waitForTransactionReceipt({ hash });
+        totalGas += receipt.gasUsed;
+        if (i < FEE_WINDOW) {
+          coldGas += receipt.gasUsed;
+        } else {
+          warmGas += receipt.gasUsed;
+        }
+      }
 
-      const hashA = await oracle.write.submitBlock([
-        lastBlock.header,
-        lastBlock.coinbaseTx,
-        lastBlock.merkleProof,
-      ]);
-      const receiptA = await pc.waitForTransactionReceipt({ hash: hashA });
-
-      await tc.revert({ id: snap });
-      await tc.setNextBlockTimestamp({ timestamp: BigInt(lastBlock.timestamp + 7200) });
-
-      const hashB = await oracle.write.submitBlocks([
-        ancestorHeight,
-        lastBlock.header,
-        [lastBlock.coinbaseTx],
-        [lastBlock.merkleProof],
-      ]);
-      const receiptB = await pc.waitForTransactionReceipt({ hash: hashB });
-
-      console.log(`  submitBlock  (1 block): ${Number(receiptA.gasUsed).toLocaleString()} gas`);
-      console.log(`  submitBlocks (1 block): ${Number(receiptB.gasUsed).toLocaleString()} gas`);
-      console.log(
-        `  overhead: ${Number(receiptB.gasUsed - receiptA.gasUsed).toLocaleString()} gas`,
-      );
+      const warmCount = toSubmit.length - FEE_WINDOW;
+      console.log(`  V3 avg (all ${toSubmit.length} blocks):   ${Math.round(Number(totalGas) / toSubmit.length).toLocaleString()} gas`);
+      console.log(`  V3 avg (cold, first ${FEE_WINDOW}):  ${Math.round(Number(coldGas) / FEE_WINDOW).toLocaleString()} gas`);
+      if (warmCount > 0) {
+        console.log(`  V3 avg (warm, last ${warmCount}):   ${Math.round(Number(warmGas) / warmCount).toLocaleString()} gas`);
+      }
     });
   });
 });

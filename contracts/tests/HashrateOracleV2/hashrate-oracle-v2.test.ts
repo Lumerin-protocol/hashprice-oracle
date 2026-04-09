@@ -1,5 +1,5 @@
 import { catchError } from "../../lib/lib.ts";
-import { deployFullFixture, deployRelayFixture } from "./fixtures.ts";
+import { deployFullFixture, deployRelayFixture, deployV2Fixture } from "./fixtures.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -16,26 +16,26 @@ describe("HashrateOracleV2", function () {
   describe("BTCRelay", function () {
     it("should set chain tip to the last submitted block hash", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      const lastBlock = config.blocks[config.blocks.length - 2];
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
       const chainTip = await contracts.btcRelay.read.chainTip();
-      assert.equal(chainTip.toLowerCase(), hex(lastBlock.hash).toLowerCase());
+      assert.equal(chainTip.toLowerCase(), hex(lastSubmitted.hash).toLowerCase());
     });
 
     it("should set chain height to the last submitted block height", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      const lastBlock = config.blocks[config.blocks.length - 2];
-      assert.equal(await contracts.btcRelay.read.chainHeight(), lastBlock.height);
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
+      assert.equal(await contracts.btcRelay.read.chainHeight(), lastSubmitted.height);
     });
 
     it("should return confirmedHeight = chainHeight - 6", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      const lastBlock = config.blocks[config.blocks.length - 2];
-      assert.equal(await contracts.btcRelay.read.confirmedHeight(), lastBlock.height - 6);
+      const lastSubmitted = config.blocks[config.batchEnd - 1];
+      assert.equal(await contracts.btcRelay.read.confirmedHeight(), lastSubmitted.height - 6);
     });
 
     it("should store correct timestamps for all blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      for (const block of config.blocks.slice(0, -1)) {
+      for (const block of config.blocks.slice(0, config.batchEnd)) {
         const ts = await contracts.btcRelay.read.getTimestamp([block.height]);
         assert.equal(ts, block.timestamp);
       }
@@ -56,7 +56,7 @@ describe("HashrateOracleV2", function () {
 
     it("should return non-zero merkle roots for stored blocks", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      for (const block of config.blocks.slice(0, -1)) {
+      for (const block of config.blocks.slice(0, config.batchEnd)) {
         const root = await contracts.btcRelay.read.getMerkleRoot([block.height]);
         assert.notEqual(root, zeroHash);
       }
@@ -64,7 +64,7 @@ describe("HashrateOracleV2", function () {
 
     it("should map each height to the correct block hash", async function () {
       const { contracts, config } = await loadFixture(deployRelayFixture);
-      for (const block of config.blocks.slice(0, -1)) {
+      for (const block of config.blocks.slice(0, config.batchEnd)) {
         const hash = await contracts.btcRelay.read.heightToHash([block.height]);
         assert.equal(hash.toLowerCase(), hex(block.hash).toLowerCase());
       }
@@ -115,7 +115,7 @@ describe("HashrateOracleV2", function () {
     it("should verify coinbase proofs and extract correct fees", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       const subsidy = getBlockSubsidy(config.blocks[0].height);
-      const submitted = config.blocks.slice(0, -1);
+      const submitted = config.blocks.slice(0, config.batchEnd);
 
       for (const block of submitted) {
         const fees = await contracts.coinbaseVerifier.read.blockFees([block.height]);
@@ -126,14 +126,14 @@ describe("HashrateOracleV2", function () {
 
     it("should mark blocks as verified", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
-      for (const block of config.blocks.slice(0, -1)) {
+      for (const block of config.blocks.slice(0, config.batchEnd)) {
         assert.ok(await contracts.coinbaseVerifier.read.isVerified([block.height]));
       }
     });
 
     it("should track oldest and newest verified heights", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
-      const submitted = config.blocks.slice(0, -1);
+      const submitted = config.blocks.slice(0, config.batchEnd);
       const oldest = await contracts.coinbaseVerifier.read.oldestVerifiedHeight();
       const newest = await contracts.coinbaseVerifier.read.newestVerifiedHeight();
       assert.equal(oldest, submitted[0].height);
@@ -144,7 +144,7 @@ describe("HashrateOracleV2", function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       assert.equal(
         await contracts.coinbaseVerifier.read.verifiedBlockCount(),
-        config.blocks.length - 1,
+        config.batchEnd,
       );
     });
 
@@ -152,7 +152,7 @@ describe("HashrateOracleV2", function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       const { feeWindow } = config;
       const subsidy = getBlockSubsidy(config.blocks[0].height);
-      const submitted = config.blocks.slice(0, -1);
+      const submitted = config.blocks.slice(0, config.batchEnd);
 
       const windowBlocks = submitted.slice(-feeWindow);
       let totalFees = 0n;
@@ -168,7 +168,7 @@ describe("HashrateOracleV2", function () {
     it("should compute correct average fees for the full range", async function () {
       const { contracts, config } = await loadFixture(deployFullFixture);
       const subsidy = getBlockSubsidy(config.blocks[0].height);
-      const submitted = config.blocks.slice(0, -1);
+      const submitted = config.blocks.slice(0, config.batchEnd);
 
       let totalFees = 0n;
       for (const b of submitted) {
@@ -324,31 +324,32 @@ describe("HashrateOracleV2", function () {
       });
     });
   });
-  // ─── Gas benchmark (single block) ──────────────────────────────
+  // ─── Gas benchmark ─────────────────────────────────────────────
 
-  describe("Gas benchmark (single block)", function () {
-    it("submitHeaders + submitCoinbaseProof for one block", async function () {
-      const { contracts, accounts, config } = await loadFixture(deployFullFixture);
-      const lastBlock = config.blocks[config.blocks.length - 1];
+  describe("Gas benchmark", function () {
+    it("average gas per block (submit one-by-one)", async function () {
+      const { contracts, accounts, config } = await loadFixture(deployV2Fixture);
+      const { btcRelay, coinbaseVerifier } = contracts;
+      const { pc } = accounts;
+      const toSubmit = config.blocks.slice(1);
 
-      const ancestorHash = await contracts.btcRelay.read.chainTip();
-      const headerHash = await contracts.btcRelay.write.submitHeaders([
-        hex(lastBlock.rawHeader),
-        ancestorHash,
-      ]);
-      const headerReceipt = await accounts.pc.waitForTransactionReceipt({ hash: headerHash });
+      let totalGas = 0n;
+      for (const b of toSubmit) {
+        const ancestorHash = await btcRelay.read.chainTip();
+        const hHash = await btcRelay.write.submitHeaders([hex(b.rawHeader), ancestorHash]);
+        const hReceipt = await pc.waitForTransactionReceipt({ hash: hHash });
 
-      const proofHash = await contracts.coinbaseVerifier.write.submitCoinbaseProof([
-        lastBlock.height,
-        hex(lastBlock.coinbase.rawHexStripped),
-        lastBlock.merkleProof.map((h) => hex(h)) as `0x${string}`[],
-      ]);
-      const proofReceipt = await accounts.pc.waitForTransactionReceipt({ hash: proofHash });
+        const pHash = await coinbaseVerifier.write.submitCoinbaseProof([
+          b.height,
+          hex(b.coinbase.rawHexStripped),
+          b.merkleProof.map((h) => hex(h)) as `0x${string}`[],
+        ]);
+        const pReceipt = await pc.waitForTransactionReceipt({ hash: pHash });
 
-      const total = headerReceipt.gasUsed + proofReceipt.gasUsed;
-      console.log(`  V2 submitHeaders  (1 block): ${Number(headerReceipt.gasUsed).toLocaleString()} gas`);
-      console.log(`  V2 submitCoinbase (1 block): ${Number(proofReceipt.gasUsed).toLocaleString()} gas`);
-      console.log(`  V2 total          (1 block): ${Number(total).toLocaleString()} gas`);
+        totalGas += hReceipt.gasUsed + pReceipt.gasUsed;
+      }
+
+      console.log(`  V2 avg per block (${toSubmit.length} blocks): ${Math.round(Number(totalGas) / toSubmit.length).toLocaleString()} gas`);
     });
   });
 });

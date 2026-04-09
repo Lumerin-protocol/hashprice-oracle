@@ -12,6 +12,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const API_BASE = "https://blockstream.info/api";
 const RATE_LIMIT_MS = 300;
@@ -161,6 +164,10 @@ function readVarint(buf: Buffer, offset: number): { value: number; size: number 
   return { value: Number(buf.readBigUInt64LE(offset + 1)), size: 9 };
 }
 
+function flushBlocks(outPath: string, blocks: any[]) {
+  fs.writeFileSync(outPath, JSON.stringify(blocks, null, 2));
+}
+
 async function main() {
   const count = parseInt(process.argv[3] || "8", 10);
   let startHeight: number;
@@ -168,19 +175,35 @@ async function main() {
   if (process.argv[2]) {
     startHeight = parseInt(process.argv[2], 10);
   } else {
-    // Get latest block height and go back
     const tipHash = await fetchText(`${API_BASE}/blocks/tip/hash`);
     const tipBlock = await getBlock(tipHash);
     startHeight = tipBlock.height - count;
     console.log(`Tip height: ${tipBlock.height}, starting from ${startHeight}`);
   }
 
-  console.log(`Fetching ${count} blocks starting at height ${startHeight}...`);
+  const outDir = path.join(__dirname, "..", "tests", "fixtures");
+  fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, "btc-blocks.json");
 
-  const blocks: any[] = [];
+  let blocks: any[] = [];
+  if (fs.existsSync(outPath)) {
+    blocks = JSON.parse(fs.readFileSync(outPath, "utf-8"));
+  }
+  const fetched = new Set(blocks.map((b: any) => b.height));
+
+  console.log(`Fetching ${count} blocks starting at height ${startHeight}...`);
+  if (fetched.size > 0) {
+    console.log(`  (${fetched.size} blocks already cached, will skip)`);
+  }
 
   for (let i = 0; i < count; i++) {
     const height = startHeight + i;
+
+    if (fetched.has(height)) {
+      console.log(`\n--- Block ${height} --- (cached, skipping)`);
+      continue;
+    }
+
     console.log(`\n--- Block ${height} ---`);
 
     await sleep(RATE_LIMIT_MS);
@@ -235,13 +258,13 @@ async function main() {
       },
       merkleProof,
     });
+
+    blocks.sort((a: any, b: any) => a.height - b.height);
+    flushBlocks(outPath, blocks);
+    console.log(`  (flushed ${blocks.length} blocks to disk)`);
   }
 
-  const outDir = path.join(__dirname, "..", "tests", "fixtures");
-  fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, "btc-blocks.json");
-  fs.writeFileSync(outPath, JSON.stringify(blocks, null, 2));
-  console.log(`\nWritten ${blocks.length} blocks to ${outPath}`);
+  console.log(`\nDone. ${blocks.length} total blocks in ${outPath}`);
 }
 
 main().catch((err) => {
