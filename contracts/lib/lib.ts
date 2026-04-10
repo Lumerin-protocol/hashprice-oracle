@@ -111,7 +111,6 @@ export function isErr<const TAbi extends Abi | readonly unknown[]>(
     }
   }
 
-  console.error(err);
   return false;
 }
 
