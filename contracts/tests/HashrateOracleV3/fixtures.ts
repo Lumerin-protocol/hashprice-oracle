@@ -31,8 +31,13 @@ export async function deployV3Fixture(conn: NetworkConnection) {
   const blocks = btcBlocks;
   const checkpoint = blocks[0];
 
+  const latestBlock = await pc.getBlock({});
+  console.log("before ts", latestBlock.timestamp);
+
   const latestTimestamp = blocks[blocks.length - 1].timestamp;
+  console.log("after ts", latestTimestamp);
   await tc.setNextBlockTimestamp({ timestamp: BigInt(latestTimestamp + 3600) });
+  console.log("after set ts");
 
   const oracle = await viem.deployContract("contracts/HashrateOracleV3.sol:HashrateOracleV3", [
     prefixed0x(checkpoint.hash),

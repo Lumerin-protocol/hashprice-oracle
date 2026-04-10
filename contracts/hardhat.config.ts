@@ -25,7 +25,7 @@ export default defineConfig({
     },
   },
   networks: {
-    hardhat: {
+    default: {
       type: "edr-simulated",
       mining: {
         auto: true,

@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 const {
-  viem,
   networkHelpers: { loadFixture },
 } = await network.connect();
 
@@ -220,11 +219,23 @@ describe("HashrateOracleV3", function () {
       }
 
       const warmCount = toSubmit.length - FEE_WINDOW;
-      console.log(`  V3 avg (all ${toSubmit.length} blocks):   ${Math.round(Number(totalGas) / toSubmit.length).toLocaleString()} gas`);
-      console.log(`  V3 avg (cold, first ${FEE_WINDOW}):  ${Math.round(Number(coldGas) / FEE_WINDOW).toLocaleString()} gas`);
+      console.log(
+        `  V3 avg (all ${toSubmit.length} blocks):   ${Math.round(Number(totalGas) / toSubmit.length).toLocaleString()} gas`,
+      );
+      console.log(
+        `  V3 avg (cold, first ${FEE_WINDOW}):  ${Math.round(Number(coldGas) / FEE_WINDOW).toLocaleString()} gas`,
+      );
       if (warmCount > 0) {
-        console.log(`  V3 avg (warm, last ${warmCount}):   ${Math.round(Number(warmGas) / warmCount).toLocaleString()} gas`);
+        console.log(
+          `  V3 avg (warm, last ${warmCount}):   ${Math.round(Number(warmGas) / warmCount).toLocaleString()} gas`,
+        );
       }
+
+      const [, answer] = await oracle.read.latestRoundData();
+      const satsPerBtc = 100_000_000n;
+      console.log(
+        `  V3 hashprice: ${answer} sats (${Number(answer) / Number(satsPerBtc)} BTC) per 100 TH/s/day`,
+      );
     });
   });
 });

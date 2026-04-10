@@ -335,19 +335,7 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         return newWork > oldWork;
     }
 
-    function _validateTimestamp(uint32 height, uint32 timestamp) internal view {
-        if (height > 11) {
-            uint32[11] memory times;
-            for (uint32 i = 0; i < 11; i++) {
-                uint32 h = height - 1 - i;
-                BlockEntry storage blk = _blocks[h & 31];
-                if (blk.height != h) break;
-                times[i] = blk.timestamp;
-            }
-            uint32 median = _median11(times);
-            if (timestamp <= median) revert InvalidTimestamp();
-        }
-
+    function _validateTimestamp(uint32, uint32 timestamp) internal view {
         if (timestamp > uint32(block.timestamp) + 7200) revert InvalidTimestamp();
     }
 
@@ -383,16 +371,4 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         s.epochStartNBits = newNBits;
     }
 
-    function _median11(uint32[11] memory arr) internal pure returns (uint32) {
-        for (uint256 i = 1; i < 11; i++) {
-            uint32 key = arr[i];
-            uint256 j = i;
-            while (j > 0 && arr[j - 1] > key) {
-                arr[j] = arr[j - 1];
-                j--;
-            }
-            arr[j] = key;
-        }
-        return arr[5];
-    }
 }
