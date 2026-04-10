@@ -1,5 +1,6 @@
 import btcBlocks from "../fixtures/btc-blocks.json" with { type: "json" };
 import type { NetworkConnection } from "hardhat/types";
+import { reverseHex } from "./helpers.ts";
 
 function prefixed0x(s: string): `0x${string}` {
   return `0x${s.replace(/^0x/, "")}`;
@@ -35,7 +36,7 @@ export async function deployV3Fixture(conn: NetworkConnection) {
   await tc.setNextBlockTimestamp({ timestamp: BigInt(latestTimestamp + 3600) });
 
   const oracle = await viem.deployContract("HashpriceBTC", [
-    prefixed0x(checkpoint.hash),
+    prefixed0x(reverseHex(checkpoint.hash)),
     checkpoint.height,
     checkpoint.timestamp,
     checkpoint.nBits,
@@ -56,7 +57,6 @@ const BATCH_SIZE = 7;
 
 export async function deployOracleFixture(conn: NetworkConnection) {
   const {
-    viem,
     networkHelpers: { loadFixture },
   } = conn;
   const { contracts, accounts, config } = await loadFixture(deployV3Fixture);

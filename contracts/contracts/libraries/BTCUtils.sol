@@ -5,34 +5,29 @@ pragma solidity >=0.8.0;
 /// @notice Pure utility functions for Bitcoin data structures
 library BTCUtils {
     struct HeaderInfo {
-        bytes32 prevBlockHashLE;
+        bytes32 prevBlockHash;
         bytes32 merkleRoot;
         uint32 timestamp;
         uint32 nBits;
     }
 
+    error InvalidCoinbaseTx();
+
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):
     ///   [0..4)   version
-    ///   [4..36)  prevBlockHash (internal byte order, reversed vs SHA-256 output)
+    ///   [4..36)  prevBlockHash (raw dsha256 output byte order)
     ///   [36..68) merkleRoot    (internal byte order)
     ///   [68..72) timestamp
     ///   [72..76) nBits (compact target)
     ///   [76..80) nonce
     function parseHeader(bytes memory header) internal pure returns (HeaderInfo memory) {
-        require(header.length == 80, "Invalid header length");
-
-        bytes32 prevBlockHash = readBytes32Mem(header, 4);
+        bytes32 prevHash = readBytes32Mem(header, 4);
         bytes32 merkleRootVal = readBytes32Mem(header, 36);
         uint32 ts = readUint32LEMem(header, 68);
         uint32 bits = readUint32LEMem(header, 72);
 
-        return HeaderInfo({
-            prevBlockHashLE: reverseBytes32(prevBlockHash),
-            merkleRoot: merkleRootVal,
-            timestamp: ts,
-            nBits: bits
-        });
+        return HeaderInfo({ prevBlockHash: prevHash, merkleRoot: merkleRootVal, timestamp: ts, nBits: bits });
     }
 
     /// @notice Double-SHA256 (Bitcoin's standard hash function)
@@ -62,7 +57,6 @@ library BTCUtils {
     /// @dev difficulty = diff1Target / currentTarget
     function nBitsToDifficulty(uint32 nBits) internal pure returns (uint256) {
         uint256 target = nBitsToTarget(nBits);
-        require(target > 0, "Zero target");
         uint256 diff1Target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000;
         return diff1Target / target;
     }
@@ -100,7 +94,7 @@ library BTCUtils {
         // Skip vin (always exactly 1 input for coinbase)
         (uint64 vinCount, uint256 vinSize) = readVarint(rawTx, offset);
         offset += vinSize;
-        require(vinCount == 1, "Not a coinbase tx");
+        if (vinCount != 1) revert InvalidCoinbaseTx();
 
         // Skip the single input: prevHash(32) + prevIndex(4) + scriptLen(varint) + script + sequence(4)
         offset += 36; // prevHash + prevIndex

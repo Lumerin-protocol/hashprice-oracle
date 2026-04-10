@@ -62,7 +62,7 @@ export const EASY_NBITS = 0x207fffff;
 
 /** Build a raw 80-byte header hex (no 0x) from components */
 export function buildHeader(opts: {
-  prevHashLE: string;
+  prevHash: string;
   timestamp: number;
   nBits: number;
   version?: number;
@@ -71,8 +71,6 @@ export function buildHeader(opts: {
 }): string {
   const version = Buffer.alloc(4);
   version.writeUint32LE(opts.version ?? 0x20000000);
-  // header stores prevHash in internal byte order (reversed from LE display)
-  const prevHash = reverseHex(opts.prevHashLE);
   const merkleRoot = opts.merkleRoot ?? "00".repeat(32);
   const ts = Buffer.alloc(4);
   ts.writeUint32LE(opts.timestamp);
@@ -82,7 +80,7 @@ export function buildHeader(opts: {
   nonce.writeUint32LE(opts.nonce ?? 0);
   return (
     version.toString("hex") +
-    prevHash +
+    opts.prevHash +
     merkleRoot +
     ts.toString("hex") +
     nBits.toString("hex") +
@@ -90,15 +88,14 @@ export function buildHeader(opts: {
   );
 }
 
-/** Compute the LE block hash of a raw 80-byte header (same as the contract does) */
-export function blockHashLE(rawHeader: string): string {
-  return reverseHex(dsha256(rawHeader));
+/** Compute the raw block hash of a header (same as the contract's dsha256) */
+export function blockHash(rawHeader: string): string {
+  return dsha256(rawHeader);
 }
 
 /** Set the prevBlockHash field (bytes 4-36) in a raw header */
-export function setPrevHash(rawHeader: string, prevHashLE: string): string {
-  // prevBlockHash is stored in internal byte order (reversed) in the raw header
-  return mutateHeader(rawHeader, 4, reverseHex(prevHashLE));
+export function setPrevHash(rawHeader: string, prevHash: string): string {
+  return mutateHeader(rawHeader, 4, prevHash);
 }
 
 /**

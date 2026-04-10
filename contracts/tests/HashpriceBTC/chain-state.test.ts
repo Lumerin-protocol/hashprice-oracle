@@ -1,5 +1,5 @@
 import { deployOracleFixture } from "./fixtures.ts";
-import { hex } from "./helpers.ts";
+import { hex, dsha256 } from "./helpers.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +13,7 @@ describe("HashpriceBTC — Chain state", function () {
     const { contracts, config } = await loadFixture(deployOracleFixture);
     const lastSubmitted = config.blocks[config.batchEnd - 1];
     const chainTip = await contracts.oracle.read.chainTip();
-    assert.equal(chainTip.toLowerCase(), hex(lastSubmitted.hash).toLowerCase());
+    assert.equal(chainTip.toLowerCase(), hex(dsha256(lastSubmitted.rawHeader)).toLowerCase());
   });
 
   it("should set chain height to the last submitted block height", async function () {

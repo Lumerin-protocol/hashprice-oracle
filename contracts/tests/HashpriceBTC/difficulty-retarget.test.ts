@@ -1,6 +1,6 @@
 import { catchError } from "../../lib/lib.ts";
 import { deployOracleFixture, prepareBlocks } from "./fixtures.ts";
-import { hex, mineHeader, blockHashLE, setPrevHash, buildHeader, EASY_NBITS } from "./helpers.ts";
+import { hex, mineHeader, blockHash, setPrevHash, buildHeader, EASY_NBITS } from "./helpers.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -56,7 +56,7 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
     const ancestorHeight = config.blocks[config.batchEnd - 1].height;
 
     const mined1 = mineHeader(b1.rawHeader);
-    const hash1 = blockHashLE(mined1);
+    const hash1 = blockHash(mined1);
 
     const b2WithPrev = setPrevHash(b2.rawHeader, hash1);
     const mined2 = mineHeader(b2WithPrev);
@@ -100,7 +100,7 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
     // Mine block 2016 at EASY_NBITS — PoW passes (uses block's own nBits),
     // but retarget check compares against stored epoch nBits → InvalidRetarget
     const retargetHeader = buildHeader({
-      prevHashLE: fakeCheckpointHash,
+      prevHash: fakeCheckpointHash,
       timestamp: checkpointTs + 600,
       nBits: EASY_NBITS,
     });

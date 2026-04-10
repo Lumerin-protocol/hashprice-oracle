@@ -24,7 +24,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     // ─── Storage: block ring buffer (32 entries × 2 slots = 64 slots) ─
 
     struct BlockEntry {
-        bytes32 blockHashLE;
+        bytes32 blockHash;
         uint32 timestamp;
         uint32 nBits;
         uint32 height;
@@ -80,14 +80,14 @@ contract HashpriceBTC is AggregatorV3Interface {
     // ─── Constructor ──────────────────────────────────────────────────
 
     /// @notice Deploy with a trusted checkpoint block (precomputed off-chain)
-    /// @param blockHashLE Little-endian block hash
+    /// @param blockHash Raw dsha256 block hash
     /// @param height Block height
     /// @param timestamp Block timestamp
     /// @param nBits Encoded difficulty target
     /// @param _epochStartTimestamp Timestamp of the first block in the current difficulty epoch
     /// @param _epochStartNBits nBits of the first block in the current difficulty epoch
     constructor(
-        bytes32 blockHashLE,
+        bytes32 blockHash,
         uint32 height,
         uint32 timestamp,
         uint32 nBits,
@@ -95,9 +95,9 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 _epochStartNBits
     ) {
         _blocks[height & 31] =
-            BlockEntry({ blockHashLE: blockHashLE, timestamp: timestamp, nBits: nBits, height: height });
+            BlockEntry({ blockHash: blockHash, timestamp: timestamp, nBits: nBits, height: height });
 
-        chainTip = blockHashLE;
+        chainTip = blockHash;
         state = PackedState({
             chainHeight: height,
             blockCount: 0,
@@ -117,12 +117,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (header.length != 80) revert InvalidHeaderLength();
 
         BTCUtils.HeaderInfo memory info = BTCUtils.parseHeader(header);
-        bytes32 blockHashLE = BTCUtils.reverseBytes32(BTCUtils.dsha256(header));
+        bytes32 blockHash = BTCUtils.dsha256(header);
 
-        if (info.prevBlockHashLE != chainTip) revert BrokenChain();
+        if (info.prevBlockHash != chainTip) revert BrokenChain();
 
         uint256 target = BTCUtils.nBitsToTarget(info.nBits);
-        if (uint256(blockHashLE) > target) revert InsufficientPoW();
+        if (uint256(BTCUtils.reverseBytes32(blockHash)) > target) revert InsufficientPoW();
 
         PackedState memory s = state;
         uint32 height = s.chainHeight + 1;
@@ -132,15 +132,15 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         uint64 fees = _verifyCoinbaseAndExtractFees(height, info.merkleRoot, coinbaseTx, merkleProof);
 
-        _writeBlock(height, blockHashLE, info.timestamp, info.nBits, fees, s);
+        _writeBlock(height, blockHash, info.timestamp, info.nBits, fees, s);
 
-        chainTip = blockHashLE;
+        chainTip = blockHash;
         s.chainHeight = height;
         s.blockCount++;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
 
-        emit BlockSubmitted(blockHashLE, height, fees);
+        emit BlockSubmitted(blockHash, height, fees);
     }
 
     /// @notice Submit multiple blocks from an ancestor. Used for bootstrap and reorgs.
@@ -164,7 +164,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         PackedState memory s = state;
 
         ChainCursor memory cur =
-            ChainCursor({ prevHash: ancestor.blockHashLE, height: ancestorHeight, prevNBits: ancestor.nBits });
+            ChainCursor({ prevHash: ancestor.blockHash, height: ancestorHeight, prevNBits: ancestor.nBits });
 
         for (uint256 i = 0; i < count; i++) {
             _processHeader(headers[i * 80:(i + 1) * 80], coinbaseTxs[i], merkleProofs[i], cur, s);
@@ -195,13 +195,14 @@ contract HashpriceBTC is AggregatorV3Interface {
         PackedState memory s
     ) internal {
         BTCUtils.HeaderInfo memory info = BTCUtils.parseHeader(header);
-
-        if (info.prevBlockHashLE != cur.prevHash) revert BrokenChain();
-        bytes32 blockHashLE = BTCUtils.reverseBytes32(BTCUtils.dsha256(header));
+        if (info.prevBlockHash != cur.prevHash) revert BrokenChain();
 
         uint256 target = BTCUtils.nBitsToTarget(info.nBits);
-        if (uint256(blockHashLE) > target) revert InsufficientPoW();
+        bytes32 blockHash = BTCUtils.dsha256(header);
 
+        if (uint256(BTCUtils.reverseBytes32(blockHash)) > target) {
+            revert InsufficientPoW();
+        }
         cur.height++;
 
         _validateTimestamp(cur.height, info.timestamp);
@@ -209,12 +210,12 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
 
-        _writeBlock(cur.height, blockHashLE, info.timestamp, info.nBits, fees, s);
+        _writeBlock(cur.height, blockHash, info.timestamp, info.nBits, fees, s);
 
-        cur.prevHash = blockHashLE;
+        cur.prevHash = blockHash;
         cur.prevNBits = info.nBits;
 
-        emit BlockSubmitted(blockHashLE, cur.height, fees);
+        emit BlockSubmitted(blockHash, cur.height, fees);
     }
 
     // ─── AggregatorV3Interface ────────────────────────────────────────
@@ -281,14 +282,14 @@ contract HashpriceBTC is AggregatorV3Interface {
 
     function _writeBlock(
         uint32 height,
-        bytes32 blockHashLE,
+        bytes32 blockHash,
         uint32 timestamp,
         uint32 nBits,
         uint64 fees,
         PackedState memory s
     ) internal {
         _blocks[height & 31] =
-            BlockEntry({ blockHashLE: blockHashLE, timestamp: timestamp, nBits: nBits, height: height });
+            BlockEntry({ blockHash: blockHash, timestamp: timestamp, nBits: nBits, height: height });
 
         uint256 idx = height % FEE_WINDOW;
         uint64 oldFee = _fees[idx];
