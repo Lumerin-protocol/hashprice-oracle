@@ -1,5 +1,5 @@
 import { loadEnvFile } from "node:process";
-import { defineConfig } from "hardhat/config";
+import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
 // import "@nomicfoundation/hardhat-verify";
 // import "@openzeppelin/hardhat-upgrades";
@@ -16,6 +16,7 @@ export default defineConfig({
     npmFilesToBuild: [
       "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
+      "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol",
     ],
     settings: {
       optimizer: {
@@ -35,6 +36,19 @@ export default defineConfig({
     localhost: {
       type: "http",
       url: "http://127.0.0.1:8545",
+    },
+    production: {
+      type: "http",
+      url: configVariable("ETH_NODE_ADDRESS"),
+      accounts: [configVariable("DEPLOYER_PRIVATEKEY")],
+      gasPrice: "auto",
+      gas: "auto",
+    },
+  },
+  verify: {
+    etherscan: {
+      apiKey: configVariable("ETHERSCAN_API_KEY"),
+      enabled: true,
     },
   },
 });

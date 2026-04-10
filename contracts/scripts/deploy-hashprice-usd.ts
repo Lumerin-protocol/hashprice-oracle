@@ -1,8 +1,9 @@
-import { viem } from "hardhat";
-import { requireEnvsSet } from "../lib/env";
-import { verifyContract } from "../lib/verify";
+import { network } from "hardhat";
+import { requireEnvsSet } from "../lib/env.ts";
+import { verifyContract } from "../lib/verify.ts";
 
 async function main() {
+  const { viem } = await network.connect();
   console.log("HashpriceUSD deployment script");
   console.log();
 
@@ -27,10 +28,7 @@ async function main() {
   console.log("  decimals:", await hashpriceBtc.read.decimals());
   console.log("  description:", await hashpriceBtc.read.description());
 
-  const btcUsdOracle = await viem.getContractAt(
-    "AggregatorV3Interface",
-    env.BTCUSD_ORACLE_ADDRESS,
-  );
+  const btcUsdOracle = await viem.getContractAt("AggregatorV3Interface", env.BTCUSD_ORACLE_ADDRESS);
   const btcUsdDecimals = await btcUsdOracle.read.decimals();
   console.log("BTC/USD oracle details:");
   console.log("  decimals:", btcUsdDecimals);

@@ -10,13 +10,13 @@ import {
   http,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { hashpriceBTCAbi } from "../abi.ts";
+import { HashpriceBTCAbi } from "../abi/HashpriceBTC.ts";
 import type { KeeperConfig } from "../config.ts";
 import { getChain } from "../config.ts";
 
 export interface OracleState {
   chainHeight: number;
-  chainTipBE: `0x${string}`;
+  chainTip: `0x${string}`;
   blockCount: number;
   lastSubmittedAt: number;
 }
@@ -42,23 +42,23 @@ export class OracleClient {
     const transport = http(config.ethereumRpcUrl);
     const account = privateKeyToAccount(config.privateKey);
 
-    this.pc = createPublicClient({ chain, transport });
+    this.pc = createPublicClient({ chain, transport, batch: { multicall: true } });
     this.wc = createWalletClient({ chain, transport, account });
     this.address = config.hashpriceBtcAddress;
     this.log = log.child({ component: "oracle" });
   }
 
   async getState(): Promise<OracleState> {
-    const [stateResult, chainTipBE] = await Promise.all([
+    const [stateResult, chainTip] = await Promise.all([
       this.pc.readContract({
         address: this.address,
-        abi: hashpriceBTCAbi,
+        abi: HashpriceBTCAbi,
         functionName: "state",
       }),
       this.pc.readContract({
         address: this.address,
-        abi: hashpriceBTCAbi,
-        functionName: "chainTipBE",
+        abi: HashpriceBTCAbi,
+        functionName: "chainTip",
       }),
     ]);
 
@@ -66,14 +66,14 @@ export class OracleClient {
       chainHeight: stateResult[0],
       blockCount: stateResult[1],
       lastSubmittedAt: stateResult[4],
-      chainTipBE,
+      chainTip,
     };
   }
 
   async submitBlock(block: PreparedBlock): Promise<`0x${string}`> {
     const { request } = await this.pc.simulateContract({
       address: this.address,
-      abi: hashpriceBTCAbi,
+      abi: HashpriceBTCAbi,
       functionName: "submitBlock",
       args: [block.header, block.coinbaseTx, block.merkleProof],
       account: this.wc.account,
@@ -90,10 +90,7 @@ export class OracleClient {
     return hash;
   }
 
-  async submitBlocks(
-    ancestorHeight: number,
-    blocks: PreparedBlock[],
-  ): Promise<`0x${string}`> {
+  async submitBlocks(ancestorHeight: number, blocks: PreparedBlock[]): Promise<`0x${string}`> {
     let headers = "";
     const coinbaseTxs: `0x${string}`[] = [];
     const merkleProofs: `0x${string}`[][] = [];
@@ -106,7 +103,7 @@ export class OracleClient {
 
     const { request } = await this.pc.simulateContract({
       address: this.address,
-      abi: hashpriceBTCAbi,
+      abi: HashpriceBTCAbi,
       functionName: "submitBlocks",
       args: [ancestorHeight, prefixed0x(headers), coinbaseTxs, merkleProofs],
       account: this.wc.account,

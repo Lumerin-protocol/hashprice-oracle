@@ -1,9 +1,17 @@
 import hre from "hardhat";
 import { verifyContract as hreVerify } from "@nomicfoundation/hardhat-verify/verify";
+import type { StringWithArtifactContractNamesAutocompletion } from "hardhat/types";
 
-export async function verifyContract(address: string, constructorArgs?: readonly unknown[]) {
+export async function verifyContract(
+  address: string,
+  constructorArgs: readonly unknown[] = [],
+  contractFullName?: StringWithArtifactContractNamesAutocompletion,
+) {
   console.log(`\nVerifying contract at ${address}...`);
-  await hreVerify({ address, constructorArgs: (constructorArgs ?? []) as unknown[] }, hre)
+  await hreVerify(
+    { address, constructorArgs: (constructorArgs ?? []) as unknown[], contract: contractFullName },
+    hre,
+  )
     .then(() => {
       console.log("  Contract verified successfully.");
     })
