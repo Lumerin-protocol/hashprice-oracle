@@ -9,7 +9,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — AggregatorV3Interface", function () {
+describe("HashpriceBTC — AggregatorV3Interface", function () {
   it("decimals() should return 8", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     assert.equal(await contracts.oracle.read.decimals(), 8);
@@ -31,14 +31,9 @@ describe("HashrateOracleV3 — AggregatorV3Interface", function () {
       await contracts.oracle.read.getRoundData([0n]);
     });
   });
-
-  it('VERSION() should return "1.0.0"', async function () {
-    const { contracts } = await loadFixture(deployOracleFixture);
-    assert.equal(await contracts.oracle.read.VERSION(), "1.0.0");
-  });
 });
 
-describe("HashrateOracleV3 — latestRoundData()", function () {
+describe("HashpriceBTC — latestRoundData()", function () {
   it("should return a positive hashprice", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     const [, answer] = await contracts.oracle.read.latestRoundData();

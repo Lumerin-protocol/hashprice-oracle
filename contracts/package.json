@@ -10,7 +10,7 @@
   },
   "scripts": {
     "format:sol": "forge fmt ./contracts/**/*.sol",
-    "test": "hardhat --network hardhat test",
+    "test": "hardhat test",
     "test-coverage": "SOLIDITY_COVERAGE=true yarn hardhat coverage",
     "compile": "hardhat compile",
     "clean": "rm -rf abi artifacts cache abi",

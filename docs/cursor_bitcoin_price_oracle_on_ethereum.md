@@ -1,11 +1,12 @@
 # Bitcoin price oracle on Ethereum
+
 _Exported on 09.04.2026 at 12:57:21 GMT+2 from Cursor (2.6.21)_
 
 ---
 
 **User**
 
- how would you build a bitcoin price oracle on ethereum?
+how would you build a bitcoin price oracle on ethereum?
 
 use this chat as a starting point
 "Yes—there are real systems that approximate or implement Option A (pure or near–pure on-chain Bitcoin verification). None of them compute “hashprice” out of the box, but they provide the exact primitive you need: trust-minimized access to Bitcoin block headers and transaction proofs on another chain.
@@ -17,41 +18,41 @@ Below are the most relevant designs, with precise notes on how close they are to
 1. tBTC (Threshold Network)
 
 What it does
-	•	Brings BTC to Ethereum via a decentralized bridge
-	•	Uses a Bitcoin light client–like approach
-	•	Verifies:
-	•	Bitcoin block headers
-	•	SPV proofs (transactions included in blocks)
+• Brings BTC to Ethereum via a decentralized bridge
+• Uses a Bitcoin light client–like approach
+• Verifies:
+• Bitcoin block headers
+• SPV proofs (transactions included in blocks)
 
 How it relates to your oracle
-	•	You get validated Bitcoin headers on-chain
-	•	From headers you can extract:
-	•	nBits → difficulty
-	•	timestamp
-	•	block height (implicitly)
+• You get validated Bitcoin headers on-chain
+• From headers you can extract:
+• nBits → difficulty
+• timestamp
+• block height (implicitly)
 
 What’s missing
-	•	No direct fee extraction (requires tx data parsing)
-	•	No built-in hashrate or derived metrics
+• No direct fee extraction (requires tx data parsing)
+• No built-in hashrate or derived metrics
 
 Relevance
 
 ✔ Strong foundation for:
-	•	Difficulty tracking
-	•	Time-based analysis
+• Difficulty tracking
+• Time-based analysis
 
 ⸻
 
 2. Interlay (InterBTC)
 
 What it does
-	•	Bitcoin bridge on Polkadot ecosystem
-	•	Implements a BTC relay:
-	•	Stores and verifies Bitcoin headers on-chain
-	•	Uses SPV proofs
+• Bitcoin bridge on Polkadot ecosystem
+• Implements a BTC relay:
+• Stores and verifies Bitcoin headers on-chain
+• Uses SPV proofs
 
 Key capability
-	•	Full on-chain verification of Bitcoin consensus (PoW)
+• Full on-chain verification of Bitcoin consensus (PoW)
 
 Why it matters
 
@@ -62,25 +63,25 @@ This is probably the closest production-grade example of:
 For your use case
 
 You can:
-	•	Read difficulty
-	•	Track block intervals
-	•	Build rolling statistics on-chain
+• Read difficulty
+• Track block intervals
+• Build rolling statistics on-chain
 
 ⸻
 
 3. BTC Relay (historical but important)
 
 What it was
-	•	Early Ethereum project (2016–2018)
-	•	Verified Bitcoin block headers on Ethereum
+• Early Ethereum project (2016–2018)
+• Verified Bitcoin block headers on Ethereum
 
 Features
-	•	Full SPV verification:
-	•	Chain of headers
-	•	Proof-of-work validation
+• Full SPV verification:
+• Chain of headers
+• Proof-of-work validation
 
 Limitations
-	•	Gas costs too high → not widely used today
+• Gas costs too high → not widely used today
 
 Why it matters
 
@@ -93,27 +94,27 @@ Pure on-chain Bitcoin verification is technically feasible
 4. Summa
 
 What it is
-	•	Research + implementations for cross-chain light clients
-	•	Focus on:
-	•	Bitcoin ↔ Ethereum interoperability
-	•	Stateless validation
+• Research + implementations for cross-chain light clients
+• Focus on:
+• Bitcoin ↔ Ethereum interoperability
+• Stateless validation
 
 Relevance
-	•	Advanced designs for:
-	•	header validation
-	•	efficient proofs
+• Advanced designs for:
+• header validation
+• efficient proofs
 
 ⸻
 
 5. Nomic
 
 What it does
-	•	Bitcoin bridge into Cosmos ecosystem
-	•	Maintains Bitcoin consensus state
+• Bitcoin bridge into Cosmos ecosystem
+• Maintains Bitcoin consensus state
 
 Model
-	•	Not fully “every check on-chain” (uses validator set)
-	•	But still much closer to trust-minimized than typical oracles
+• Not fully “every check on-chain” (uses validator set)
+• But still much closer to trust-minimized than typical oracles
 
 ⸻
 
@@ -124,9 +125,9 @@ No system today directly exposes:
 “hashprice = (fees + subsidy) / hashrate”
 
 Because:
-	•	Fees require transaction-level parsing
-	•	Hashrate is inferred, not native
-	•	Averaging logic must be defined
+• Fees require transaction-level parsing
+• Hashrate is inferred, not native
+• Averaging logic must be defined
 
 ⸻
 
@@ -137,8 +138,8 @@ Using something like Interlay or BTC Relay, your contract could:
 Step 1 — Track headers
 
 Store:
-	•	timestamps
-	•	difficulty (via nBits)
+• timestamps
+• difficulty (via nBits)
 
 Step 2 — Compute hashrate on-chain
 
@@ -151,9 +152,9 @@ Step 2 — Compute hashrate on-chain
 Step 3 — Add fees (hard part)
 
 Options:
-	•	Parse full blocks (very expensive ❌)
-	•	Use SPV proofs per block (still heavy)
-	•	Or accept minimal oracle input for fees only (hybrid)
+• Parse full blocks (very expensive ❌)
+• Use SPV proofs per block (still heavy)
+• Or accept minimal oracle input for fees only (hybrid)
 
 ⸻
 
@@ -162,40 +163,40 @@ Reality check (important)
 A fully pure design (no oracle at all):
 
 Feasible for:
-	•	Difficulty
-	•	Block timing
-	•	Block count
+• Difficulty
+• Block timing
+• Block count
 
 Very hard for:
-	•	Fees (requires transaction inclusion + summation)
-	•	Efficient rolling averages (gas-heavy)
+• Fees (requires transaction inclusion + summation)
+• Efficient rolling averages (gas-heavy)
 
 ⸻
 
 Practical conclusion
-	•	Yes, Option A exists in production form → via Bitcoin light clients (Interlay is best example)
-	•	But:
-	•	They stop at raw verification
-	•	You must implement metric derivation (hashprice) yourself
+• Yes, Option A exists in production form → via Bitcoin light clients (Interlay is best example)
+• But:
+• They stop at raw verification
+• You must implement metric derivation (hashprice) yourself
 
 ⸻
 
 If you want the cleanest architecture
 
 A realistic “max trust-minimized” design:
-	•	On-chain:
-	•	Bitcoin header relay (Interlay-style)
-	•	Hashrate computation
-	•	Off-chain (minimal oracle):
-	•	Provide fees per block aggregate only
-	•	Optional:
-	•	BLS aggregation for that single input
+• On-chain:
+• Bitcoin header relay (Interlay-style)
+• Hashrate computation
+• Off-chain (minimal oracle):
+• Provide fees per block aggregate only
+• Optional:
+• BLS aggregation for that single input
 
 ⸻
 
 If you want, I can:
-	•	sketch the exact Solidity contract structure for a BTC header relay + hashprice computation
-	•	or estimate gas costs for a fully on-chain rolling window implementation"
+• sketch the exact Solidity contract structure for a BTC header relay + hashprice computation
+• or estimate gas costs for a fully on-chain rolling window implementation"
 
 ---
 
@@ -248,7 +249,7 @@ The four contracts are:
 - **`BTCUtils.sol`** -- pure library: header parsing, double-SHA256, nBits-to-difficulty, varint decoding, coinbase output parsing
 - **`BTCRelay.sol`** -- stores verified header chain, enforces PoW + retarget rules, stores merkle roots
 - **`CoinbaseVerifier.sol`** -- verifies coinbase SPV proofs against stored merkle roots, extracts and stores fees
-- **`HashrateOracleV2.sol`** -- reads difficulty + fees from the above, derives `hashesForBTC`, combines with Chainlink BTC/USD, exposes same `getHashesforToken()` interface
+- **`HashpriceBTC.sol`** -- reads difficulty + fees from the above, derives `hashesForBTC`, combines with Chainlink BTC/USD, exposes same `getHashesforToken()` interface
 
 `Futures.sol` doesn't change at all -- just call `setOracle(newAddress)`.
 
@@ -285,10 +286,11 @@ Great question -- this gets at the core security model. Let me walk through ever
 **Attack**: Submit headers with artificially low `nBits` (making PoW trivially easy to fake).
 
 **Defense**: Already handled via two checks:
+
 - Within a difficulty period: `nBits` must exactly match the previous block's
 - At retarget boundaries: the new target is verified against the formula with 4x clamping
 
-An attacker can't lower difficulty faster than Bitcoin's own rules allow (at most 4x per 2016 blocks, and each of those blocks requires valid PoW at the *current* difficulty).
+An attacker can't lower difficulty faster than Bitcoin's own rules allow (at most 4x per 2016 blocks, and each of those blocks requires valid PoW at the _current_ difficulty).
 
 ### 4. Fork/reorg (the real problem)
 
@@ -302,12 +304,12 @@ mapping(bytes32 => uint256) public cumulativeWork;
 
 function submitHeaders(bytes calldata rawHeaders) external {
     // ... parse, verify PoW ...
-    
+
     // Accumulate work: work = 2^256 / (target + 1)
     uint256 work = type(uint256).max / (target + 1);
     uint256 newCumulativeWork = cumulativeWork[prevHash] + work;
     cumulativeWork[blockHash] = newCumulativeWork;
-    
+
     // Only update chain tip if this fork has MORE cumulative work
     if (newCumulativeWork > cumulativeWork[chainTip]) {
         chainTip = blockHash;
@@ -322,13 +324,14 @@ This lets competing forks be submitted in parallel. The relay automatically foll
 
 **Attack**: Relayer submits headers from a real but minority fork, hiding the actual longest chain.
 
-**Defense**: Permissionless submission. *Anyone* can submit headers, so a single honest relayer submitting the real chain will win via cumulative work. The attacker would need to sustain a longer PoW chain than all of Bitcoin -- impossible without 51% hashrate.
+**Defense**: Permissionless submission. _Anyone_ can submit headers, so a single honest relayer submitting the real chain will win via cumulative work. The attacker would need to sustain a longer PoW chain than all of Bitcoin -- impossible without 51% hashrate.
 
 ### 6. Timestamp manipulation
 
 **Attack**: Submit headers with manipulated timestamps to skew the difficulty retarget calculation or the hashrate computation.
 
 **Defense needed**: The plan doesn't validate timestamps yet. Bitcoin enforces:
+
 - Timestamp > median of previous 11 blocks (Median Time Past)
 - Timestamp < current time + 2 hours
 
@@ -343,7 +346,7 @@ function _validateTimestamp(uint32 height, uint32 timestamp) internal view {
     }
     uint32 median = _median(times);
     require(timestamp > median, "Timestamp too old");
-    
+
     // Must not be more than 2 hours in the future
     require(timestamp <= block.timestamp + 7200, "Timestamp too far in future");
 }
@@ -351,7 +354,7 @@ function _validateTimestamp(uint32 height, uint32 timestamp) internal view {
 
 ### 7. Confirmation depth (read-side defense)
 
-Even with all the above, you might not want `HashrateOracleV2` reading from the very tip (which could still be reorged). Add a confirmation requirement:
+Even with all the above, you might not want `HashpriceBTC` reading from the very tip (which could still be reorged). Add a confirmation requirement:
 
 ```solidity
 uint32 public constant CONFIRMATION_DEPTH = 6;
@@ -371,7 +374,7 @@ The current `BTCRelay` design needs three additions:
 
 1. **Cumulative work tracking** -- allows fork resolution (heaviest chain wins)
 2. **Timestamp validation** -- prevents timestamp manipulation for retarget/hashrate gaming
-3. **Confirmation depth** in `HashrateOracleV2` -- reads only use blocks with N confirmations
+3. **Confirmation depth** in `HashpriceBTC` -- reads only use blocks with N confirmations
 
 The PoW verification itself is the fundamental guarantee. The cost to submit a single fake header equals the cost to mine a real Bitcoin block. Sustaining a fake chain is equivalent to a 51% attack on Bitcoin -- the relay inherits Bitcoin's own security assumptions.
 
@@ -389,7 +392,7 @@ yes
 
 Now let me update the BTCRelay section in the plan body with the three security additions.
 
-Now update `HashrateOracleV2` to use confirmed height instead of raw tip.
+Now update `HashpriceBTC` to use confirmed height instead of raw tip.
 
 Now add a security model section to the plan.
 
@@ -399,7 +402,6 @@ The plan is updated with all three security additions:
 
 2. **Timestamp validation** -- Each header must satisfy Bitcoin's Median Time Past rule (timestamp > median of last 11 blocks) and the 2-hour future limit. This prevents gaming the difficulty retarget formula or the hashrate derivation via manipulated timestamps.
 
-3. **Confirmation depth** -- `HashrateOracleV2` reads from `confirmedHeight() = chainHeight - 6` instead of the raw tip. Short-lived forks (1-2 blocks, normal in Bitcoin) never affect the oracle's output.
+3. **Confirmation depth** -- `HashpriceBTC` reads from `confirmedHeight() = chainHeight - 6` instead of the raw tip. Short-lived forks (1-2 blocks, normal in Bitcoin) never affect the oracle's output.
 
 The `StoredHeader` struct now includes `cumulativeWork` and needs `prevBlockHash` for chain walking during reindexing after a fork switch. The `submitHeaders` function takes an `ancestorHash` parameter so competing forks can be submitted independently.
-

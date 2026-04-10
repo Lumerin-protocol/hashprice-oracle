@@ -10,7 +10,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Layer 4: Coinbase Merkle proof", function () {
+describe("HashpriceBTC — Layer 4: Coinbase Merkle proof", function () {
   it("should accept a valid coinbase + merkle proof", async function () {
     const { contracts, accounts, config } = await loadFixture(deployOracleFixture);
     const nextBlock = config.blocks[config.batchEnd];

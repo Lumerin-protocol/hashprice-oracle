@@ -9,7 +9,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Layer 2: Chain continuity", function () {
+describe("HashpriceBTC — Layer 2: Chain continuity", function () {
   it("should reject submitBlock when prevHash does not match chain tip (BrokenChain)", async function () {
     const { contracts, config } = await loadFixture(deployOracleFixture);
     // Submit block[1] which has prevHash pointing to block[0], not current tip

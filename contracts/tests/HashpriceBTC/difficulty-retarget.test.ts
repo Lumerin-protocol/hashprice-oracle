@@ -11,7 +11,7 @@ const {
   networkHelpers: { loadFixture },
 } = conn;
 
-describe("HashrateOracleV3 — Layer 3: Difficulty retarget verification", function () {
+describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function () {
   it("should accept blocks that maintain same nBits within an epoch", async function () {
     const { contracts, accounts, config } = await loadFixture(deployOracleFixture);
     const { oracle } = contracts;
@@ -88,9 +88,11 @@ describe("HashrateOracleV3 — Layer 3: Difficulty retarget verification", funct
 
     await tc.setNextBlockTimestamp({ timestamp: BigInt(checkpointTs + 1) });
 
-    const oracle = await viem.deployContract("contracts/HashrateOracleV3.sol:HashrateOracleV3", [
+    const oracle = await viem.deployContract("HashpriceBTC", [
       hex(fakeCheckpointHash),
       checkpointHeight,
+      checkpointTs,
+      checkpointNBits,
       checkpointTs,
       checkpointNBits,
     ]);

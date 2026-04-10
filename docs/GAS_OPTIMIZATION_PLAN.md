@@ -1,4 +1,4 @@
-# HashrateOracleV3 Gas Optimization Plan
+# HashpriceBTC Gas Optimization Plan
 
 Current single-block `submitBlock` cost: **189,231 gas** (vs V2: 373,210 gas, 49% savings).
 
@@ -67,14 +67,14 @@ Loop counters, height increments, and fee arithmetic where overflow is impossibl
 
 ## Summary
 
-| # | Optimization | Estimated savings | Complexity |
-|---|---|---|---|
-| 1 | Pack global state | ~17,000 gas | Medium |
-| 2 | EMA fees | ~7,000 gas | Medium |
-| 3 | Assembly merkle proof | ~4,000 gas | Low |
-| 4 | MTP 11 → 5 | ~12,000 gas | Low |
-| 5 | Remove `submitBlock` | code size | Low |
-| 6 | `unchecked` arithmetic | ~800 gas | Low |
-| | **Total** | **~40,800 gas** | |
+| #   | Optimization           | Estimated savings | Complexity |
+| --- | ---------------------- | ----------------- | ---------- |
+| 1   | Pack global state      | ~17,000 gas       | Medium     |
+| 2   | EMA fees               | ~7,000 gas        | Medium     |
+| 3   | Assembly merkle proof  | ~4,000 gas        | Low        |
+| 4   | MTP 11 → 5             | ~12,000 gas       | Low        |
+| 5   | Remove `submitBlock`   | code size         | Low        |
+| 6   | `unchecked` arithmetic | ~800 gas          | Low        |
+|     | **Total**              | **~40,800 gas**   |            |
 
 Projected cost after all optimizations: **~148,000 gas** (~60% savings vs V2).

@@ -16,10 +16,7 @@ async function main() {
 
   const pc = await viem.getPublicClient();
 
-  const btcPriceOracleMock = await viem.getContractAt(
-    "contracts/BTCPriceOracleMock.sol:BTCPriceOracleMock",
-    oracleAddress,
-  );
+  const btcPriceOracleMock = await viem.getContractAt("BTCPriceOracleMock", oracleAddress);
 
   // Read current price from oracle
   const [, answer] = await btcPriceOracleMock.read.latestRoundData();

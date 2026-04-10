@@ -6,7 +6,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Gas benchmark", function () {
+describe("HashpriceBTC — Gas benchmark", function () {
   it("average gas per block (submit one-by-one)", async function () {
     const { contracts, accounts, config } = await loadFixture(deployV3Fixture);
     const { oracle } = contracts;

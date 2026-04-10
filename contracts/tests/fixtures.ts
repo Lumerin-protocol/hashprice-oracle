@@ -16,14 +16,11 @@ export async function deployTokenOraclesAndMulticall3(conn: NetworkConnection) {
   }
 
   // Deploy USDC Mock (for payments)
-  const _usdcMock = await viem.deployContract("contracts/USDCMock.sol:USDCMock", []);
+  const _usdcMock = await viem.deployContract("USDCMock", []);
   const usdcMock = await getIERC20Metadata(_usdcMock.address as `0x${string}`);
 
   // Deploy BTC Price Oracle Mock
-  const btcPriceOracleMock = await viem.deployContract(
-    "contracts/BTCPriceOracleMock.sol:BTCPriceOracleMock",
-    [],
-  );
+  const btcPriceOracleMock = await viem.deployContract("BTCPriceOracleMock", []);
 
   const btcPriceOracleDecimals = await btcPriceOracleMock.read.decimals();
 

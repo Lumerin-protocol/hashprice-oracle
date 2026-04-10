@@ -8,7 +8,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Chain state", function () {
+describe("HashpriceBTC — Chain state", function () {
   it("should set chain tip to the last submitted block hash", async function () {
     const { contracts, config } = await loadFixture(deployOracleFixture);
     const lastSubmitted = config.blocks[config.batchEnd - 1];

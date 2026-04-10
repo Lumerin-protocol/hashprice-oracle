@@ -113,7 +113,7 @@ describe("HashrateOracle Coverage Tests", function () {
 
     it("should initialize with correct values", async function () {
       const decimals = 8;
-      const usdcTokenMock = await viem.deployContract("contracts/USDCMock.sol:USDCMock", []);
+      const usdcTokenMock = await viem.deployContract("USDCMock", []);
       const hashrateOracle = await viem.deployContract(
         "contracts/HashrateOracle.sol:HashrateOracle",
         [usdcTokenMock.address as `0x${string}`, decimals],

@@ -1,6 +1,6 @@
 ---
 name: BTC Header Relay Oracle
-overview: Fully trustless Bitcoin oracle on L2. BTCRelay verifies headers (PoW), coinbase SPV proofs extract fees, HashrateOracleV2 derives hashrate and hashesForBTC — no trusted off-chain inputs.
+overview: Fully trustless Bitcoin oracle on L2. BTCRelay verifies headers (PoW), coinbase SPV proofs extract fees, HashpriceBTC derives hashrate and hashesForBTC — no trusted off-chain inputs.
 todos:
   - id: btc-utils-lib
     content: "Create BTCUtils.sol library: header parsing, nBits expansion, double-SHA256, difficulty calc, varint decoding, coinbase tx output parsing"
@@ -12,7 +12,7 @@ todos:
     content: "Create CoinbaseVerifier.sol: merkle proof verification against stored header, coinbase tx parsing, fee extraction (outputs - subsidy), per-block fee storage"
     status: pending
   - id: hashrate-oracle-v2
-    content: "Create HashrateOracleV2.sol: trustless hashrate from relay, fee-inclusive hashesForBTC via verified coinbase data, same external interface as HashrateOracle"
+    content: "Create HashpriceBTC.sol: trustless hashrate from relay, fee-inclusive hashesForBTC via verified coinbase data, same external interface as HashrateOracle"
     status: pending
   - id: tests
     content: "Test suite with real Bitcoin block headers and coinbase txs: header verification, SPV proofs, fee extraction, hashrate computation, Futures integration"
@@ -43,7 +43,7 @@ flowchart TD
     subgraph onChain ["On-Chain (L2)"]
         BTCRelay["BTCRelay.sol"]
         CoinbaseV["CoinbaseVerifier.sol"]
-        HashOracle["HashrateOracleV2.sol"]
+        HashOracle["HashpriceBTC.sol"]
         Futures["Futures.sol"]
     end
     subgraph offChain ["Off-Chain (permissionless)"]
@@ -512,12 +512,12 @@ The block header's merkle root commits to **txids** (non-witness hash). Modern c
 
 ---
 
-## Contract 4: HashrateOracleV2.sol
+## Contract 4: HashpriceBTC.sol
 
 Combines all inputs into the same interface `Futures.sol` already consumes.
 
 ```solidity
-contract HashrateOracleV2 is UUPSUpgradeable, OwnableUpgradeable, Versionable {
+contract HashpriceBTC is UUPSUpgradeable, OwnableUpgradeable, Versionable {
     BTCRelay public immutable relay;
     CoinbaseVerifier public immutable coinbaseVerifier;
     AggregatorV3Interface public immutable btcTokenOracle;
@@ -603,10 +603,10 @@ contract HashrateOracleV2 is UUPSUpgradeable, OwnableUpgradeable, Versionable {
 Zero changes to `Futures.sol`. Just call:
 
 ```solidity
-futures.setOracle(address(hashrateOracleV2));
+futures.setOracle(address(HashpriceBTC));
 ```
 
-The `setOracle` function already exists and accepts any address, casting it to `HashrateOracle`. Since `HashrateOracleV2` exposes the same `getHashesforToken()` signature, it works as a drop-in.
+The `setOracle` function already exists and accepts any address, casting it to `HashrateOracle`. Since `HashpriceBTC` exposes the same `getHashesforToken()` signature, it works as a drop-in.
 
 ---
 
@@ -621,7 +621,7 @@ Every submitted header must have `dsha256(header) <= target`. Fabricating a sing
 Headers can extend any known ancestor, not just the current tip. The relay tracks `cumulativeWork` per chain and automatically follows the fork with the most accumulated work. An attacker sustaining a fake fork would need to outpace all of Bitcoin's hashrate indefinitely -- equivalent to a 51% attack.
 
 **Layer 3 -- Confirmation depth (read-side)**
-`HashrateOracleV2` reads from `confirmedHeight() = chainHeight - 6`, not the raw tip. Even if a 1-2 block fork occurs (normal in Bitcoin), the oracle only uses data from blocks with 6+ confirmations. This is the same threshold Bitcoin exchanges use.
+`HashpriceBTC` reads from `confirmedHeight() = chainHeight - 6`, not the raw tip. Even if a 1-2 block fork occurs (normal in Bitcoin), the oracle only uses data from blocks with 6+ confirmations. This is the same threshold Bitcoin exchanges use.
 
 **Timestamp validation**
 Each header's timestamp must be greater than the median of the previous 11 blocks (Bitcoin's Median Time Past rule) and no more than 2 hours in the future. Prevents timestamp manipulation attacks against the difficulty retarget calculation and hashrate derivation.
@@ -668,7 +668,7 @@ Coinbase TX + Merkle Proof ──submit──> CoinbaseVerifier
   ├── computes: fees = totalOutputs - getBlockSubsidy(H)
   └── stores: blockFees[H]
 
-HashrateOracleV2.getHashesforToken()
+HashpriceBTC.getHashesforToken()
   ├── reads: difficulty from BTCRelay (nBits of tip)
   ├── reads: avgFees from CoinbaseVerifier (window average)
   ├── computes: hashesForBTC = difficulty * 2^32 / (subsidy + avgFees)
@@ -686,14 +686,14 @@ Futures.getMarketPrice()
 - `contracts/contracts/libraries/BTCUtils.sol` -- header parsing, dsha256, nBits expansion, varint, coinbase parsing, subsidy calculation
 - `contracts/contracts/BTCRelay.sol` -- header chain with PoW verification
 - `contracts/contracts/CoinbaseVerifier.sol` -- SPV fee extraction
-- `contracts/contracts/HashrateOracleV2.sol` -- trustless hashrate + fee oracle, same interface
+- `contracts/contracts/HashpriceBTC.sol` -- trustless hashrate + fee oracle, same interface
 - `contracts/tests/btc-relay.test.ts` -- test with real Bitcoin headers
 - `contracts/tests/coinbase-verifier.test.ts` -- test with real coinbase txs + merkle proofs
 - `contracts/tests/hashrate-oracle-v2.test.ts` -- end-to-end integration
 
 ## Files to modify
 
-- [contracts/contracts/hardhat.sol](contracts/contracts/hardhat.sol) -- add import for BTCRelay, CoinbaseVerifier, HashrateOracleV2
+- [contracts/contracts/hardhat.sol](contracts/contracts/hardhat.sol) -- add import for BTCRelay, CoinbaseVerifier, HashpriceBTC
 - [contracts/hardhat.config.ts](contracts/hardhat.config.ts) -- add new contracts to abiExporter
 
 ## Files unchanged

@@ -1,4 +1,4 @@
-# Block Validation in HashrateOracleV3
+# Block Validation in HashpriceBTC
 
 How the oracle ensures every submitted Bitcoin block is authentic, and what checks are worth their gas cost.
 

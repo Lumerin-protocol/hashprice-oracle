@@ -2,17 +2,16 @@
 pragma solidity >=0.8.0;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import { Versionable } from "./Versionable.sol";
 import { BTCUtils } from "./libraries/BTCUtils.sol";
 
-/// @title HashrateOracleV3
+/// @title HashpriceBTC
 /// @notice Gas-optimized trustless hashprice oracle (relay + verifier + oracle in one).
 ///         Uses ring buffers instead of unbounded mappings. Single `submitBlock()` entry
 ///         point per block. Supports on-chain reorg handling via `submitBlocks()`.
 /// @dev Implements AggregatorV3Interface. Returns the price of 100 TH/s per day in BTC.
 ///      Future optimization: replace SMA with an exponential moving average (EMA) to
 ///      eliminate the fee ring buffer entirely.
-contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
+contract HashpriceBTC is AggregatorV3Interface {
     // ─── Constants ────────────────────────────────────────────────────
 
     uint32 public constant BLOCK_BUFFER_SIZE = 32;
@@ -21,8 +20,6 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
     uint256 public constant EXPECTED_TIMESPAN = 2016 * 600;
     uint256 public constant RETARGET_INTERVAL = 2016;
     uint256 private constant HASHES_PER_100THS_PER_DAY = 8_640_000_000_000_000_000;
-
-    string public constant VERSION = "1.0.0";
 
     // ─── Storage: block ring buffer (32 entries × 2 slots = 64 slots) ─
 
@@ -87,20 +84,25 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
     /// @param height Block height
     /// @param timestamp Block timestamp
     /// @param nBits Encoded difficulty target
-    constructor(bytes32 blockHashLE, uint32 height, uint32 timestamp, uint32 nBits) {
-        _blocks[height & 31] = BlockEntry({
-            blockHashLE: blockHashLE,
-            timestamp: timestamp,
-            nBits: nBits,
-            height: height
-        });
+    /// @param _epochStartTimestamp Timestamp of the first block in the current difficulty epoch
+    /// @param _epochStartNBits nBits of the first block in the current difficulty epoch
+    constructor(
+        bytes32 blockHashLE,
+        uint32 height,
+        uint32 timestamp,
+        uint32 nBits,
+        uint32 _epochStartTimestamp,
+        uint32 _epochStartNBits
+    ) {
+        _blocks[height & 31] =
+            BlockEntry({ blockHashLE: blockHashLE, timestamp: timestamp, nBits: nBits, height: height });
 
         chainTip = blockHashLE;
         state = PackedState({
             chainHeight: height,
             blockCount: 0,
-            epochStartTimestamp: timestamp,
-            epochStartNBits: nBits,
+            epochStartTimestamp: _epochStartTimestamp,
+            epochStartNBits: _epochStartNBits,
             lastSubmittedAt: 0
         });
     }
@@ -161,11 +163,8 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
 
         PackedState memory s = state;
 
-        ChainCursor memory cur = ChainCursor({
-            prevHash: ancestor.blockHashLE,
-            height: ancestorHeight,
-            prevNBits: ancestor.nBits
-        });
+        ChainCursor memory cur =
+            ChainCursor({ prevHash: ancestor.blockHashLE, height: ancestorHeight, prevNBits: ancestor.nBits });
 
         for (uint256 i = 0; i < count; i++) {
             _processHeader(headers[i * 80:(i + 1) * 80], coinbaseTxs[i], merkleProofs[i], cur, s);
@@ -288,12 +287,8 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         uint64 fees,
         PackedState memory s
     ) internal {
-        _blocks[height & 31] = BlockEntry({
-            blockHashLE: blockHashLE,
-            timestamp: timestamp,
-            nBits: nBits,
-            height: height
-        });
+        _blocks[height & 31] =
+            BlockEntry({ blockHashLE: blockHashLE, timestamp: timestamp, nBits: nBits, height: height });
 
         uint256 idx = height % FEE_WINDOW;
         uint64 oldFee = _fees[idx];
@@ -323,7 +318,11 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
     }
 
     /// @dev Compare cumulative work of submitted headers vs existing chain from the fork point.
-    function _isHeavierChain(bytes calldata headers, uint32 ancestorHeight, uint256 count) internal view returns (bool) {
+    function _isHeavierChain(bytes calldata headers, uint32 ancestorHeight, uint256 count)
+        internal
+        view
+        returns (bool)
+    {
         uint256 newWork;
         uint256 oldWork;
         for (uint256 i = 0; i < count; i++) {
@@ -339,7 +338,10 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         if (timestamp > uint32(block.timestamp) + 7200) revert InvalidTimestamp();
     }
 
-    function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s) internal view {
+    function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s)
+        internal
+        view
+    {
         if (height % RETARGET_INTERVAL == 0) {
             _verifyRetarget(height, newNBits, s);
         } else {
@@ -370,5 +372,4 @@ contract HashrateOracleV3 is Versionable, AggregatorV3Interface {
         s.epochStartTimestamp = lastBlock.timestamp;
         s.epochStartNBits = newNBits;
     }
-
 }

@@ -9,7 +9,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Layer 5: Future timestamp cap", function () {
+describe("HashpriceBTC — Layer 5: Future timestamp cap", function () {
   it("should accept a block with a timestamp within 2 hours of EVM time", async function () {
     const { contracts, accounts, config } = await loadFixture(deployOracleFixture);
     const nextBlock = config.blocks[config.batchEnd];

@@ -9,7 +9,7 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
-describe("HashrateOracleV3 — Layer 1: Proof-of-Work", function () {
+describe("HashpriceBTC — Layer 1: Proof-of-Work", function () {
   it("should accept a real block with valid PoW", async function () {
     const { contracts, accounts, config } = await loadFixture(deployOracleFixture);
     const { oracle } = contracts;

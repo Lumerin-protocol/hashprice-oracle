@@ -13,10 +13,7 @@ async function main() {
   console.log("Deployer address:", deployer.account.address);
 
   // Deploy USDC Mock contract
-  const btcPriceOracleMock = await viem.deployContract(
-    "contracts/BTCPriceOracleMock.sol:BTCPriceOracleMock",
-    [],
-  );
+  const btcPriceOracleMock = await viem.deployContract("BTCPriceOracleMock", []);
   console.log("Deployed at:", btcPriceOracleMock.address);
 
   await verifyContract(btcPriceOracleMock.address);
