@@ -31,9 +31,29 @@ library BTCUtils {
         return HeaderInfo({ prevBlockHash: prevHash, merkleRoot: merkleRootVal, timestamp: ts, nBits: bits });
     }
 
-    /// @notice Double-SHA256 (Bitcoin's standard hash function)
-    function dsha256(bytes memory data) internal pure returns (bytes32) {
-        return sha256(abi.encodePacked(sha256(data)));
+    /// @notice Double-SHA256 using the SHA-256 precompile (address(2)) — gas-optimized variant.
+    /// @dev Calls staticcall(2, ...) twice, storing the intermediate hash in scratch space (0x00–0x1f)
+    ///      to avoid any heap allocation between the two passes.
+    ///      Must be `view` rather than `pure` because the compiler classifies staticcall as state-reading.
+    function hash256View(bytes memory data) internal view returns (bytes32 res) {
+        assembly {
+            pop(staticcall(gas(), 2, add(data, 32), mload(data), 0x00, 32))
+            pop(staticcall(gas(), 2, 0x00, 32, 0x00, 32))
+            res := mload(0x00)
+        }
+    }
+
+    /// @notice Double-SHA256 of two concatenated bytes32 values — zero-allocation merkle step.
+    /// @dev Writes both words into scratch space then calls the SHA-256 precompile twice in-place.
+    ///      Equivalent to dsha256(abi.encodePacked(a, b)) with no heap allocation.
+    function hash256Pair(bytes32 a, bytes32 b) internal view returns (bytes32 res) {
+        assembly {
+            mstore(0x00, a)
+            mstore(0x20, b)
+            pop(staticcall(gas(), 2, 0x00, 64, 0x00, 32))
+            pop(staticcall(gas(), 2, 0x00, 32, 0x00, 32))
+            res := mload(0x00)
+        }
     }
 
     /// @notice Expand nBits compact target to 256-bit target

@@ -146,11 +146,15 @@ contract HashpriceBTC is AggregatorV3Interface {
         _validateHeaderLength(header);
         PackedState memory s = state;
 
-        BlockEntry memory cur =
-            BlockEntry({ prevHash: chainTipHash, height: s.chainHeight, prevNBits: s.epochStartNBits });
+        BlockEntry memory cur = BlockEntry({
+            blockHash: chainTipHash,
+            timestamp: 0,
+            nBits: _blockAt(s.chainHeight).nBits,
+            height: s.chainHeight
+        });
 
         _processHeader(header, coinbaseTx, merkleProof, cur, s);
-        chainTipHash = cur.prevHash;
+        chainTipHash = cur.blockHash;
 
         s.chainHeight = cur.height;
         s.blockCount++;
@@ -195,17 +199,17 @@ contract HashpriceBTC is AggregatorV3Interface {
             s.chainHeight = cur.height;
             s.blockCount += uint32(count);
         } else if (_isHeavierChain(headers, ancestorHeight, count)) {
-            emit ChainReorg(cur.prevHash, cur.height);
+            emit ChainReorg(cur.blockHash, cur.height);
         } else {
             revert NotHeaviestChain();
         }
 
-        chainTipHash = cur.prevHash;
+        chainTipHash = cur.blockHash;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
 
         if (s.chainHeight >= CONFIRMATION_DEPTH) {
-            _updateLatestRoundData(s.chainHeight - CONFIRMATION_DEPTH, s.blockCount, s.lastSubmittedAt);
+            _updateLatestRoundData(s);
         }
     }
 
@@ -225,7 +229,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         _validateChainLinkage(info.prevBlockHash, cur.blockHash);
 
         uint256 target = BTCUtils.nBitsToTarget(info.nBits);
-        bytes32 blockHash = BTCUtils.dsha256(header);
+        bytes32 blockHash = BTCUtils.hash256View(header);
 
         cur.height++;
 
@@ -302,10 +306,10 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint64 subsidy = BTCUtils.getBlockSubsidy(confirmed);
 
         uint256 avgFees;
-        if (blockCount >= FEE_WINDOW) {
+        if (s.blockCount >= FEE_WINDOW) {
             avgFees = feeRunningSum / FEE_WINDOW;
         } else {
-            avgFees = feeRunningSum / blockCount;
+            avgFees = feeRunningSum / s.blockCount;
         }
 
         uint256 rewardPerBlock = uint256(subsidy) + avgFees;
@@ -314,7 +318,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         latestRoundDataCache = CachedRoundData({
             roundId: uint80(confirmed),
             startedAt: entry.timestamp,
-            updatedAt: lastSubmittedAt,
+            updatedAt: s.lastSubmittedAt,
             answer: int256(hashpriceSats)
         });
     }
@@ -350,10 +354,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         bytes32 expectedRoot,
         bytes calldata coinbaseTx,
         bytes32[] calldata merkleProof
-    ) internal pure returns (uint64) {
-        bytes32 current = BTCUtils.dsha256(coinbaseTx);
+    ) internal view returns (uint64) {
+        bytes32 current = BTCUtils.hash256View(coinbaseTx);
+
+        // Coinbase is always at index 0, so it is the left node at every level of the tree.
         for (uint256 i = 0; i < merkleProof.length; i++) {
-            current = BTCUtils.dsha256(abi.encodePacked(current, merkleProof[i]));
+            current = BTCUtils.hash256Pair(current, merkleProof[i]);
         }
         if (current != expectedRoot) revert InvalidMerkleProof();
 
