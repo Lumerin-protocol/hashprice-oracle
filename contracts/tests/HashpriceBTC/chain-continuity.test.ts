@@ -60,12 +60,12 @@ describe("HashpriceBTC — Layer 2: Chain continuity", function () {
     });
   });
 
-  it("should reject submitBlocks when ancestor is not in the ring buffer (AncestorTooOld)", async function () {
+  it("should reject submitBlocks when ancestor is not in the ring buffer (AncestorNotInBuffer)", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     const fakeHeight = 1;
     const fakeHeader: `0x${string}` = `0x${"00".repeat(80)}`;
 
-    await catchError(contracts.oracle.abi, "AncestorTooOld", async () => {
+    await catchError(contracts.oracle.abi, "AncestorNotInBuffer", async () => {
       await contracts.oracle.write.submitBlocks([fakeHeight, fakeHeader, ["0x00"], [[]]]);
     });
   });

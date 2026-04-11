@@ -12,6 +12,7 @@ library BTCUtils {
     }
 
     error InvalidCoinbaseTx();
+    error InvalidHeaderLength();
 
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):

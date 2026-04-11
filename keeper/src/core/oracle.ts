@@ -16,7 +16,7 @@ import { getChain } from "../config.ts";
 
 export interface OracleState {
   chainHeight: number;
-  chainTip: `0x${string}`;
+  chainTipHash: `0x${string}`;
   blockCount: number;
   lastSubmittedAt: number;
 }
@@ -49,7 +49,7 @@ export class OracleClient {
   }
 
   async getState(): Promise<OracleState> {
-    const [stateResult, chainTip] = await Promise.all([
+    const [stateResult, chainTipHash] = await Promise.all([
       this.pc.readContract({
         address: this.address,
         abi: HashpriceBTCAbi,
@@ -58,7 +58,7 @@ export class OracleClient {
       this.pc.readContract({
         address: this.address,
         abi: HashpriceBTCAbi,
-        functionName: "chainTip",
+        functionName: "chainTipHash",
       }),
     ]);
 
@@ -66,7 +66,7 @@ export class OracleClient {
       chainHeight: stateResult[0],
       blockCount: stateResult[1],
       lastSubmittedAt: stateResult[4],
-      chainTip,
+      chainTipHash,
     };
   }
 

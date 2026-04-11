@@ -12,8 +12,8 @@ describe("HashpriceBTC — Chain state", function () {
   it("should set chain tip to the last submitted block hash", async function () {
     const { contracts, config } = await loadFixture(deployOracleFixture);
     const lastSubmitted = config.blocks[config.batchEnd - 1];
-    const chainTip = await contracts.oracle.read.chainTip();
-    assert.equal(chainTip.toLowerCase(), hex(dsha256(lastSubmitted.rawHeader)).toLowerCase());
+    const chainTipHash = await contracts.oracle.read.chainTipHash();
+    assert.equal(chainTipHash.toLowerCase(), hex(dsha256(lastSubmitted.rawHeader)).toLowerCase());
   });
 
   it("should set chain height to the last submitted block height", async function () {

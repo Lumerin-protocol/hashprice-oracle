@@ -339,7 +339,7 @@ export const contractErrors = [
   },
   {
     "inputs": [],
-    "name": "AncestorTooOld",
+    "name": "AncestorNotInBuffer",
     "type": "error"
   },
   {

@@ -23,7 +23,7 @@ async function main() {
   console.log("  decimals:", await hashpriceBtc.read.decimals());
   console.log("  description:", await hashpriceBtc.read.description());
   console.log("  version:", await hashpriceBtc.read.version());
-  console.log("  chainTip:", await hashpriceBtc.read.chainTip());
+  console.log("  chainTipHash:", await hashpriceBtc.read.chainTipHash());
 
   const [chainHeight] = Object.values(await hashpriceBtc.read.state());
   console.log("  chainHeight:", chainHeight);
