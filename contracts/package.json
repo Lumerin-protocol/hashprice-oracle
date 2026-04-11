@@ -12,6 +12,7 @@
     "format:sol": "forge fmt ./contracts/**/*.sol",
     "test": "hardhat test",
     "test-coverage": "SOLIDITY_COVERAGE=true yarn hardhat coverage",
+    "test:gas": "hardhat test ./tests/HashpriceBTC/gas-benchmark.test.ts",
     "compile": "hardhat compile",
     "clean": "rm -rf abi artifacts cache abi",
     "aderyn": "aderyn"

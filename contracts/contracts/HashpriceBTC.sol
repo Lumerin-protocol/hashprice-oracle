@@ -9,36 +9,38 @@ import { BTCUtils } from "./libraries/BTCUtils.sol";
 ///         Single `submitBlock()` entry point per block. Supports on-chain reorg handling via `submitBlocks()`.
 /// @dev Implements AggregatorV3Interface. Returns the price of 100 TH/s per day in BTC.
 ///      Average fees use a simple moving average over 144 blocks so the on-chain
-///      hashprice is comparable to the Luxor hashprice index. Future optimization: EMA instead of
-///      SMA to shrink the fee ring buffer.
-///
-///      Timestamps: Bitcoin's Median Time Past (nTime > median of prior 11) is omitted — too many
-///      storage reads per block for this ring-buffer design. We only enforce the 2h future cap
-///      (`MAX_FUTURE_BLOCK_TIME` vs `block.timestamp`) plus retarget checks; MTP's lower bound on
-///      `nTime` is not replicated on-chain.
+///      hashprice is comparable to the Luxor hashprice index.
 contract HashpriceBTC is AggregatorV3Interface {
     // ─── Constants ────────────────────────────────────────────────────
 
     /// @dev How many recent block headers we keep
-    /// in storage to handle reorgs. Must cover `CONFIRMATION_DEPTH`
-    ///      lookups and any `submitBlocks` ancestor still on-chain.
+    ///      in storage to handle reorgs.
     uint32 private constant BLOCK_BUFFER_SIZE = 32;
-    /// @dev Number of blocks in the fee SMA (~one day at 10 min/block); matches Luxor index window.
-    uint32 private constant FEE_WINDOW = 144;
-    /// @dev Blocks behind tip used as “confirmed” for `latestRoundData` (Bitcoin-like ~6 confs).
-    uint32 public constant CONFIRMATION_DEPTH = 6;
-    /// @dev Target seconds per difficulty epoch: 2016 blocks × 10 min (Bitcoin retarget timespan).
-    uint256 private constant EXPECTED_TIMESPAN = 2016 * 600;
-    /// @dev Blocks per difficulty epoch; retarget validation runs when `height` is a multiple of this.
-    uint256 private constant RETARGET_INTERVAL = 2016;
-    /// @dev Max seconds header `nTime` may be ahead of `block.timestamp` (Bitcoin's 2h rule; nodes
-    ///      use network-adjusted time, we use the EVM block time).
-    uint32 private constant MAX_FUTURE_BLOCK_TIME = 7200;
-    /// @dev Hashes in 100 TH/s over one day (100 × 1e12 × 86_400); numerator in hashprice satoshi formula.
-    uint256 private constant HASHES_PER_100THS_PER_DAY = 8_640_000_000_000_000_000;
-    uint256 private constant HEADER_SIZE = 80;
 
-    // ─── Storage: block ring buffer (32 entries × 2 slots = 64 slots) ─
+    /// @dev Number of blocks in the fee SMA,
+    ///      matches Luxor index window.
+    uint32 private constant FEE_WINDOW = 144;
+
+    /// @dev Blocks behind tip used as “confirmed”
+    ///      for `latestRoundData`.
+    uint32 public constant CONFIRMATION_DEPTH = 6;
+
+    /// @dev Number of blocks per difficulty epoch;
+    uint256 private constant RETARGET_INTERVAL = 2016;
+
+    /// @dev Target seconds per difficulty epoch:
+    ///      2016 blocks × 10 min (Bitcoin retarget timespan).
+    uint256 private constant EXPECTED_TIMESPAN = RETARGET_INTERVAL * 10 * 60;
+
+    /// @dev Max seconds header time may be ahead of
+    ///      `block.timestamp` (Bitcoin's 2h rule)
+    uint32 private constant MAX_FUTURE_BLOCK_TIME = 2 * 3600;
+
+    /// @dev Hashes in 100 TH/s over one day (100 × 1e12 × 86_400);
+    uint256 private constant HASHES_PER_100THS_PER_DAY = 100 * 1e12 * 24 * 3600;
+
+    /// @dev Size of a raw Bitcoin block header
+    uint256 private constant HEADER_SIZE = 80;
 
     struct BlockEntry {
         bytes32 blockHash;
@@ -55,23 +57,35 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 lastSubmittedAt;
     }
 
-    /// @dev Mutable chain state passed through submitBlocks loop to avoid stack-too-deep
-    struct ChainCursor {
-        bytes32 prevHash;
-        uint32 height;
-        uint32 prevNBits;
+    /// @dev Cached output of latestRoundData(), refreshed on every block submission.
+    ///      Packs into a single 32-byte storage slot (10+4+4+8 = 26 bytes), so reads cost
+    ///      one SLOAD instead of recomputing difficulty/subsidy/fees each time.
+    struct CachedRoundData {
+        uint80 roundId;
+        uint32 startedAt;
+        uint32 updatedAt;
+        int256 answer;
     }
+
+    // ─── Storage ───────────────────────────────────────────────────────
 
     /// @dev Ring buffer of recent blocks to handle reorgs.
     BlockEntry[BLOCK_BUFFER_SIZE] internal _blocks;
+
     /// @dev Ring buffer of recent fees to calculate SMA.
     uint64[FEE_WINDOW] internal _fees;
+
     /// @dev dSHA256 of the current header; next `submitBlock` must extend this.
     bytes32 public chainTipHash;
+
     /// @dev Packed chain/oracle state
     PackedState public state;
+
     /// @dev Running sum of fees over the last `FEE_WINDOW` blocks.
-    uint256 public feeRunningSum;
+    uint256 private feeRunningSum;
+
+    /// @dev Cache for latestRoundData().
+    CachedRoundData private latestRoundDataCache;
 
     // ─── Errors ───────────────────────────────────────────────────────
 
@@ -112,7 +126,6 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 _epochStartNBits
     ) {
         _setBlockAt(height, blockHash, timestamp, nBits);
-
         chainTipHash = blockHash;
         state = PackedState({
             chainHeight: height,
@@ -123,16 +136,6 @@ contract HashpriceBTC is AggregatorV3Interface {
         });
     }
 
-    function _validateWork(bytes32 blockHash, uint256 target) internal pure {
-        if (uint256(BTCUtils.reverseBytes32(blockHash)) > target) {
-            revert InsufficientPoW();
-        }
-    }
-
-    function _validateChainLinkage(bytes32 prevBlockHash, bytes32 _chainTipHash) internal pure {
-        if (prevBlockHash != _chainTipHash) revert BrokenChain();
-    }
-
     // ─── Block submission ─────────────────────────────────────────────
 
     /// @notice Submit a single block (header + coinbase proof). Steady-state path.
@@ -141,30 +144,20 @@ contract HashpriceBTC is AggregatorV3Interface {
     /// @param merkleProof Merkle sibling hashes from coinbase leaf to root
     function submitBlock(bytes calldata header, bytes calldata coinbaseTx, bytes32[] calldata merkleProof) external {
         _validateHeaderLength(header);
-        BTCUtils.HeaderInfo memory info = BTCUtils.parseHeader(header);
-        bytes32 blockHash = BTCUtils.dsha256(header);
-
         PackedState memory s = state;
-        uint32 newHeight = s.chainHeight + 1;
-        uint256 newTarget = BTCUtils.nBitsToTarget(info.nBits);
 
-        _validateChainLinkage(info.prevBlockHash, chainTipHash);
-        _validateWork(blockHash, newTarget);
-        _validateTimestamp(newHeight, info.timestamp);
-        _validateDifficulty(newHeight, info.nBits, _blockAt(s.chainHeight).nBits, s);
+        BlockEntry memory cur =
+            BlockEntry({ prevHash: chainTipHash, height: s.chainHeight, prevNBits: s.epochStartNBits });
 
-        uint64 fees = _verifyCoinbaseAndExtractFees(newHeight, info.merkleRoot, coinbaseTx, merkleProof);
-        _updateFees(fees, newHeight, s.blockCount);
+        _processHeader(header, coinbaseTx, merkleProof, cur, s);
+        chainTipHash = cur.prevHash;
 
-        _setBlockAt(newHeight, blockHash, info.timestamp, info.nBits);
-
-        chainTipHash = blockHash;
-        s.chainHeight = newHeight;
+        s.chainHeight = cur.height;
         s.blockCount++;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
 
-        emit BlockSubmitted(blockHash, newHeight, fees);
+        _updateLatestRoundData(s);
     }
 
     /// @notice Submit multiple blocks from an ancestor. Used for bootstrap and reorgs.
@@ -178,16 +171,17 @@ contract HashpriceBTC is AggregatorV3Interface {
         bytes[] calldata coinbaseTxs,
         bytes32[][] calldata merkleProofs
     ) external {
-        _validateConcatenatedHeadersLength(headers);
+        _validateHeadersLength(headers);
         uint256 count = headers.length / HEADER_SIZE;
-        if (coinbaseTxs.length != count || merkleProofs.length != count) revert ArrayLengthMismatch();
+        if (coinbaseTxs.length != count || merkleProofs.length != count) {
+            revert ArrayLengthMismatch();
+        }
 
         BlockEntry storage ancestor = _blockAt(ancestorHeight);
         if (ancestor.height != ancestorHeight) revert AncestorNotInBuffer();
 
         PackedState memory s = state;
-        ChainCursor memory cur =
-            ChainCursor({ prevHash: ancestor.blockHash, height: ancestorHeight, prevNBits: ancestor.nBits });
+        BlockEntry memory cur = ancestor;
 
         for (uint256 i = 0; i < count; i++) {
             _processHeader(_sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], cur, s);
@@ -209,20 +203,14 @@ contract HashpriceBTC is AggregatorV3Interface {
         chainTipHash = cur.prevHash;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
+
+        if (s.chainHeight >= CONFIRMATION_DEPTH) {
+            _updateLatestRoundData(s.chainHeight - CONFIRMATION_DEPTH, s.blockCount, s.lastSubmittedAt);
+        }
     }
 
     function _sliceHeaders(bytes calldata headers, uint256 index) internal pure returns (bytes calldata) {
         return headers[index * HEADER_SIZE:(index + 1) * HEADER_SIZE];
-    }
-
-    function _validateHeaderLength(bytes calldata header) internal pure {
-        if (header.length != HEADER_SIZE) revert InvalidHeaderLength();
-    }
-
-    function _validateConcatenatedHeadersLength(bytes calldata headers) internal pure {
-        if (headers.length % HEADER_SIZE != 0 || headers.length == 0) {
-            revert InvalidHeaderLength();
-        }
     }
 
     /// @dev Process a single header inside submitBlocks. Mutates `cur` in place.
@@ -230,11 +218,11 @@ contract HashpriceBTC is AggregatorV3Interface {
         bytes calldata header,
         bytes calldata coinbaseTx,
         bytes32[] calldata merkleProof,
-        ChainCursor memory cur,
+        BlockEntry memory cur,
         PackedState memory s
     ) internal {
         BTCUtils.HeaderInfo memory info = BTCUtils.parseHeader(header);
-        _validateChainLinkage(info.prevBlockHash, cur.prevHash);
+        _validateChainLinkage(info.prevBlockHash, cur.blockHash);
 
         uint256 target = BTCUtils.nBitsToTarget(info.nBits);
         bytes32 blockHash = BTCUtils.dsha256(header);
@@ -243,16 +231,15 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         _validateWork(blockHash, target);
         _validateTimestamp(cur.height, info.timestamp);
-        _validateDifficulty(cur.height, info.nBits, cur.prevNBits, s);
+        _validateDifficulty(cur.height, info.nBits, cur.nBits, s);
 
         uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
 
-        // TODO: maybe pass block count in context struct to avoid reading state
         _updateFees(fees, cur.height, s.blockCount);
         _setBlockAt(cur.height, blockHash, info.timestamp, info.nBits);
 
-        cur.prevHash = blockHash;
-        cur.prevNBits = info.nBits;
+        cur.blockHash = blockHash;
+        cur.nBits = info.nBits;
 
         emit BlockSubmitted(blockHash, cur.height, fees);
     }
@@ -276,39 +263,20 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     /// @notice Returns the latest hashprice of 100 TH/s per day in satoshis
-    /// @dev Reward uses subsidy plus SMA of fees over `FEE_WINDOW` blocks (Luxor hashprice index).
+    /// @dev Reads the single-slot cache written by every block submission — one SLOAD.
     /// @return roundId Confirmed Bitcoin block height
     /// @return answer Hashprice in satoshis (8 decimals = BTC)
     /// @return startedAt Bitcoin block timestamp at confirmed height
-    /// @return updatedAt Bitcoin block timestamp at confirmed height
+    /// @return updatedAt EVM block.timestamp when tip was last submitted
     /// @return answeredInRound Same as roundId
     function latestRoundData()
         external
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        PackedState memory s = state;
-        if (s.chainHeight < CONFIRMATION_DEPTH) revert InsufficientData();
-        uint32 confirmed = s.chainHeight - CONFIRMATION_DEPTH;
-
-        BlockEntry storage entry = _blockAt(confirmed);
-        if (entry.height != confirmed) revert InsufficientData();
-
-        uint256 difficulty = BTCUtils.nBitsToDifficulty(entry.nBits);
-        uint64 subsidy = BTCUtils.getBlockSubsidy(confirmed);
-
-        uint256 avgFees;
-        if (s.blockCount >= FEE_WINDOW) {
-            avgFees = feeRunningSum / FEE_WINDOW;
-        } else {
-            avgFees = feeRunningSum / s.blockCount;
-        }
-
-        uint256 rewardPerBlock = uint256(subsidy) + avgFees;
-        uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (difficulty * (1 << 32));
-
-        uint80 _roundId = uint80(confirmed);
-        return (_roundId, int256(hashpriceSats), uint256(entry.timestamp), uint256(s.lastSubmittedAt), _roundId);
+        CachedRoundData memory c = latestRoundDataCache;
+        if (c.roundId == 0) revert InsufficientData();
+        return (c.roundId, c.answer, uint256(c.startedAt), uint256(c.updatedAt), c.roundId);
     }
 
     /// @notice Returns the height of the latest confirmed block
@@ -319,6 +287,37 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────
+
+    /// @dev Recompute the hashprice for `confirmed` and write the result to `latestRoundDataCache`.
+    ///      Skips silently if the confirmed block is not yet in the ring buffer.
+    ///      Must be called after state, _blocks, and feeRunningSum have been written to storage.
+    function _updateLatestRoundData(PackedState memory s) internal {
+        if (s.chainHeight < CONFIRMATION_DEPTH) return;
+
+        uint32 confirmed = s.chainHeight - CONFIRMATION_DEPTH;
+        BlockEntry storage entry = _blockAt(confirmed);
+        if (entry.height != confirmed) return;
+
+        uint256 difficulty = BTCUtils.nBitsToDifficulty(entry.nBits);
+        uint64 subsidy = BTCUtils.getBlockSubsidy(confirmed);
+
+        uint256 avgFees;
+        if (blockCount >= FEE_WINDOW) {
+            avgFees = feeRunningSum / FEE_WINDOW;
+        } else {
+            avgFees = feeRunningSum / blockCount;
+        }
+
+        uint256 rewardPerBlock = uint256(subsidy) + avgFees;
+        uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (difficulty * (1 << 32));
+
+        latestRoundDataCache = CachedRoundData({
+            roundId: uint80(confirmed),
+            startedAt: entry.timestamp,
+            updatedAt: lastSubmittedAt,
+            answer: int256(hashpriceSats)
+        });
+    }
 
     /// @dev Read a block entry by height. The ring buffer holds BLOCK_BUFFER_SIZE (32) entries;
     ///      the slot for a given height is `height % 32`, derived cheaply via bitwise AND since
@@ -372,17 +371,13 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint256 newWork;
         uint256 oldWork;
         for (uint256 i = 0; i < count; i++) {
-            uint32 newNBits = BTCUtils.readUint32LE(headers, i * 80 + 72);
+            uint32 newNBits = BTCUtils.readUint32LE(headers, i * HEADER_SIZE + 72);
             newWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(newNBits));
+
             uint32 oldNBits = _blockAt(ancestorHeight + 1 + uint32(i)).nBits;
             oldWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(oldNBits));
         }
         return newWork > oldWork;
-    }
-
-    /// @dev `nTime` must be <= `block.timestamp + MAX_FUTURE_BLOCK_TIME`. No MTP (prior-11 median).
-    function _validateTimestamp(uint32, uint32 timestamp) internal view {
-        if (timestamp > uint32(block.timestamp) + MAX_FUTURE_BLOCK_TIME) revert InvalidTimestamp();
     }
 
     function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s)
@@ -418,5 +413,31 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         s.epochStartTimestamp = lastBlock.timestamp;
         s.epochStartNBits = newNBits;
+    }
+
+    function _validateWork(bytes32 blockHash, uint256 target) internal pure {
+        if (uint256(BTCUtils.reverseBytes32(blockHash)) > target) {
+            revert InsufficientPoW();
+        }
+    }
+
+    function _validateChainLinkage(bytes32 prevBlockHash, bytes32 _chainTipHash) internal pure {
+        if (prevBlockHash != _chainTipHash) revert BrokenChain();
+    }
+
+    /// @dev Bitcoin's Median Time Past (nTime > median of prior 11) is omitted — too many
+    ///      storage reads per block for this ring-buffer design. We only enforce the 2h future cap
+    function _validateTimestamp(uint32, uint32 timestamp) internal view {
+        if (timestamp > uint32(block.timestamp) + MAX_FUTURE_BLOCK_TIME) revert InvalidTimestamp();
+    }
+
+    function _validateHeaderLength(bytes calldata header) internal pure {
+        if (header.length != HEADER_SIZE) revert InvalidHeaderLength();
+    }
+
+    function _validateHeadersLength(bytes calldata headers) internal pure {
+        if (headers.length % HEADER_SIZE != 0 || headers.length == 0) {
+            revert InvalidHeaderLength();
+        }
     }
 }

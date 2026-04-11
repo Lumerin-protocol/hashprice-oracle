@@ -1,6 +1,8 @@
+import { HashpriceBTCAbi } from "../../abi/HashpriceBTC.ts";
 import { deployV3Fixture, prepareBlocks } from "./fixtures.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
+import { encodeFunctionData } from "viem";
 
 const {
   networkHelpers: { loadFixture },
@@ -50,5 +52,14 @@ describe("HashpriceBTC — Gas benchmark", function () {
     console.log(
       `  V3 hashprice: ${answer} sats (${Number(answer) / Number(satsPerBtc)} BTC) per 100 TH/s/day`,
     );
+
+    const latestRoundDataGas = await pc.estimateGas({
+      to: oracle.address,
+      data: encodeFunctionData({
+        abi: HashpriceBTCAbi,
+        functionName: "latestRoundData",
+      }),
+    });
+    console.log(`  V3 latestRoundData (estimate): ${Number(latestRoundDataGas).toLocaleString()} gas`);
   });
 });

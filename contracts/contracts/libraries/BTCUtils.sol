@@ -67,7 +67,7 @@ library BTCUtils {
     function getBlockSubsidy(uint256 height) internal pure returns (uint64) {
         uint256 halvings = height / 210_000;
         if (halvings >= 64) return 0;
-        return uint64(5_000_000_000 >> halvings);
+        return uint64(50 * 1e8 >> halvings);
     }
 
     /// @notice Read a Bitcoin varint from raw bytes
