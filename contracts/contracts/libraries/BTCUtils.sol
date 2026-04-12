@@ -13,6 +13,7 @@ library BTCUtils {
 
     error InvalidCoinbaseTx();
     error InvalidHeaderLength();
+    error InvalidNBits();
 
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):
@@ -59,9 +60,12 @@ library BTCUtils {
     /// @notice Expand nBits compact target to 256-bit target
     /// @dev nBits format: [exponent (1 byte)][coefficient (3 bytes)]
     ///      target = coefficient * 2^(8 * (exponent - 3))
+    ///      Bitcoin's maximum valid exponent is 32 (0x20); anything above that would require
+    ///      more than 256 bits to represent and is rejected as invalid.
     function nBitsToTarget(uint32 nBits) internal pure returns (uint256) {
         uint256 exponent = uint256(nBits >> 24);
         uint256 coefficient = uint256(nBits & 0x7fffff);
+        if (exponent > 32) revert InvalidNBits();
         if (exponent <= 3) {
             return coefficient >> (8 * (3 - exponent));
         }

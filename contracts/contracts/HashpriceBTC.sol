@@ -3,6 +3,7 @@ pragma solidity >=0.8.0;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { BTCUtils } from "./libraries/BTCUtils.sol";
+import { console } from "hardhat/console.sol";
 
 /// @title HashpriceBTC
 /// @notice Gas-optimized trustless hashprice oracle (relay + verifier + oracle in one).
@@ -180,12 +181,19 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (coinbaseTxs.length != count || merkleProofs.length != count) {
             revert ArrayLengthMismatch();
         }
-
         BlockEntry storage ancestor = _blockAt(ancestorHeight);
         if (ancestor.height != ancestorHeight) revert AncestorNotInBuffer();
 
         PackedState memory s = state;
         BlockEntry memory cur = ancestor;
+
+        // Snapshot cumulative work of both chains BEFORE the processing loop.
+        // _processHeader calls _setBlockAt which overwrites the ring buffer slot for each
+        // height. Reading _blockAt(ancestorHeight + 1 + i) after the loop returns the new
+        // fork's own nBits, making oldWork == newWork and the heavier-chain check always
+        // false (H-1). Snapshotting here captures the existing canonical chain's nBits.
+        (uint256 snapshotOldWork, uint256 snapshotNewWork) =
+            _snapshotForkWork(headers, ancestorHeight, count, s.chainHeight);
 
         for (uint256 i = 0; i < count; i++) {
             _processHeader(_sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], cur, s);
@@ -198,7 +206,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (cur.height > s.chainHeight) {
             s.chainHeight = cur.height;
             s.blockCount += uint32(count);
-        } else if (_isHeavierChain(headers, ancestorHeight, count)) {
+        } else if (snapshotNewWork > snapshotOldWork) {
             emit ChainReorg(cur.blockHash, cur.height);
         } else {
             revert NotHeaviestChain();
@@ -368,22 +376,25 @@ contract HashpriceBTC is AggregatorV3Interface {
         return totalOutput - subsidy;
     }
 
-    /// @dev Compare cumulative work of submitted headers vs existing chain from the fork point.
-    function _isHeavierChain(bytes calldata headers, uint32 ancestorHeight, uint256 count)
+    /// @dev Compute cumulative work for the incoming headers and the existing canonical chain
+    ///      from the fork point. Must be called BEFORE _processHeader overwrites the ring buffer.
+    ///      Only reads existing nBits for heights within the current canonical chain; slots
+    ///      beyond chainHeight are uninitialized (nBits=0) and targetToWork(0)=type(uint256).max,
+    ///      which would overflow the accumulator.
+    function _snapshotForkWork(bytes calldata headers, uint32 ancestorHeight, uint256 count, uint32 chainHeight)
         internal
         view
-        returns (bool)
+        returns (uint256 oldWork, uint256 newWork)
     {
-        uint256 newWork;
-        uint256 oldWork;
+        uint256 existingCount = chainHeight > ancestorHeight ? uint256(chainHeight - ancestorHeight) : 0;
         for (uint256 i = 0; i < count; i++) {
-            uint32 newNBits = BTCUtils.readUint32LE(headers, i * HEADER_SIZE + 72);
-            newWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(newNBits));
-
-            uint32 oldNBits = _blockAt(ancestorHeight + 1 + uint32(i)).nBits;
-            oldWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(oldNBits));
+            if (i < existingCount) {
+                uint32 existingNBits = _blockAt(ancestorHeight + 1 + uint32(i)).nBits;
+                oldWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(existingNBits));
+            }
+            uint32 incomingNBits = BTCUtils.readUint32LE(headers, i * HEADER_SIZE + 72);
+            newWork += BTCUtils.targetToWork(BTCUtils.nBitsToTarget(incomingNBits));
         }
-        return newWork > oldWork;
     }
 
     function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s)
@@ -409,7 +420,7 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         uint256 oldTarget = BTCUtils.nBitsToTarget(s.epochStartNBits);
         uint256 newTarget = BTCUtils.nBitsToTarget(newNBits);
-        uint256 expectedTarget = (oldTarget * actualTimespan) / EXPECTED_TIMESPAN;
+        uint256 expectedTarget = oldTarget / EXPECTED_TIMESPAN * actualTimespan;
 
         uint256 tolerance = expectedTarget / 1000;
         if (tolerance == 0) tolerance = 1;

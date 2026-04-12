@@ -59,6 +59,7 @@ export function reverseHex(hexStr: string): string {
 }
 
 export const EASY_NBITS = 0x207fffff;
+export const HARDER_NBITS = 0x1e07fffe;
 
 /** Build a raw 80-byte header hex (no 0x) from components */
 export function buildHeader(opts: {
