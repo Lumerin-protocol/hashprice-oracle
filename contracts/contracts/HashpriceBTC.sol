@@ -37,7 +37,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      `block.timestamp` (Bitcoin's 2h rule)
     uint32 private constant MAX_FUTURE_BLOCK_TIME = 2 * 3600;
 
-    /// @dev Hashes in 100 TH/s over one day (100 × 1e12 × 86_400);
+    /// @dev Hashes in 100 TH/s over one day
     uint256 private constant HASHES_PER_100THS_PER_DAY = 100 * 1e12 * 24 * 3600;
 
     /// @dev Size of a raw Bitcoin block header
@@ -126,6 +126,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 _epochStartTimestamp,
         uint32 _epochStartNBits
     ) {
+        BTCUtils.requireSha256Precompile();
         _setBlockAt(height, blockHash, timestamp, nBits);
         chainTipHash = blockHash;
         state = PackedState({
@@ -247,7 +248,7 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
 
-        _updateFees(fees, cur.height, s.blockCount);
+        _updateFees(fees, cur.height);
         _setBlockAt(cur.height, blockHash, info.timestamp, info.nBits);
 
         cur.blockHash = blockHash;
@@ -346,15 +347,14 @@ contract HashpriceBTC is AggregatorV3Interface {
         _blocks[height & 31] = BlockEntry({ blockHash: blockHash, timestamp: timestamp, nBits: nBits, height: height });
     }
 
-    function _updateFees(uint64 fees, uint32 height, uint32 blockCount) internal {
+    function _updateFees(uint64 fees, uint32 height) internal {
         uint256 idx = height % FEE_WINDOW;
         uint64 oldFee = _fees[idx];
         _fees[idx] = fees;
-
-        feeRunningSum += uint256(fees);
-        if (blockCount >= FEE_WINDOW) {
-            feeRunningSum -= uint256(oldFee);
-        }
+        // Uninitialized slots contain 0, so this is a no-op on first write.
+        // Always subtracting eliminates the blockCount >= FEE_WINDOW guard that
+        // caused reorgs to inflate feeRunningSum when the window wasn't yet full.
+        feeRunningSum = feeRunningSum + uint256(fees) - uint256(oldFee);
     }
 
     function _verifyCoinbaseAndExtractFees(
@@ -373,7 +373,9 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         uint64 totalOutput = BTCUtils.parseCoinbaseOutputValue(coinbaseTx);
         uint64 subsidy = BTCUtils.getBlockSubsidy(height);
-        return totalOutput - subsidy;
+        // Saturating: a miner may burn part of the subsidy (valid per Bitcoin consensus).
+        // In that case fees are unknowable from the coinbase alone; treat as 0 rather than reverting.
+        return totalOutput > subsidy ? totalOutput - subsidy : 0;
     }
 
     /// @dev Compute cumulative work for the incoming headers and the existing canonical chain

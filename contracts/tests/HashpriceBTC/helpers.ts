@@ -61,6 +61,14 @@ export function reverseHex(hexStr: string): string {
 export const EASY_NBITS = 0x207fffff;
 export const HARDER_NBITS = 0x1e07fffe;
 
+// Choose nBits that straddle the integer boundary where floor(2^24 / coeff) jumps from 2 to 3.
+//   coeff = 5_592_406 (0x555556): floor(2^24 / 5592406) = 2  → work = 2, ~2 expected hashes
+//   coeff = 5_592_405 (0x555555): floor(2^24 / 5592405) = 3  → work = 3, ~3 expected hashes
+// Adjacent coefficients → |Δtarget| = 2^232, tolerance = target/1000 ≈ 5592 × 2^232 → retarget passes.
+export const EPOCH_NBITS = 0x20555556; // work = 2 per block, mines in ~2 hashes
+export const HARDER_EPOCH_NBITS = 0x20555555; // work = 3 per block, mines in ~3 hashes
+export const RETARGET_EXPECTED_TIMESPAN = 2016 * 10 * 60;
+
 /** Build a raw 80-byte header hex (no 0x) from components */
 export function buildHeader(opts: {
   prevHash: string;

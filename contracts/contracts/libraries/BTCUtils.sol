@@ -14,6 +14,7 @@ library BTCUtils {
     error InvalidCoinbaseTx();
     error InvalidHeaderLength();
     error InvalidNBits();
+    error Sha256PrecompileMissing();
 
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):
@@ -30,6 +31,23 @@ library BTCUtils {
         uint32 bits = readUint32LEMem(header, 72);
 
         return HeaderInfo({ prevBlockHash: prevHash, merkleRoot: merkleRootVal, timestamp: ts, nBits: bits });
+    }
+
+    /// @notice Revert if the SHA-256 precompile (address(2)) is absent or malfunctioning.
+    /// @dev Hashes the empty string and compares against the known digest.
+    ///      SHA-256("") = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    ///      Zero-length input avoids clobbering scratch space used by subsequent assembly.
+    ///      Catches two failure modes: staticcall returning false (precompile absent) and
+    ///      staticcall returning true with zeroed output (broken zkEVM stub).
+    function requireSha256Precompile() internal view {
+        bytes32 expected = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855;
+        bool ok;
+        bytes32 result;
+        assembly {
+            ok := staticcall(gas(), 2, 0x00, 0, 0x00, 32)
+            result := mload(0x00)
+        }
+        if (!ok || result != expected) revert Sha256PrecompileMissing();
     }
 
     /// @notice Double-SHA256 using the SHA-256 precompile (address(2)) — gas-optimized variant.
@@ -78,12 +96,15 @@ library BTCUtils {
         return type(uint256).max / (target + 1);
     }
 
+    /// @dev Bitcoin difficulty-1 target (genesis nBits 0x1d00ffff decoded).
+    uint256 internal constant DIFF1_TARGET =
+        0x00000000FFFF0000000000000000000000000000000000000000000000000000;
+
     /// @notice Convert nBits to difficulty
     /// @dev difficulty = diff1Target / currentTarget
     function nBitsToDifficulty(uint32 nBits) internal pure returns (uint256) {
         uint256 target = nBitsToTarget(nBits);
-        uint256 diff1Target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000;
-        return diff1Target / target;
+        return DIFF1_TARGET / target;
     }
 
     /// @notice Compute block subsidy given height (handles halvings)
