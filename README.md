@@ -1,47 +1,70 @@
 # Hashprice Oracle
 
-On-chain oracle for Bitcoin hashprice data, providing real-time hashrate-to-token conversion rates for the Lumerin protocol.
+Trustless on-chain Bitcoin hashprice oracle powered by Bitcoin SPV (Simplified Payment Verification) proofs. No trusted intermediary — anyone can permissionlessly submit Bitcoin block headers and coinbase merkle proofs directly to the contract.
 
 ## Overview
 
 This repository contains:
 
-- **Smart Contracts** (`/contracts`) - Solidity contracts for the HashrateOracle, which calculates the number of hashes required to mine BTC equivalent to a given token amount
-- **Oracle Updater** (`/oracle-update`) - AWS Lambda function that fetches Bitcoin network data and updates the on-chain oracle
-- **Subgraph Indexer** (`/indexer`) - A Graph Protocol subgraph that indexes oracle updates and provides historical hashprice data with hourly/daily aggregations
+- **Smart Contracts** (`/contracts`) — `HashpriceBTC` (BTC-denominated hashprice via SPV) and `HashpriceUSD` (USD-denominated, combines `HashpriceBTC` with a Chainlink BTC/USD feed). Both implement `AggregatorV3Interface`.
+- **Keeper** (`/keeper`) — Automated bot that relays Bitcoin block headers and coinbase merkle proofs to the on-chain oracle, keeping the hashprice feed current.
+- **Subgraph Indexer** (`/indexer`) — A Graph Protocol subgraph that indexes oracle updates and provides historical hashprice data with hourly/daily aggregations.
 
-## Contracts
+## Architecture
 
-The `HashrateOracle` contract:
+```
+Bitcoin network
+      │  block headers + coinbase merkle proofs
+      ▼
+  [ keeper ]  ──────────────────────────────────►  [ HashpriceBTC ]
+                                                        │
+                                          latestRoundData() → hashprice in BTC
+                                                        │
+                                                        ▼
+                                                  [ HashpriceUSD ]
+                                                        │  ▲
+                                          latestRoundData() │
+                                                        │  └─── [ Chainlink BTC/USD ]
+                                                        │         (any AggregatorV3Interface)
+                                                        ▼
+                                          latestRoundData() → hashprice in USD
+```
 
-- Integrates with Chainlink price feeds for BTC/token pricing
-- Stores and updates `hashesForBTC` (hashes required to mine 1 satoshi)
-- Calculates `hashesForToken` based on current BTC price
-- Uses UUPS upgradeable proxy pattern
-- Supports authorized updater addresses for oracle data
+### HashpriceBTC
 
-### Key Functions
+`HashpriceBTC` is a Bitcoin SPV contract — it stores Bitcoin block headers on-chain and verifies coinbase transactions via merkle proofs, without trusting any off-chain data source.
 
-| Function                   | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `setHashesForBTC(uint256)` | Update the hashes-per-satoshi value      |
-| `getHashesForBTCV2()`      | Get current hashesForBTC with timestamp  |
-| `getHashesForTokenV2()`    | Get hashes per token unit with timestamp |
+Each submitted block provides:
+- An **80-byte block header**, from which the contract extracts difficulty target, timestamp, and previous block hash, and verifies proof-of-work
+- A **coinbase merkle proof**, which proves the coinbase transaction is the first transaction in that block
 
-## Oracle Updater
+From the verified coinbase (block subsidy + fees) and the on-chain difficulty, the contract computes the hashprice — the expected revenue per petahash per day — using a 144-block Simple Moving Average over fees, matching the [Luxor hashprice index](https://luxor.tech/hashprice).
 
-The `oracle-update` service is an AWS Lambda function that keeps the on-chain oracle up to date:
+Key properties:
+- **Permissionless** — any address can submit headers and proofs; no owner, no admin key
+- **Trustless** — the contract rejects any submission that fails PoW or merkle verification; a malicious keeper cannot corrupt the feed
+- **Reorg-aware** — `submitBlocks()` handles chain reorganizations by accepting a new chain of headers that replaces the current tip
+- **Chainlink-compatible** — implements `AggregatorV3Interface`; output is 100 TH/s per day priced in BTC (8 decimals)
 
-- Fetches latest Bitcoin block data (difficulty, block reward, transaction fees)
-- Calculates `hashesForBTC` using a 144-block Simple Moving Average (SMA)
-- Submits on-chain updates only when values change
-- Runs on a 5-minute schedule
-- Caches block data in AWS SSM Parameter Store for efficiency
+**Why SPV?** SPV verification requires only 80-byte block headers and a merkle path — no full node, no trusted oracle, no multisig. The same primitive underpins Bitcoin light clients and cross-chain bridges like BTC Relay.
 
-### Data Sources
+For a detailed breakdown of every validation check — what is included, what is deliberately excluded, and why — see [docs/BLOCK_VALIDATION.md](docs/BLOCK_VALIDATION.md).
 
-- **Bitcoin RPC** - Block headers, difficulty, and fee data
-- **Coingecko** - BTC/USD exchange rate (for dev environments)
+### HashpriceUSD
+
+`HashpriceUSD` is a thin aggregator contract that combines two `AggregatorV3Interface` feeds to produce a USD-denominated hashprice:
+
+```
+hashprice (USD) = hashprice (BTC)  ×  BTC/USD price
+```
+
+It accepts any `AggregatorV3Interface`-compatible BTC/USD feed at deploy time (e.g. Chainlink on mainnet, a custom feed on other networks), making it chain-agnostic. Staleness semantics are conservative: `updatedAt` reflects the older of the two upstream feeds, so consumers checking staleness always see the bottleneck.
+
+Both contracts implement `AggregatorV3Interface`, so they are drop-in compatible with any protocol that reads Chainlink price feeds.
+
+## Keeper
+
+The keeper monitors the on-chain oracle height against the Bitcoin tip and submits missing blocks as a batch. It is runtime-agnostic and ships adapters for Node.js, AWS Lambda, and Cloudflare Workers. See [`keeper/README.md`](keeper/README.md) for setup and configuration.
 
 ## Quick Start
 
@@ -49,19 +72,19 @@ The `oracle-update` service is an AWS Lambda function that keeps the on-chain or
 
 ```bash
 cd contracts
-yarn install
-yarn test
-yarn compile
+pnpm install
+pnpm test
+pnpm compile
 ```
 
-### Oracle Updater
+### Keeper
 
 ```bash
-cd oracle-update
-yarn install
-# Configure .env with RPC URLs and keys
-yarn dev      # Run locally
-yarn build    # Build Lambda zip
+cd keeper
+pnpm install
+cp .env.example .env
+# fill in .env
+pnpm dev
 ```
 
 ### Indexer

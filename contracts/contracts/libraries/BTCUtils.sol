@@ -16,6 +16,24 @@ library BTCUtils {
     error InvalidNBits();
     error Sha256PrecompileMissing();
 
+    /// @dev Bitcoin difficulty-1 target (genesis nBits 0x1d00ffff decoded).
+    uint256 internal constant DIFF1_TARGET = 0x00000000FFFF0000000000000000000000000000000000000000000000000000;
+
+    /// @dev Maximum nBits exponent; targets above 2^256 are invalid.
+    uint256 internal constant MAX_NBITS_EXPONENT = 32;
+
+    /// @dev Number of blocks between each block subsidy halving.
+    uint256 internal constant HALVING_INTERVAL = 210_000;
+
+    /// @dev After this many halvings the subsidy is zero (2^64 >> 64 == 0).
+    uint256 internal constant MAX_HALVINGS = 64;
+
+    /// @dev Satoshis in one BTC.
+    uint8 internal constant BTC_DECIMALS = 8;
+
+    /// @dev Initial block subsidy: 50 BTC in satoshis.
+    uint256 internal constant INITIAL_SUBSIDY = 50 * 10 ** BTC_DECIMALS;
+
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):
     ///   [0..4)   version
@@ -83,7 +101,7 @@ library BTCUtils {
     function nBitsToTarget(uint32 nBits) internal pure returns (uint256) {
         uint256 exponent = uint256(nBits >> 24);
         uint256 coefficient = uint256(nBits & 0x7fffff);
-        if (exponent > 32) revert InvalidNBits();
+        if (exponent > MAX_NBITS_EXPONENT) revert InvalidNBits();
         if (exponent <= 3) {
             return coefficient >> (8 * (3 - exponent));
         }
@@ -96,10 +114,6 @@ library BTCUtils {
         return type(uint256).max / (target + 1);
     }
 
-    /// @dev Bitcoin difficulty-1 target (genesis nBits 0x1d00ffff decoded).
-    uint256 internal constant DIFF1_TARGET =
-        0x00000000FFFF0000000000000000000000000000000000000000000000000000;
-
     /// @notice Convert nBits to difficulty
     /// @dev difficulty = diff1Target / currentTarget
     function nBitsToDifficulty(uint32 nBits) internal pure returns (uint256) {
@@ -110,9 +124,9 @@ library BTCUtils {
     /// @notice Compute block subsidy given height (handles halvings)
     /// @dev 50 BTC initially, halves every 210,000 blocks
     function getBlockSubsidy(uint256 height) internal pure returns (uint64) {
-        uint256 halvings = height / 210_000;
-        if (halvings >= 64) return 0;
-        return uint64(50 * 1e8 >> halvings);
+        uint256 halvings = height / HALVING_INTERVAL;
+        if (halvings >= MAX_HALVINGS) return 0;
+        return uint64(INITIAL_SUBSIDY >> halvings);
     }
 
     /// @notice Read a Bitcoin varint from raw bytes

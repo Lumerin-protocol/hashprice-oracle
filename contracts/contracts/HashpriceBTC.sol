@@ -6,7 +6,10 @@ import { BTCUtils } from "./libraries/BTCUtils.sol";
 import { console } from "hardhat/console.sol";
 
 /// @title HashpriceBTC
-/// @notice Gas-optimized trustless hashprice oracle (relay + verifier + oracle in one).
+/// @notice Trustless hashprice oracle powered by Bitcoin SPV (Simplified Payment Verification).
+///         Anyone can permissionlessly submit Bitcoin block headers and coinbase merkle proofs;
+///         the contract verifies header proof-of-work and merkle inclusion on-chain, then derives
+///         hashprice from the verified subsidy + fees and the current difficulty target.
 ///         Single `submitBlock()` entry point per block. Supports on-chain reorg handling via `submitBlocks()`.
 /// @dev Implements AggregatorV3Interface. Returns the price of 100 TH/s per day in BTC.
 ///      Average fees use a simple moving average over 144 blocks so the on-chain
@@ -22,9 +25,13 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      matches Luxor index window.
     uint32 private constant FEE_WINDOW = 144;
 
-    /// @dev Blocks behind tip used as “confirmed”
-    ///      for `latestRoundData`.
-    uint32 public constant CONFIRMATION_DEPTH = 6;
+    /// @dev Blocks behind tip reported by `latestRoundData`.
+    ///      Depth=1 protects against the rare natural 1-block orphan without
+    ///      adding meaningful lag. Deeper confirmation is unnecessary: difficulty
+    ///      only changes at 2016-block boundaries so reorgs never affect it, and
+    ///      fees are smoothed over a 144-block SMA so even a 2-block reorg moves
+    ///      the reported hashprice by at most ~1.4%.
+    uint32 public constant CONFIRMATION_DEPTH = 1;
 
     /// @dev Number of blocks per difficulty epoch;
     uint256 private constant RETARGET_INTERVAL = 2016;
@@ -108,6 +115,23 @@ contract HashpriceBTC is AggregatorV3Interface {
 
     event BlockSubmitted(bytes32 indexed blockHash, uint32 indexed height, uint64 fees);
     event ChainReorg(bytes32 indexed newTip, uint32 indexed newHeight);
+
+    /// @notice Emitted whenever the confirmed hashprice is recomputed (once per block submission).
+    /// @param confirmedHeight Bitcoin block height the hashprice is derived from
+    /// @param hashprice       Price of 100 TH/s per day in satoshis (8 decimals = BTC)
+    /// @param avgFees         144-block SMA of transaction fees in satoshis
+    event HashpriceUpdated(uint32 indexed confirmedHeight, int256 hashprice, uint256 avgFees);
+
+    /// @notice Emitted once per difficulty epoch (~every 2016 blocks) when the target adjusts.
+    /// @param height      First block of the new epoch
+    /// @param nBits       Compact difficulty target
+    /// @param difficulty  Expanded difficulty value
+    event DifficultyChanged(uint32 indexed height, uint32 nBits, uint256 difficulty);
+
+    /// @notice Emitted at each halving (~every 210,000 blocks) when the block subsidy drops.
+    /// @param height  First block with the new subsidy
+    /// @param subsidy New subsidy in satoshis
+    event SubsidyChanged(uint32 indexed height, uint64 subsidy);
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -243,8 +267,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         cur.height++;
 
         _validateWork(blockHash, target);
-        _validateTimestamp(cur.height, info.timestamp);
+        _validateTimestamp(info.timestamp);
         _validateDifficulty(cur.height, info.nBits, cur.nBits, s);
+
+        if (cur.height % 210_000 == 0) {
+            emit SubsidyChanged(cur.height, BTCUtils.getBlockSubsidy(cur.height));
+        }
 
         uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
 
@@ -292,11 +320,31 @@ contract HashpriceBTC is AggregatorV3Interface {
         return (c.roundId, c.answer, uint256(c.startedAt), uint256(c.updatedAt), c.roundId);
     }
 
-    /// @notice Returns the height of the latest confirmed block
+    /// @notice Returns the height of the latest confirmed block (tip − CONFIRMATION_DEPTH)
     function confirmedHeight() public view returns (uint32) {
         PackedState memory s = state;
         if (s.chainHeight < CONFIRMATION_DEPTH) return 0;
         return s.chainHeight - CONFIRMATION_DEPTH;
+    }
+
+    /// @notice Returns the current 144-block simple moving average of transaction fees in satoshis
+    function avgFees() external view returns (uint256) {
+        PackedState memory s = state;
+        if (s.blockCount == 0) revert InsufficientData();
+        return s.blockCount >= FEE_WINDOW ? feeRunningSum / FEE_WINDOW : feeRunningSum / s.blockCount;
+    }
+
+    /// @notice Returns the network difficulty at the current confirmed block
+    function difficulty() external view returns (uint256) {
+        uint32 height = confirmedHeight();
+        BlockEntry storage entry = _blockAt(height);
+        if (entry.height != height) revert InsufficientData();
+        return BTCUtils.nBitsToDifficulty(entry.nBits);
+    }
+
+    /// @notice Returns the block subsidy at the current confirmed block height in satoshis
+    function subsidy() external view returns (uint64) {
+        return BTCUtils.getBlockSubsidy(confirmedHeight());
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────
@@ -311,18 +359,18 @@ contract HashpriceBTC is AggregatorV3Interface {
         BlockEntry storage entry = _blockAt(confirmed);
         if (entry.height != confirmed) return;
 
-        uint256 difficulty = BTCUtils.nBitsToDifficulty(entry.nBits);
-        uint64 subsidy = BTCUtils.getBlockSubsidy(confirmed);
+        uint256 diff = BTCUtils.nBitsToDifficulty(entry.nBits);
+        uint64 sub = BTCUtils.getBlockSubsidy(confirmed);
 
-        uint256 avgFees;
+        uint256 fees;
         if (s.blockCount >= FEE_WINDOW) {
-            avgFees = feeRunningSum / FEE_WINDOW;
+            fees = feeRunningSum / FEE_WINDOW;
         } else {
-            avgFees = feeRunningSum / s.blockCount;
+            fees = feeRunningSum / s.blockCount;
         }
 
-        uint256 rewardPerBlock = uint256(subsidy) + avgFees;
-        uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (difficulty * (1 << 32));
+        uint256 rewardPerBlock = uint256(sub) + fees;
+        uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (diff * (1 << 32));
 
         latestRoundDataCache = CachedRoundData({
             roundId: uint80(confirmed),
@@ -330,6 +378,8 @@ contract HashpriceBTC is AggregatorV3Interface {
             updatedAt: s.lastSubmittedAt,
             answer: int256(hashpriceSats)
         });
+
+        emit HashpriceUpdated(confirmed, int256(hashpriceSats), fees);
     }
 
     /// @dev Read a block entry by height. The ring buffer holds BLOCK_BUFFER_SIZE (32) entries;
@@ -372,10 +422,10 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (current != expectedRoot) revert InvalidMerkleProof();
 
         uint64 totalOutput = BTCUtils.parseCoinbaseOutputValue(coinbaseTx);
-        uint64 subsidy = BTCUtils.getBlockSubsidy(height);
+        uint64 sub = BTCUtils.getBlockSubsidy(height);
         // Saturating: a miner may burn part of the subsidy (valid per Bitcoin consensus).
         // In that case fees are unknowable from the coinbase alone; treat as 0 rather than reverting.
-        return totalOutput > subsidy ? totalOutput - subsidy : 0;
+        return totalOutput > sub ? totalOutput - sub : 0;
     }
 
     /// @dev Compute cumulative work for the incoming headers and the existing canonical chain
@@ -399,12 +449,10 @@ contract HashpriceBTC is AggregatorV3Interface {
         }
     }
 
-    function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s)
-        internal
-        view
-    {
+    function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s) internal {
         if (height % RETARGET_INTERVAL == 0) {
             _verifyRetarget(height, newNBits, s);
+            emit DifficultyChanged(height, newNBits, BTCUtils.nBitsToDifficulty(newNBits));
         } else {
             if (newNBits != prevNBits) revert UnexpectedDifficultyChange();
         }
@@ -446,7 +494,7 @@ contract HashpriceBTC is AggregatorV3Interface {
 
     /// @dev Bitcoin's Median Time Past (nTime > median of prior 11) is omitted — too many
     ///      storage reads per block for this ring-buffer design. We only enforce the 2h future cap
-    function _validateTimestamp(uint32, uint32 timestamp) internal view {
+    function _validateTimestamp(uint32 timestamp) internal view {
         if (timestamp > uint32(block.timestamp) + MAX_FUTURE_BLOCK_TIME) revert InvalidTimestamp();
     }
 

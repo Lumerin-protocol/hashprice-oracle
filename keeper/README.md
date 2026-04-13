@@ -1,6 +1,8 @@
 # hashprice-keeper
 
-Keeper bot that submits Bitcoin block headers + coinbase merkle proofs to the on-chain `HashpriceBTC` oracle, keeping the trustless hashprice feed up to date.
+Keeper bot that relays Bitcoin block headers and coinbase merkle proofs to the on-chain `HashpriceBTC` oracle, keeping the trustless hashprice feed up to date.
+
+The keeper is the off-chain counterpart to the `HashpriceBTC` SPV contract: it fetches raw block data from Bitcoin and submits it on-chain, where the contract independently verifies everything via Bitcoin SPV (Simplified Payment Verification). No trust in the keeper is required — a malicious or buggy keeper cannot corrupt the oracle because the contract rejects any submission that fails header PoW or merkle proof verification.
 
 ## Architecture
 
