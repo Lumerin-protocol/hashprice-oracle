@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node --env-file=../.env --watch src/adapters/node.ts",
+    "dev-local": "node --env-file=../.env.local --watch src/adapters/node.ts",
     "start": "node --env-file=../.env src/adapters/node.ts",
     "build:lambda": "esbuild src/adapters/lambda.ts --bundle --minify --sourcemap --platform=node --target=es2024 --format=esm --outfile=dist/lambda/index.mjs && cd dist/lambda && zip -r handler.zip index.mjs*",
     "fetch-fixtures": "node --env-file=../.env scripts/fetch-fixtures.ts",

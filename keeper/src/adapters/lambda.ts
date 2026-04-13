@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import pino from "pino";
 import { configFromEnv } from "../config.ts";
 import { setSha256 } from "../lib.ts";
-import { runKeeper, type KeeperResult } from "../core/keeper.ts";
+import { runKeeper } from "../core/keeper.ts";
 
 setSha256((data) => {
   const hash = createHash("sha256").update(data).digest();

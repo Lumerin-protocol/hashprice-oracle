@@ -1,5 +1,5 @@
 import type { Chain } from "viem";
-import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet } from "viem/chains";
+import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet, hardhat } from "viem/chains";
 
 export interface KeeperConfig {
   bitcoinRpcUrl: string;
@@ -18,6 +18,7 @@ const chainMap: Record<number, Chain> = {
   [arbitrumSepolia.id]: arbitrumSepolia,
   [base.id]: base,
   [baseSepolia.id]: baseSepolia,
+  [hardhat.id]: hardhat,
 };
 
 export function getChain(chainId: number): Chain {

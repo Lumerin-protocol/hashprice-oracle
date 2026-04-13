@@ -13,6 +13,8 @@
     "test": "hardhat test",
     "test-coverage": "SOLIDITY_COVERAGE=true yarn hardhat coverage",
     "test:gas": "hardhat test ./tests/HashpriceBTC/gas-benchmark.test.ts",
+    "deploy-local": "hardhat run scripts/deploy-local.ts",
+    "read-hashprice": "hardhat --network localhost run scripts/read-hashprice.ts",
     "compile": "hardhat compile",
     "clean": "rm -rf abi artifacts cache abi",
     "aderyn": "aderyn"

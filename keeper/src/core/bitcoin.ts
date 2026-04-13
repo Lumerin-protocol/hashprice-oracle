@@ -24,8 +24,10 @@ export class BitcoinProvider {
 
   async getBlockData(height: number): Promise<BlockData> {
     const hash = await this.rpc.getBlockHash(height);
-    const rawHeader = await this.rpc.getBlockHeader(hash, false);
-    const block = await this.rpc.getBlock(hash);
+    const [rawHeader, block] = await Promise.all([
+      this.rpc.getBlockHeader(hash, false),
+      this.rpc.getBlock(hash),
+    ]);
 
     const coinbaseTxid = block.tx[0];
     const coinbaseHex = await this.rpc.getRawTransaction(coinbaseTxid);
@@ -38,10 +40,6 @@ export class BitcoinProvider {
   }
 
   async getBlockRange(startHeight: number, count: number): Promise<BlockData[]> {
-    const blocks: BlockData[] = [];
-    for (let i = 0; i < count; i++) {
-      blocks.push(await this.getBlockData(startHeight + i));
-    }
-    return blocks;
+    return Promise.all(Array.from({ length: count }, (_, i) => this.getBlockData(startHeight + i)));
   }
 }

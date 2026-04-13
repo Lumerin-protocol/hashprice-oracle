@@ -18,21 +18,18 @@ export async function runKeeper(config: KeeperConfig, log: Logger): Promise<Keep
   const btc = new BitcoinProvider(config.bitcoinRpcUrl, log);
   const oracle = new OracleClient(config, log);
 
-  const [oracleState, btcTip] = await Promise.all([
-    oracle.getState(),
-    btc.getTipHeight(),
-  ]);
+  const [oracleState, btcTip] = await Promise.all([oracle.getState(), btc.getTipHeight()]);
 
+  const lag = btcTip - oracleState.chainHeight;
   log.info(
     {
       oracleHeight: oracleState.chainHeight,
       bitcoinTip: btcTip,
-      lag: btcTip - oracleState.chainHeight,
+      lag: lag,
     },
     "chain state comparison",
   );
 
-  const lag = btcTip - oracleState.chainHeight;
   if (lag <= 0) {
     log.info("oracle is up to date");
     return {
