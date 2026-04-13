@@ -476,6 +476,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     function _verifyRetarget(uint32 height, uint32 newNBits, PackedState memory s) internal view {
         uint256 startTime = uint256(s.epochStartTimestamp);
         BlockEntry storage lastBlock = _blockAt(height - 1);
+        if (lastBlock.height != height - 1) revert AncestorNotInBuffer();
         uint256 endTime = uint256(lastBlock.timestamp);
 
         uint256 actualTimespan = endTime - startTime;
