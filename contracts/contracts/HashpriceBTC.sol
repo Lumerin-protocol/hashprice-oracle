@@ -3,7 +3,6 @@ pragma solidity >=0.8.0;
 
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import { BTCUtils } from "./libraries/BTCUtils.sol";
-import { console } from "hardhat/console.sol";
 
 /// @title HashpriceBTC
 /// @notice Trustless hashprice oracle powered by Bitcoin SPV (Simplified Payment Verification).
@@ -127,11 +126,6 @@ contract HashpriceBTC is AggregatorV3Interface {
     /// @param nBits       Compact difficulty target
     /// @param difficulty  Expanded difficulty value
     event DifficultyChanged(uint32 indexed height, uint32 nBits, uint256 difficulty);
-
-    /// @notice Emitted at each halving (~every 210,000 blocks) when the block subsidy drops.
-    /// @param height  First block with the new subsidy
-    /// @param subsidy New subsidy in satoshis
-    event SubsidyChanged(uint32 indexed height, uint64 subsidy);
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -269,10 +263,6 @@ contract HashpriceBTC is AggregatorV3Interface {
         _validateWork(blockHash, target);
         _validateTimestamp(info.timestamp);
         _validateDifficulty(cur.height, info.nBits, cur.nBits, s);
-
-        if (cur.height % 210_000 == 0) {
-            emit SubsidyChanged(cur.height, BTCUtils.getBlockSubsidy(cur.height));
-        }
 
         uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
 
