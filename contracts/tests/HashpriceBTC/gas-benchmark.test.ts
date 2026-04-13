@@ -3,6 +3,8 @@ import { deployV3Fixture, prepareBlocks } from "./fixtures.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import { encodeFunctionData } from "viem";
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const {
   networkHelpers: { loadFixture },
@@ -60,6 +62,48 @@ describe("HashpriceBTC — Gas benchmark", function () {
         functionName: "latestRoundData",
       }),
     });
-    console.log(`  V3 latestRoundData (estimate): ${Number(latestRoundDataGas).toLocaleString()} gas`);
+    console.log(
+      `  V3 latestRoundData (estimate): ${Number(latestRoundDataGas).toLocaleString()} gas`,
+    );
+
+    const avgAll = Math.round(Number(totalGas) / toSubmit.length);
+    const avgCold = Math.round(Number(coldGas) / FEE_WINDOW);
+    const avgWarm = warmCount > 0 ? Math.round(Number(warmGas) / warmCount) : null;
+    const hashpriceBtc = (Number(answer) / Number(satsPerBtc)).toFixed(8);
+
+    const date = new Date().toISOString().slice(0, 10);
+    const lines = [
+      `# Gas Benchmark — HashpriceBTC`,
+      ``,
+      `_Last updated: ${date}_`,
+      ``,
+      `## \`submitBlock\` — one-by-one over ${toSubmit.length} real mainnet blocks`,
+      ``,
+      `| Metric | Gas |`,
+      `|--------|----:|`,
+      `| Average (all ${toSubmit.length} blocks) | ${avgAll.toLocaleString()} |`,
+      `| Average cold (first ${FEE_WINDOW} blocks, writing fee window) | ${avgCold.toLocaleString()} |`,
+      ...(avgWarm !== null
+        ? [
+            `| Average warm (last ${warmCount} blocks, steady state) | ${avgWarm.toLocaleString()} |`,
+          ]
+        : []),
+      ``,
+      `## \`latestRoundData\` — read-only call`,
+      ``,
+      `| Metric | Gas |`,
+      `|--------|----:|`,
+      `| Estimate | ${Number(latestRoundDataGas).toLocaleString()} |`,
+      ``,
+      `## Hashprice at benchmark tip`,
+      ``,
+      `| Value |`,
+      `|-------|`,
+      `| ${answer} sats / ${hashpriceBtc} BTC per 100 TH/s/day |`,
+    ];
+
+    const outPath = resolve(process.cwd(), "./gas-benchmark.md");
+    writeFileSync(outPath, `${lines.join("\n")}\n`);
+    console.log(`  Gas benchmark written to ${outPath}`);
   });
 });

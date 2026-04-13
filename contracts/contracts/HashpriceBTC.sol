@@ -112,7 +112,24 @@ contract HashpriceBTC is AggregatorV3Interface {
 
     // ─── Events ───────────────────────────────────────────────────────
 
+    /// @notice Emitted for each Bitcoin block header successfully validated and written to the ring buffer.
+    /// @dev Fires once per header inside `_processHeader`, so a batch of N headers produces N events.
+    ///      Useful for off-chain indexers that need per-block fee data; `HashpriceUpdated` only
+    ///      exposes the 144-block SMA and does not carry individual block fees.
+    /// @param blockHash dSHA-256 of the 80-byte header in internal byte order
+    /// @param height    Bitcoin block height
+    /// @param fees      Total coinbase output value minus block subsidy, in satoshis
     event BlockSubmitted(bytes32 indexed blockHash, uint32 indexed height, uint64 fees);
+
+    /// @notice Emitted whenever an incoming fork replaces one or more blocks on the canonical chain.
+    /// @dev Fires in two cases:
+    ///      1. Longer fork: the fork diverges below the current tip (`ancestorHeight < chainHeight`)
+    ///         and ends higher — replaced blocks are implicitly discarded from the ring buffer.
+    ///      2. Same-height fork: the fork ends at the same height but carries strictly greater
+    ///         cumulative proof-of-work.
+    ///      A plain chain extension (`ancestorHeight == chainHeight`) never emits this event.
+    /// @param newTip    Block hash of the incoming chain's tip
+    /// @param newHeight Bitcoin height of the new tip
     event ChainReorg(bytes32 indexed newTip, uint32 indexed newHeight);
 
     /// @notice Emitted whenever the confirmed hashprice is recomputed (once per block submission).
@@ -223,6 +240,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         }
 
         if (cur.height > s.chainHeight) {
+            // Emit ChainReorg when the fork diverges below the current tip (some canonical
+            // blocks are being replaced). A plain extension (ancestorHeight == chainHeight)
+            // is not a reorg and does not emit the event.
+            if (ancestorHeight < s.chainHeight) {
+                emit ChainReorg(cur.blockHash, cur.height);
+            }
             s.chainHeight = cur.height;
             s.blockCount += uint32(count);
         } else if (snapshotNewWork > snapshotOldWork) {

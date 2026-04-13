@@ -1,4 +1,5 @@
 import { catchError } from "../../lib/lib.ts";
+import { parseEventLogs } from "viem";
 import {
   hex,
   buildHeader,
@@ -256,6 +257,62 @@ describe("HashpriceBTC — Chain reorg", function () {
 
     const [chainHeight] = await oracle.read.state();
     assert.equal(chainHeight, genesisHeight + 4);
+  });
+
+  it("should emit ChainReorg when a longer fork replaces canonical blocks", async function () {
+    // The fixture leaves chain A (3 blocks, heights 101–103) as the canonical tip.
+    // Chain B forks from genesisHeight (100), which is below the current tip (103),
+    // and adds 4 blocks (101–104) — this is a genuine reorg, not a plain extension.
+    const { oracle, pc, genesisHeight, genesisHash, baseTs, nBits } =
+      await loadFixture(deployReorgFixture);
+
+    const chainB = mineChain(genesisHash, genesisHeight + 1, 4, baseTs, nBits, 5000n);
+    const batch = formatBatch(chainB);
+
+    const txHash = await oracle.write.submitBlocks([
+      genesisHeight,
+      batch.headers,
+      batch.coinbaseTxs,
+      batch.merkleProofs,
+    ]);
+    const receipt = await pc.waitForTransactionReceipt({ hash: txHash });
+
+    const [reorgEvent] = parseEventLogs({
+      abi: oracle.abi,
+      logs: receipt.logs,
+      eventName: "ChainReorg",
+    });
+
+    assert.ok(reorgEvent, "ChainReorg event should be emitted");
+    assert.equal(reorgEvent.args.newTip?.toLowerCase(), hex(chainB[3].hash).toLowerCase());
+    assert.equal(reorgEvent.args.newHeight, genesisHeight + 4);
+  });
+
+  it("should not emit ChainReorg when extending the chain tip (no reorg)", async function () {
+    // Submit one more block on top of chain A's tip — ancestorHeight == chainHeight,
+    // so this is a plain extension and must not emit ChainReorg.
+    const { oracle, pc, genesisHeight, baseTs, nBits, chainA } =
+      await loadFixture(deployReorgFixture);
+
+    const tip = chainA[chainA.length - 1];
+    const extension = mineChain(tip.hash, tip.height + 1, 1, baseTs + 3 * 600, nBits, 2000n);
+    const batch = formatBatch(extension);
+
+    const txHash = await oracle.write.submitBlocks([
+      tip.height, // ancestorHeight == current chainHeight → plain extension
+      batch.headers,
+      batch.coinbaseTxs,
+      batch.merkleProofs,
+    ]);
+    const receipt = await pc.waitForTransactionReceipt({ hash: txHash });
+
+    const reorgEvents = parseEventLogs({
+      abi: oracle.abi,
+      logs: receipt.logs,
+      eventName: "ChainReorg",
+    });
+
+    assert.equal(reorgEvents.length, 0, "ChainReorg must not be emitted for a plain extension");
   });
 
   it("should reject a same-length fork with equal work (NotHeaviestChain)", async function () {
