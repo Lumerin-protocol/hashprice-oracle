@@ -23,10 +23,10 @@ describe("HashpriceBTC — Chain state", function () {
     assert.equal(chainHeight, lastSubmitted.height);
   });
 
-  it("should return confirmedHeight = chainHeight - 6", async function () {
+  it("should return confirmedHeight = chainHeight - 1", async function () {
     const { contracts, config } = await loadFixture(deployOracleFixture);
     const lastSubmitted = config.blocks[config.batchEnd - 1];
-    assert.equal(await contracts.oracle.read.confirmedHeight(), lastSubmitted.height - 6);
+    assert.equal(await contracts.oracle.read.confirmedHeight(), lastSubmitted.height - 1);
   });
 
   it("should track block count", async function () {

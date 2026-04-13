@@ -349,15 +349,17 @@ contract HashpriceBTC is AggregatorV3Interface {
         BlockEntry storage entry = _blockAt(confirmed);
         if (entry.height != confirmed) return;
 
-        uint256 diff = BTCUtils.nBitsToDifficulty(entry.nBits);
         uint64 sub = BTCUtils.getBlockSubsidy(confirmed);
 
         uint256 fees;
         if (s.blockCount >= FEE_WINDOW) {
             fees = feeRunningSum / FEE_WINDOW;
-        } else {
+        } else if (s.blockCount > 0) {
             fees = feeRunningSum / s.blockCount;
         }
+
+        uint256 diff = BTCUtils.nBitsToDifficulty(entry.nBits);
+        if (diff == 0) return;
 
         uint256 rewardPerBlock = uint256(sub) + fees;
         uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (diff * (1 << 32));
