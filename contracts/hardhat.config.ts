@@ -1,10 +1,9 @@
-import { loadEnvFile } from "node:process";
 import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
-// import "@nomicfoundation/hardhat-verify";
-// import "@openzeppelin/hardhat-upgrades";
+import { tryLoadEnvFile } from "./lib/env.ts";
 
-loadEnvFile("./../.env");
+tryLoadEnvFile("./../.env");
+tryLoadEnvFile(".env");
 
 export default defineConfig({
   plugins: [hardhatToolboxViem],
