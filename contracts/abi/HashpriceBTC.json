@@ -1,6 +1,37 @@
-export const HashpriceBTCDeployAbi = [
+[
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "blockHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "height",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "timestamp",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "nBits",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_epochStartTimestamp",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_epochStartNBits",
+        "type": "uint32"
+      }
+    ],
     "stateMutability": "nonpayable",
     "type": "constructor"
   },
@@ -446,4 +477,4 @@ export const HashpriceBTCDeployAbi = [
     "stateMutability": "pure",
     "type": "function"
   }
-] as const;
+]

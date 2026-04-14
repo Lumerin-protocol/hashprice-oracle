@@ -1,446 +1,480 @@
 export const HashpriceBTCAbi = [
   {
-    inputs: [
+    "inputs": [
       {
-        internalType: "bytes32",
-        name: "blockHash",
-        type: "bytes32",
+        "internalType": "bytes32",
+        "name": "blockHash",
+        "type": "bytes32"
       },
       {
-        internalType: "uint32",
-        name: "height",
-        type: "uint32",
+        "internalType": "uint32",
+        "name": "height",
+        "type": "uint32"
       },
       {
-        internalType: "uint32",
-        name: "timestamp",
-        type: "uint32",
+        "internalType": "uint32",
+        "name": "timestamp",
+        "type": "uint32"
       },
       {
-        internalType: "uint32",
-        name: "nBits",
-        type: "uint32",
+        "internalType": "uint32",
+        "name": "nBits",
+        "type": "uint32"
       },
       {
-        internalType: "uint32",
-        name: "_epochStartTimestamp",
-        type: "uint32",
+        "internalType": "uint32",
+        "name": "_epochStartTimestamp",
+        "type": "uint32"
       },
       {
-        internalType: "uint32",
-        name: "_epochStartNBits",
-        type: "uint32",
-      },
+        "internalType": "uint32",
+        "name": "_epochStartNBits",
+        "type": "uint32"
+      }
     ],
-    stateMutability: "nonpayable",
-    type: "constructor",
+    "stateMutability": "nonpayable",
+    "type": "constructor"
   },
   {
-    inputs: [],
-    name: "AncestorNotInBuffer",
-    type: "error",
+    "inputs": [],
+    "name": "AncestorNotInBuffer",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "ArrayLengthMismatch",
-    type: "error",
+    "inputs": [],
+    "name": "ArrayLengthMismatch",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "BrokenChain",
-    type: "error",
+    "inputs": [],
+    "name": "BrokenChain",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InsufficientData",
-    type: "error",
+    "inputs": [],
+    "name": "InsufficientData",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InsufficientPoW",
-    type: "error",
+    "inputs": [],
+    "name": "InsufficientPoW",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InvalidCoinbaseTx",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidCoinbaseTx",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InvalidHeaderLength",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidHeaderLength",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InvalidMerkleProof",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidMerkleProof",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InvalidRetarget",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidNBits",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "InvalidTimestamp",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidRetarget",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "NotHeaviestChain",
-    type: "error",
+    "inputs": [],
+    "name": "InvalidTimestamp",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "NotImplemented",
-    type: "error",
+    "inputs": [],
+    "name": "NotHeaviestChain",
+    "type": "error"
   },
   {
-    inputs: [],
-    name: "UnexpectedDifficultyChange",
-    type: "error",
+    "inputs": [],
+    "name": "NotImplemented",
+    "type": "error"
   },
   {
-    anonymous: false,
-    inputs: [
+    "inputs": [],
+    "name": "Sha256PrecompileMissing",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnexpectedDifficultyChange",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
       {
-        indexed: true,
-        internalType: "bytes32",
-        name: "blockHash",
-        type: "bytes32",
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "blockHash",
+        "type": "bytes32"
       },
       {
-        indexed: true,
-        internalType: "uint32",
-        name: "height",
-        type: "uint32",
+        "indexed": true,
+        "internalType": "uint32",
+        "name": "height",
+        "type": "uint32"
       },
       {
-        indexed: false,
-        internalType: "uint64",
-        name: "fees",
-        type: "uint64",
-      },
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "fees",
+        "type": "uint64"
+      }
     ],
-    name: "BlockSubmitted",
-    type: "event",
+    "name": "BlockSubmitted",
+    "type": "event"
   },
   {
-    anonymous: false,
-    inputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        indexed: true,
-        internalType: "bytes32",
-        name: "newTip",
-        type: "bytes32",
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "newTip",
+        "type": "bytes32"
       },
       {
-        indexed: true,
-        internalType: "uint32",
-        name: "newHeight",
-        type: "uint32",
-      },
+        "indexed": true,
+        "internalType": "uint32",
+        "name": "newHeight",
+        "type": "uint32"
+      }
     ],
-    name: "ChainReorg",
-    type: "event",
+    "name": "ChainReorg",
+    "type": "event"
   },
   {
-    inputs: [],
-    name: "BLOCK_BUFFER_SIZE",
-    outputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        internalType: "uint32",
-        name: "",
-        type: "uint32",
+        "indexed": true,
+        "internalType": "uint32",
+        "name": "height",
+        "type": "uint32"
       },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "nBits",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "difficulty",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "name": "DifficultyChanged",
+    "type": "event"
   },
   {
-    inputs: [],
-    name: "CONFIRMATION_DEPTH",
-    outputs: [
+    "anonymous": false,
+    "inputs": [
       {
-        internalType: "uint32",
-        name: "",
-        type: "uint32",
+        "indexed": true,
+        "internalType": "uint32",
+        "name": "confirmedHeight",
+        "type": "uint32"
       },
+      {
+        "indexed": false,
+        "internalType": "int256",
+        "name": "hashprice",
+        "type": "int256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "avgFees",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "name": "HashpriceUpdated",
+    "type": "event"
   },
   {
-    inputs: [],
-    name: "EXPECTED_TIMESPAN",
-    outputs: [
+    "inputs": [],
+    "name": "CONFIRMATION_DEPTH",
+    "outputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "FEE_WINDOW",
-    outputs: [
+    "inputs": [],
+    "name": "avgFees",
+    "outputs": [
       {
-        internalType: "uint32",
-        name: "",
-        type: "uint32",
-      },
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "RETARGET_INTERVAL",
-    outputs: [
+    "inputs": [],
+    "name": "chainTipHash",
+    "outputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "chainTipHash",
-    outputs: [
+    "inputs": [],
+    "name": "confirmedHeight",
+    "outputs": [
       {
-        internalType: "bytes32",
-        name: "",
-        type: "bytes32",
-      },
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "confirmedHeight",
-    outputs: [
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [
       {
-        internalType: "uint32",
-        name: "",
-        type: "uint32",
-      },
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "pure",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "decimals",
-    outputs: [
+    "inputs": [],
+    "name": "description",
+    "outputs": [
       {
-        internalType: "uint8",
-        name: "",
-        type: "uint8",
-      },
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
     ],
-    stateMutability: "pure",
-    type: "function",
+    "stateMutability": "pure",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "description",
-    outputs: [
+    "inputs": [],
+    "name": "difficulty",
+    "outputs": [
       {
-        internalType: "string",
-        name: "",
-        type: "string",
-      },
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "pure",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "feeRunningSum",
-    outputs: [
+    "inputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "uint80",
+        "name": "",
+        "type": "uint80"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "name": "getRoundData",
+    "outputs": [
+      {
+        "internalType": "uint80",
+        "name": "",
+        "type": "uint80"
+      },
+      {
+        "internalType": "int256",
+        "name": "",
+        "type": "int256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint80",
+        "name": "",
+        "type": "uint80"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
   },
   {
-    inputs: [
+    "inputs": [],
+    "name": "latestRoundData",
+    "outputs": [
       {
-        internalType: "uint80",
-        name: "",
-        type: "uint80",
+        "internalType": "uint80",
+        "name": "roundId",
+        "type": "uint80"
       },
+      {
+        "internalType": "int256",
+        "name": "answer",
+        "type": "int256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "startedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "updatedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint80",
+        "name": "answeredInRound",
+        "type": "uint80"
+      }
     ],
-    name: "getRoundData",
-    outputs: [
-      {
-        internalType: "uint80",
-        name: "",
-        type: "uint80",
-      },
-      {
-        internalType: "int256",
-        name: "",
-        type: "int256",
-      },
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
-      {
-        internalType: "uint80",
-        name: "",
-        type: "uint80",
-      },
-    ],
-    stateMutability: "pure",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "latestRoundData",
-    outputs: [
+    "inputs": [],
+    "name": "state",
+    "outputs": [
       {
-        internalType: "uint80",
-        name: "roundId",
-        type: "uint80",
+        "internalType": "uint32",
+        "name": "chainHeight",
+        "type": "uint32"
       },
       {
-        internalType: "int256",
-        name: "answer",
-        type: "int256",
+        "internalType": "uint32",
+        "name": "blockCount",
+        "type": "uint32"
       },
       {
-        internalType: "uint256",
-        name: "startedAt",
-        type: "uint256",
+        "internalType": "uint32",
+        "name": "epochStartTimestamp",
+        "type": "uint32"
       },
       {
-        internalType: "uint256",
-        name: "updatedAt",
-        type: "uint256",
+        "internalType": "uint32",
+        "name": "epochStartNBits",
+        "type": "uint32"
       },
       {
-        internalType: "uint80",
-        name: "answeredInRound",
-        type: "uint80",
-      },
+        "internalType": "uint32",
+        "name": "lastSubmittedAt",
+        "type": "uint32"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "state",
-    outputs: [
+    "inputs": [
       {
-        internalType: "uint32",
-        name: "chainHeight",
-        type: "uint32",
+        "internalType": "bytes",
+        "name": "header",
+        "type": "bytes"
       },
       {
-        internalType: "uint32",
-        name: "blockCount",
-        type: "uint32",
+        "internalType": "bytes",
+        "name": "coinbaseTx",
+        "type": "bytes"
       },
       {
-        internalType: "uint32",
-        name: "epochStartTimestamp",
-        type: "uint32",
-      },
-      {
-        internalType: "uint32",
-        name: "epochStartNBits",
-        type: "uint32",
-      },
-      {
-        internalType: "uint32",
-        name: "lastSubmittedAt",
-        type: "uint32",
-      },
+        "internalType": "bytes32[]",
+        "name": "merkleProof",
+        "type": "bytes32[]"
+      }
     ],
-    stateMutability: "view",
-    type: "function",
+    "name": "submitBlock",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
-    inputs: [
+    "inputs": [
       {
-        internalType: "bytes",
-        name: "header",
-        type: "bytes",
+        "internalType": "uint32",
+        "name": "ancestorHeight",
+        "type": "uint32"
       },
       {
-        internalType: "bytes",
-        name: "coinbaseTx",
-        type: "bytes",
+        "internalType": "bytes",
+        "name": "headers",
+        "type": "bytes"
       },
       {
-        internalType: "bytes32[]",
-        name: "merkleProof",
-        type: "bytes32[]",
+        "internalType": "bytes[]",
+        "name": "coinbaseTxs",
+        "type": "bytes[]"
       },
+      {
+        "internalType": "bytes32[][]",
+        "name": "merkleProofs",
+        "type": "bytes32[][]"
+      }
     ],
-    name: "submitBlock",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "name": "submitBlocks",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
-    inputs: [
+    "inputs": [],
+    "name": "subsidy",
+    "outputs": [
       {
-        internalType: "uint32",
-        name: "ancestorHeight",
-        type: "uint32",
-      },
-      {
-        internalType: "bytes",
-        name: "headers",
-        type: "bytes",
-      },
-      {
-        internalType: "bytes[]",
-        name: "coinbaseTxs",
-        type: "bytes[]",
-      },
-      {
-        internalType: "bytes32[][]",
-        name: "merkleProofs",
-        type: "bytes32[][]",
-      },
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
     ],
-    name: "submitBlocks",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    inputs: [],
-    name: "version",
-    outputs: [
+    "inputs": [],
+    "name": "version",
+    "outputs": [
       {
-        internalType: "uint256",
-        name: "",
-        type: "uint256",
-      },
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
     ],
-    stateMutability: "pure",
-    type: "function",
-  },
+    "stateMutability": "pure",
+    "type": "function"
+  }
 ] as const;

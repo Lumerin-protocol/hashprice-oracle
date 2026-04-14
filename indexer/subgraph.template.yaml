@@ -7,52 +7,70 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: HashrateOracle
+    name: Hashprice
     network: "${NETWORK}"
     source:
-      address: "${HASHRATE_ORACLE_ADDRESS}"
-      startBlock: ${START_BLOCK_HASHRATE_ORACLE}
-      abi: HashrateOracle
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.9
-      language: wasm/assemblyscript
-      entities:
-        - HashrateIndex
-      abis:
-        - name: HashrateOracle
-          file: ../contracts/abi/HashrateOracle.json
-      eventHandlers:
-        - event: Initialized(uint64)
-          handler: handleInitialized
-      blockHandlers:
-        - handler: handleBlock
-          filter:
-            kind: polling
-            every: ${HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL}
-      file: ./src/hashrate-oracle.ts
-  - kind: ethereum
-    name: BtcTokenOracle
-    network: "${NETWORK}"
-    source:
-      address: "${BTC_TOKEN_ORACLE_ADDRESS}"
-      startBlock: ${START_BLOCK_BTC_TOKEN_ORACLE}
+      address: "${HASHPRICE_USD_ADDRESS}"
+      startBlock: ${HASHPRICE_START_BLOCK}
       abi: AggregatorV3Interface
+    context:
+      hashpriceUsdAddress:
+        type: String
+        data: "${HASHPRICE_USD_ADDRESS}"
+      btcUsdAddress:
+        type: String
+        data: "${BTC_USD_ADDRESS}"
+      hashpriceBtcAddress:
+        type: String
+        data: "${HASHPRICE_BTC_ADDRESS}"
+      hashpriceStartBlock:
+        type: BigInt
+        data: "${HASHPRICE_START_BLOCK}"
+      hashpricePollingBlockInterval:
+        type: BigInt
+        data: "${HASHPRICE_POLLING_BLOCK_INTERVAL}"
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - BtcPriceIndex
+        - Rates
       abis:
+        - name: HashpriceBTC
+          file: ../contracts/abi/HashpriceBTC.json
         - name: AggregatorV3Interface
           file: ../contracts/abi/AggregatorV3Interface.json
       blockHandlers:
         - handler: handleBlock
           filter:
             kind: polling
-            every: ${BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL}
-      file: ./src/btc-token-oracle.ts
+            every: ${HASHPRICE_POLLING_BLOCK_INTERVAL}
+        - handler: initHashpriceMeta
+          filter:
+            kind: once
+
+      file: ./src/hashprice.ts
+  - kind: ethereum
+    name: HashpriceBTC
+    network: "${NETWORK}"
+    source:
+      address: "${HASHPRICE_BTC_ADDRESS}"
+      startBlock: ${HASHPRICE_START_BLOCK}
+      abi: HashpriceBTC
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/hashprice.ts
+      entities:
+        - Rates
+      abis:
+        - name: HashpriceBTC
+          file: ../contracts/abi/HashpriceBTC.json
+      eventHandlers:
+        - handler: handleHashpriceUpdated
+          event: "HashpriceUpdated(indexed uint32,int256,uint256)"
+
 # Required when deploying with `goldsky subgraph deploy ... --graft-from <name>/<version>`
 features:
   - grafting

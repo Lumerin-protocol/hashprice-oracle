@@ -1,4 +1,4 @@
-export const HashpriceBTCDeployAbi = [
+[
   {
     "inputs": [],
     "stateMutability": "nonpayable",
@@ -446,4 +446,4 @@ export const HashpriceBTCDeployAbi = [
     "stateMutability": "pure",
     "type": "function"
   }
-] as const;
+]

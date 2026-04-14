@@ -1,5 +1,6 @@
 /**
- * 1. Emits `abi/<Contract>.ts` with `export const <Contract>Abi = … as const` from Hardhat artifacts.
+ * 1. Emits `abi/<Contract>.ts` with `export const <Contract>Abi = … as const` and
+ *    `abi/<Contract>.json` with the raw ABI array from Hardhat artifacts.
  * 2. Collects unique Solidity `error` ABI items (+ `Error` / `Panic` builtins) into
  *    `abi/ContractErrors.json` and `abi/ContractErrors.ts`.
  *
@@ -17,6 +18,7 @@ const REPO_ROOT = resolve(__dirname, "..");
 const ARTIFACTS_DIR = resolve(REPO_ROOT, "artifacts");
 const OUT_DIR = resolve(REPO_ROOT, "abi");
 const OUT_ERRORS_TS = join(OUT_DIR, "ContractErrors.ts");
+const OUT_ERRORS_JSON = join(OUT_DIR, "ContractErrors.json");
 
 function main(): void {
   // Clear abi directory
@@ -70,6 +72,7 @@ function main(): void {
         dest,
         `export const ${name}Abi = ${JSON.stringify(artifact.abi, null, 2)} as const;\n`,
       );
+      writeFileSync(resolve(OUT_DIR, `${name}.json`), JSON.stringify(artifact.abi, null, 2) + "\n");
       console.log(`  exported ${name}`);
 
       for (const item of abi) {
@@ -91,6 +94,7 @@ function main(): void {
     `export const contractErrors = ${JSON.stringify(outAbi, null, 2)} as const;\n`,
     "utf-8",
   );
+  writeFileSync(OUT_ERRORS_JSON, JSON.stringify(outAbi, null, 2) + "\n", "utf-8");
 
   console.log(`contract errors: ${rows.length} unique → ${relative(REPO_ROOT, OUT_ERRORS_TS)}`);
   console.log("");
@@ -147,4 +151,5 @@ type Accum = {
   files: string[];
 };
 
+export { main };
 main();

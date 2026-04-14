@@ -1,57 +1,67 @@
-type HashrateOracle @entity(immutable: false) {
+# Price feed entities
+
+type HashpriceMeta @entity(immutable: true) {
   id: Int8!
-  initializedBlockNumber: BigInt!
-  initializeTimestamp: BigInt!
+  hashpriceUsdAddress: Bytes!
+  hashpriceBtcAddress: Bytes!
+  btcUsdAddress: Bytes!
+  hashpriceUsdDecimals: Int8!
+  hashpriceBtcDecimals: Int8!
+  btcUsdDecimals: Int8!
+  startBlock: BigInt!
+  pollingBlockInterval: BigInt!
 }
 
-# HashrateOracle Timeseries Entities
-type HashrateIndex @entity(timeseries: true) {
-  id: Int8!
-  hashesForBTC: BigInt!
-  hashesForToken: BigInt!
-  updatedAt: BigInt! # deprecated, use timestamp instead
-  timestamp: Timestamp!
-  blockNumber: BigInt!
-}
-
-type HashesForBTCCandle @aggregation(intervals: ["hour", "day"], source: "HashrateIndex") {
-  id: Int8!
-
-  high: BigInt! @aggregate(fn: "max", arg: "hashesForBTC")
-  low: BigInt! @aggregate(fn: "min", arg: "hashesForBTC")
-  sum: BigInt! @aggregate(fn: "sum", arg: "hashesForBTC")
-  count: BigInt! @aggregate(fn: "count", arg: "hashesForBTC")
-
-  timestamp: Timestamp!
-}
-
-type HashesForTokenCandle @aggregation(intervals: ["hour", "day"], source: "HashrateIndex") {
-  id: Int8!
-
-  high: BigInt! @aggregate(fn: "max", arg: "hashesForToken")
-  low: BigInt! @aggregate(fn: "min", arg: "hashesForToken")
-  sum: BigInt! @aggregate(fn: "sum", arg: "hashesForToken")
-  count: BigInt! @aggregate(fn: "count", arg: "hashesForToken")
-
-  timestamp: Timestamp!
-}
-
-type BtcTokenOracle @entity(immutable: false) {
-  id: Int8!
-  initializedBlockNumber: BigInt!
-  initializeTimestamp: BigInt!
-}
-
-# BtcTokenOracle Timeseries Entities
-type BtcPriceIndex @entity(timeseries: true) {
+type HashpriceUsd @entity(timeseries: true) {
   id: Int8!
   price: BigInt!
-  updatedAt: BigInt! # deprecated, use timestamp instead
   timestamp: Timestamp!
   blockNumber: BigInt!
 }
 
-type BtcPriceCandle @aggregation(intervals: ["hour", "day"], source: "BtcPriceIndex") {
+type HashpriceBtc @entity(timeseries: true) {
+  id: Int8!
+  price: BigInt!
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+}
+
+type BtcUsd @entity(timeseries: true) {
+  id: Int8!
+  price: BigInt!
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+}
+
+# Candle aggregations
+
+type HashpriceUsdCandle @aggregation(intervals: ["hour", "day"], source: "HashpriceUsd") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "price")
+  low: BigInt! @aggregate(fn: "min", arg: "price")
+  sum: BigInt! @aggregate(fn: "sum", arg: "price")
+  count: BigInt! @aggregate(fn: "count", arg: "price")
+
+  timestamp: Timestamp!
+}
+
+# Hashprice/BTC
+
+type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "HashpriceBtc") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "price")
+  low: BigInt! @aggregate(fn: "min", arg: "price")
+  sum: BigInt! @aggregate(fn: "sum", arg: "price")
+  count: BigInt! @aggregate(fn: "count", arg: "price")
+
+  timestamp: Timestamp!
+}
+
+# BTC/USD
+
+type BtcUsdCandle @aggregation(intervals: ["hour", "day"], source: "BtcUsd") {
   id: Int8!
 
   high: BigInt! @aggregate(fn: "max", arg: "price")

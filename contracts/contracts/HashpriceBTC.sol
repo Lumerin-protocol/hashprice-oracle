@@ -49,6 +49,9 @@ contract HashpriceBTC is AggregatorV3Interface {
     /// @dev Size of a raw Bitcoin block header
     uint256 private constant HEADER_SIZE = 80;
 
+    /// @dev Decimals for the result of latestRoundData()
+    uint8 private constant DECIMALS = 16;
+
     struct BlockEntry {
         bytes32 blockHash;
         uint32 timestamp;
@@ -301,7 +304,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     // ─── AggregatorV3Interface ────────────────────────────────────────
 
     function decimals() public pure returns (uint8) {
-        return 8;
+        return DECIMALS;
     }
 
     function description() external pure returns (string memory) {
@@ -385,7 +388,8 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (diff == 0) return;
 
         uint256 rewardPerBlock = uint256(sub) + fees;
-        uint256 hashpriceSats = (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (diff * (1 << 32));
+        uint256 hashpriceSats =
+            (HASHES_PER_100THS_PER_DAY * rewardPerBlock * (10 ** (DECIMALS - 8))) / (diff * (1 << 32));
 
         latestRoundDataCache = CachedRoundData({
             roundId: uint80(confirmed),

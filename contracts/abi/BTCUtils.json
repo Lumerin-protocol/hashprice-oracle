@@ -1,4 +1,4 @@
-export const BTCUtilsAbi = [
+[
   {
     "inputs": [],
     "name": "InvalidCoinbaseTx",
@@ -19,4 +19,4 @@ export const BTCUtilsAbi = [
     "name": "Sha256PrecompileMissing",
     "type": "error"
   }
-] as const;
+]

@@ -12,7 +12,9 @@ const MIN_CONFIRMATIONS = 6;
 const ACCOUNT_0_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 async function main() {
-  const runPromise = hre.tasks.getTask("node").run({});
+  await hre.tasks.getTask("compile").run();
+
+  const runPromise = hre.tasks.getTask("node").run({ hostname: "0.0.0.0" });
 
   const bitcoinRpcUrl = process.env.BITCOIN_RPC_URL;
   if (!bitcoinRpcUrl) {
@@ -70,6 +72,7 @@ async function main() {
   const conn = await network.connect("localhost");
   const { viem } = conn;
   const [owner] = await viem.getWalletClients();
+  const pc = await viem.getPublicClient();
 
   console.log("Deploying HashpriceBTC...");
   const hashpriceBTC = await viem.deployContract("HashpriceBTC", [
@@ -95,6 +98,8 @@ async function main() {
   console.log("  Deployed at:", hashpriceUSD.address);
   console.log();
 
+  const startBlock = await pc.getBlockNumber();
+
   if (conn.networkConfig.type === "edr-simulated") {
     throw new Error("EDR simulated networks are not supported for local deployment");
   }
@@ -104,8 +109,13 @@ async function main() {
     ETHEREUM_RPC_URL: await conn.networkConfig.url.get(),
     HASHPRICE_BTC_ADDRESS: hashpriceBTC.address as `0x${string}`,
     HASHPRICE_USD_ADDRESS: hashpriceUSD.address as `0x${string}`,
+    BTC_USD_ADDRESS: btcUsdOracle.address as `0x${string}`,
     BITCOIN_RPC_URL: bitcoinRpcUrl,
     PRIVATE_KEY: ACCOUNT_0_PRIVATE_KEY,
+    SUBGRAPH_ETH_NODE: `hardhat:${await conn.networkConfig.url.get()}`,
+    NETWORK: "hardhat",
+    HASHPRICE_START_BLOCK: startBlock.toString(),
+    HASHPRICE_POLLING_BLOCK_INTERVAL: "1",
   });
 
   console.log();

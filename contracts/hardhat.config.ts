@@ -1,12 +1,21 @@
-import { configVariable, defineConfig } from "hardhat/config";
+import { configVariable, defineConfig, overrideTask } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
 import { tryLoadEnvFile } from "./lib/env.ts";
 
 tryLoadEnvFile("./../.env");
 tryLoadEnvFile(".env");
 
+const codegenPlugin = {
+  id: "codegen-after-compile",
+  tasks: [
+    overrideTask(["compile"])
+      .setAction(() => import("./scripts/compile-action.ts"))
+      .build(),
+  ],
+};
+
 export default defineConfig({
-  plugins: [hardhatToolboxViem],
+  plugins: [hardhatToolboxViem, codegenPlugin],
   paths: {
     tests: "tests",
   },
@@ -31,6 +40,10 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2025-11-23",
+      blockGasLimit: 60_000_000n,
+      loggingEnabled: true,
+      gas: 60_000_000n,
+      gasPrice: "auto",
     },
     localhost: {
       type: "http",
