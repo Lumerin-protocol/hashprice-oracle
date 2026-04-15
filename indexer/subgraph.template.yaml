@@ -7,12 +7,12 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: Hashprice
+    name: HashpriceBTC
     network: "${NETWORK}"
     source:
-      address: "${HASHPRICE_USD_ADDRESS}"
+      address: "${HASHPRICE_BTC_ADDRESS}"
       startBlock: ${HASHPRICE_START_BLOCK}
-      abi: AggregatorV3Interface
+      abi: HashpriceBTC
     context:
       hashpriceUsdAddress:
         type: String
@@ -33,43 +33,50 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
+      file: ./src/hashprice.ts
       entities:
-        - Rates
+        - HashpriceBtc
+        - HashpriceUsd
+        - HashpriceMeta
+        - LatestRates
       abis:
         - name: HashpriceBTC
           file: ../contracts/abi/HashpriceBTC.json
         - name: AggregatorV3Interface
           file: ../contracts/abi/AggregatorV3Interface.json
+        - name: AggregatorProxy
+          file: ../contracts/abi/AggregatorProxy.json
+        - name: AggregatorV2V3Interface
+          file: ../contracts/abi/AggregatorV2V3Interface.json
       blockHandlers:
-        - handler: handleBlock
-          filter:
-            kind: polling
-            every: ${HASHPRICE_POLLING_BLOCK_INTERVAL}
-        - handler: initHashpriceMeta
+        - handler: initFeeds
           filter:
             kind: once
+      eventHandlers:
+        - handler: handleHashpriceUpdated
+          event: "HashpriceUpdated(indexed uint32,int256,uint256)"
 
-      file: ./src/hashprice.ts
+templates:
   - kind: ethereum
-    name: HashpriceBTC
+    name: ChainlinkAggregator
     network: "${NETWORK}"
     source:
-      address: "${HASHPRICE_BTC_ADDRESS}"
-      startBlock: ${HASHPRICE_START_BLOCK}
-      abi: HashpriceBTC
+      abi: AggregatorV2V3Interface
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
-      file: ./src/hashprice.ts
       entities:
-        - Rates
+        - BtcUsd
+        - HashpriceUsd
+        - LatestRates
       abis:
-        - name: HashpriceBTC
-          file: ../contracts/abi/HashpriceBTC.json
+        - name: AggregatorV2V3Interface
+          file: ../contracts/abi/AggregatorV2V3Interface.json
       eventHandlers:
-        - handler: handleHashpriceUpdated
-          event: "HashpriceUpdated(indexed uint32,int256,uint256)"
+        - handler: handleAnswerUpdated
+          event: "AnswerUpdated(indexed int256,indexed uint256,uint256)"
+      file: ./src/hashprice.ts
 
 # Required when deploying with `goldsky subgraph deploy ... --graft-from <name>/<version>`
 features:

@@ -1,97 +1,218 @@
-import { log, ethereum, dataSource, Address } from "@graphprotocol/graph-ts";
-import { AggregatorV3Interface } from "../generated/Hashprice/AggregatorV3Interface";
-import { HashpriceBTC } from "../generated/HashpriceBtc/HashpriceBtc";
-import { HashpriceUsd, BtcUsd, HashpriceBtc as HashpriceBtcEntity } from "../generated/schema";
-import { HashpriceUpdated } from "../generated/HashpriceBtc/HashpriceBtc";
-import { HashpriceMeta } from "../generated/schema";
-import { BigInt } from "@graphprotocol/graph-ts";
+import {
+  log,
+  ethereum,
+  dataSource,
+  Address,
+  DataSourceContext,
+  BigInt,
+} from "@graphprotocol/graph-ts";
+import { AggregatorProxy } from "../generated/HashpriceBTC/AggregatorProxy";
+import { AggregatorV2V3Interface } from "../generated/HashpriceBTC/AggregatorV2V3Interface";
+import { AggregatorV3Interface } from "../generated/HashpriceBTC/AggregatorV3Interface";
+import { HashpriceBTC } from "../generated/HashpriceBTC/HashpriceBTC";
+import { AnswerUpdated } from "../generated/HashpriceBTC/AggregatorProxy";
+import { HashpriceUpdated } from "../generated/HashpriceBTC/HashpriceBTC";
+import {
+  HashpriceUsd,
+  BtcUsd,
+  HashpriceBtc,
+  HashpriceMeta,
+  LatestRates,
+} from "../generated/schema";
+import { ChainlinkAggregator } from "../generated/templates";
 
-// Block (polling) handler to collect hashrate data for HashpriceUsd and BtcUsd feeds
-export function handleBlock(block: ethereum.Block): void {
-  log.info("Handling block {}", [block.number.toString()]);
+const LATEST_RATES_ID = 0;
 
-  // HashpriceUsd feed
-  const hashpriceUsdAddress = dataSource.address();
-  log.info("HashpriceUsd feed address: {}", [hashpriceUsdAddress.toHexString()]);
-  const hashpriceUsd = AggregatorV3Interface.bind(hashpriceUsdAddress);
-  const hashpriceUsdData = hashpriceUsd.try_latestRoundData();
-  if (hashpriceUsdData.reverted) {
-    log.error("HashpriceUsd latestRoundData reverted", []);
-  } else {
-    const hashpriceUsdEntry = new HashpriceUsd(0);
-    hashpriceUsdEntry.id = hashpriceUsdData.value.getRoundId().toI64();
-    hashpriceUsdEntry.price = hashpriceUsdData.value.getAnswer();
-    hashpriceUsdEntry.timestamp = hashpriceUsdData.value.getUpdatedAt().toI64();
-    hashpriceUsdEntry.blockNumber = block.number;
-    hashpriceUsdEntry.save();
-    log.info("HashpriceUsd: {}, Block number: {}", [
-      hashpriceUsdEntry.price.toString(),
-      block.number.toString(),
-    ]);
-  }
-
-  // BtcUsd feed
+// Once handler — bootstraps the BTC/USD aggregator dynamic data source and initializes HashpriceMeta
+export function initFeeds(block: ethereum.Block): void {
+  log.info("===============inside initFeeds", []);
   const context = dataSource.context();
-  const btcUsdAddress = context.mustGet("btcUsdAddress").toString();
-  log.info("BtcUsd feed address: {}", [btcUsdAddress]);
-
-  const btcUsdContract = AggregatorV3Interface.bind(Address.fromString(btcUsdAddress));
-  const btcUsdData = btcUsdContract.try_latestRoundData();
-  if (btcUsdData.reverted) {
-    log.error("BtcTokenOracle latestRoundData reverted", []);
-  } else {
-    const record = new BtcUsd(0);
-    record.id = btcUsdData.value.getRoundId().toI64();
-    record.price = btcUsdData.value.getAnswer();
-    record.timestamp = btcUsdData.value.getUpdatedAt().toI64();
-    record.blockNumber = block.number;
-    record.save();
-
-    log.info("BtcUsd: {}, Block number: {}", [record.price.toString(), block.number.toString()]);
-  }
-}
-
-// Event handler to collect hashprice data for the BTC feed
-export function handleHashpriceUpdated(event: HashpriceUpdated): void {
-  const hashpriceBtcEntry = new HashpriceBtcEntity(0);
-  hashpriceBtcEntry.id = event.params.confirmedHeight.toI64();
-  hashpriceBtcEntry.price = event.params.hashprice;
-  hashpriceBtcEntry.timestamp = event.block.timestamp.toI64();
-  hashpriceBtcEntry.blockNumber = event.block.number;
-  hashpriceBtcEntry.save();
-
-  log.info("HashpriceUpdated: id: {}, price: {}, blockNumber: {}, timestamp: {}", [
-    hashpriceBtcEntry.id.toString(),
-    hashpriceBtcEntry.price.toString(),
-    hashpriceBtcEntry.blockNumber.toString(),
-    hashpriceBtcEntry.timestamp.toString(),
-  ]);
-}
-
-export function initHashpriceMeta(block: ethereum.Block): void {
-  const context = dataSource.context();
-  const hashpriceUsdAddress = context.mustGet("hashpriceUsdAddress").toString();
-  const hashpriceBtcAddress = context.mustGet("hashpriceBtcAddress").toString();
-  const btcUsdAddress = context.mustGet("btcUsdAddress").toString();
+  const hashpriceBtcAddress = dataSource.address();
+  const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
+  const hashpriceUsdAddress = Address.fromString(context.mustGet("hashpriceUsdAddress").toString());
   const hashpriceStartBlock = context.mustGet("hashpriceStartBlock").toBigInt();
-  const hashpricePollingBlockInterval = context.mustGet("hashpricePollingBlockInterval").toBigInt();
 
-  const hashpriceUsd = AggregatorV3Interface.bind(Address.fromString(hashpriceUsdAddress));
-  const hashpriceBtc = HashpriceBTC.bind(Address.fromString(hashpriceBtcAddress));
-  const BtcUsd = AggregatorV3Interface.bind(Address.fromString(btcUsdAddress));
+  const btcUsdProxy = AggregatorProxy.bind(btcUsdAddress);
+  const hashpriceBtcContract = HashpriceBTC.bind(hashpriceBtcAddress);
+  const hashpriceUsdContract = AggregatorV3Interface.bind(hashpriceUsdAddress);
+  const btcUsdAggResult = btcUsdProxy.try_aggregator();
+  if (btcUsdAggResult.reverted) {
+    log.error("Failed to get BtcUsd aggregator address", []);
+  } else {
+    ChainlinkAggregator.create(btcUsdAggResult.value);
+    log.info("Created BtcUsd aggregator data source: {}", [btcUsdAggResult.value.toHexString()]);
 
-  let hashpriceMeta = HashpriceMeta.load(0);
-  if (!hashpriceMeta) {
-    hashpriceMeta = new HashpriceMeta(0);
-    hashpriceMeta.id = 0;
-    hashpriceMeta.hashpriceUsdAddress = Address.fromString(hashpriceUsdAddress);
-    hashpriceMeta.hashpriceBtcAddress = Address.fromString(hashpriceBtcAddress);
-    hashpriceMeta.btcUsdAddress = Address.fromString(btcUsdAddress);
-    hashpriceMeta.startBlock = hashpriceStartBlock;
-    hashpriceMeta.pollingBlockInterval = hashpricePollingBlockInterval;
-    hashpriceMeta.hashpriceUsdDecimals = hashpriceUsd.decimals();
-    hashpriceMeta.hashpriceBtcDecimals = hashpriceBtc.decimals();
-    hashpriceMeta.btcUsdDecimals = BtcUsd.decimals();
-    hashpriceMeta.save();
+    let rates = LatestRates.load(LATEST_RATES_ID);
+    if (!rates) {
+      rates = new LatestRates(LATEST_RATES_ID);
+      rates.id = LATEST_RATES_ID;
+    }
+    rates.btcUsdAggregator = btcUsdAggResult.value;
+    rates.save();
   }
+
+  let meta = HashpriceMeta.load(LATEST_RATES_ID);
+  if (!meta) {
+    meta = new HashpriceMeta(LATEST_RATES_ID);
+    meta.id = LATEST_RATES_ID;
+    meta.hashpriceBtcAddress = hashpriceBtcAddress;
+    meta.hashpriceUsdAddress = hashpriceUsdAddress;
+    meta.btcUsdAddress = btcUsdAddress;
+    meta.startBlock = hashpriceStartBlock;
+
+    const hashpriceBtcDecimalsResult = hashpriceBtcContract.try_decimals();
+    if (hashpriceBtcDecimalsResult.reverted) {
+      throw new Error("Failed to get HashpriceBTC decimals");
+    }
+    meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
+
+    const btcUsdDecimalsResult = btcUsdProxy.try_decimals();
+    if (btcUsdDecimalsResult.reverted) {
+      throw new Error("Failed to get BTC/USD decimals");
+    }
+    meta.btcUsdDecimals = btcUsdDecimalsResult.value;
+
+    const hashpriceUsdDecimalsResult = hashpriceUsdContract.try_decimals();
+    if (hashpriceUsdDecimalsResult.reverted) {
+      throw new Error("Failed to get HashpriceUSD decimals");
+    }
+    meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
+    meta.save();
+  }
+}
+
+// Handles hashprice updates — saves HashpriceBtc and derives HashpriceUsd from latest BtcUsd
+export function handleHashpriceUpdated(event: HashpriceUpdated): void {
+  log.info("handleHashpriceUpdated: bitcoin block {}", [event.params.confirmedHeight.toString()]);
+  const hpBtc = new HashpriceBtc(0);
+  hpBtc.id = event.params.confirmedHeight.toI64();
+  hpBtc.price = event.params.hashprice;
+  hpBtc.timestamp = event.block.timestamp.toI64();
+  hpBtc.blockNumber = event.block.number;
+  hpBtc.save();
+
+  let rates = LatestRates.load(LATEST_RATES_ID);
+  if (!rates) {
+    rates = new LatestRates(LATEST_RATES_ID);
+    rates.id = LATEST_RATES_ID;
+  }
+  rates.hashpriceBtcId = hpBtc.id;
+  rates.hashpriceBtcPrice = event.params.hashprice;
+  rates.hashpriceBtcUpdatedAt = event.block.timestamp;
+  rates.hashpriceBtcBlockNumber = event.block.number;
+  rates.save();
+
+  const meta = HashpriceMeta.load(LATEST_RATES_ID);
+  if (!meta) {
+    log.error("HashpriceMeta not found", []);
+    return;
+  }
+
+  const proxy = AggregatorProxy.bind(Address.fromBytes(meta.btcUsdAddress));
+  const aggResult = proxy.try_aggregator();
+  if (!aggResult.reverted) {
+    const storedAgg = rates.btcUsdAggregator;
+    if (storedAgg === null || storedAgg.toHexString() !== aggResult.value.toHexString()) {
+      ChainlinkAggregator.create(aggResult.value);
+      rates.btcUsdAggregator = aggResult.value;
+      rates.save();
+      log.info("BtcUsd aggregator rotated: new aggregator {}", [aggResult.value.toHexString()]);
+    }
+  }
+
+  deriveHashpriceUsd(rates, meta);
+}
+
+// Handles BTC/USD price updates — saves BtcUsd and derives HashpriceUsd from latest HashpriceBtc
+export function handleAnswerUpdated(event: AnswerUpdated): void {
+  const btcUsdEntry = new BtcUsd(0);
+  btcUsdEntry.id = event.params.roundId.toI64();
+  btcUsdEntry.price = event.params.current;
+  btcUsdEntry.timestamp = event.params.updatedAt.toI64();
+  btcUsdEntry.blockNumber = event.block.number;
+  btcUsdEntry.save();
+
+  let rates = LatestRates.load(LATEST_RATES_ID);
+  if (!rates) {
+    rates = new LatestRates(LATEST_RATES_ID);
+    rates.id = LATEST_RATES_ID;
+  }
+  rates.btcUsdId = event.params.roundId.toI64();
+  rates.btcUsdPrice = event.params.current;
+  rates.btcUsdUpdatedAt = event.params.updatedAt;
+  rates.btcUsdBlockNumber = event.block.number;
+  rates.save();
+
+  const meta = HashpriceMeta.load(LATEST_RATES_ID);
+  if (!meta) {
+    log.error("HashpriceMeta not found", []);
+    return;
+  }
+
+  deriveHashpriceUsd(rates, meta);
+}
+
+function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
+  log.info("inside deriveHashpriceUsd", []);
+  if (
+    rates.btcUsdId === 0 ||
+    rates.btcUsdPrice === null ||
+    rates.btcUsdUpdatedAt === null ||
+    rates.btcUsdBlockNumber === null ||
+    rates.hashpriceBtcId === 0 ||
+    rates.hashpriceBtcPrice === null ||
+    rates.hashpriceBtcUpdatedAt === null ||
+    rates.hashpriceBtcBlockNumber === null
+  )
+    return;
+
+  // if clause above does not narrow down the null type, so
+  // we use throwIfNullBigInt to enforce the type
+  const btcUsdPrice = throwIfNullBigInt(rates.btcUsdPrice);
+  const btcUsdUpdatedAt = throwIfNullBigInt(rates.btcUsdUpdatedAt);
+  const btcUsdBlockNumber = throwIfNullBigInt(rates.btcUsdBlockNumber);
+  const hashpriceBtcPrice = throwIfNullBigInt(rates.hashpriceBtcPrice);
+  const hashpriceBtcUpdatedAt = throwIfNullBigInt(rates.hashpriceBtcUpdatedAt);
+  const hashpriceBtcBlockNumber = throwIfNullBigInt(rates.hashpriceBtcBlockNumber);
+
+  // price = (hashpriceBtc * btcUsd) / 10^(hashpriceBtcDecimals + btcUsdDecimals - hashpriceUsdDecimals)
+  const exponent = meta.hashpriceBtcDecimals + meta.btcUsdDecimals - meta.hashpriceUsdDecimals;
+  const divisor = BigInt.fromI32(10).pow(exponent as u8);
+  const price = hashpriceBtcPrice.times(btcUsdPrice).div(divisor);
+
+  // roundId = (hpRoundId << 40) | (btcRoundId & 0xFFFFFFFFFF)
+  const id = (rates.hashpriceBtcId << 40) | (rates.btcUsdId & 0xffffffffff);
+
+  const timestamp = maxBigInt(hashpriceBtcUpdatedAt, btcUsdUpdatedAt).toI64();
+  const minTimestamp = minBigInt(hashpriceBtcUpdatedAt, btcUsdUpdatedAt).toI64();
+
+  // blockNumber = latest of the two contributing blocks
+  const blockNumber = hashpriceBtcBlockNumber.gt(btcUsdBlockNumber)
+    ? hashpriceBtcBlockNumber
+    : btcUsdBlockNumber;
+
+  const hashpriceUsd = new HashpriceUsd(0);
+  hashpriceUsd.id = id;
+  hashpriceUsd.price = price;
+  hashpriceUsd.timestamp = timestamp;
+  hashpriceUsd.minTimestamp = minTimestamp;
+  hashpriceUsd.blockNumber = blockNumber;
+  hashpriceUsd.save();
+
+  log.info("HashpriceUsd derived: id={}, price={}", [id.toString(), hashpriceUsd.price.toString()]);
+}
+
+function maxBigInt(a: BigInt, b: BigInt): BigInt {
+  return a.gt(b) ? a : b;
+}
+
+function minBigInt(a: BigInt, b: BigInt): BigInt {
+  return a.lt(b) ? a : b;
+}
+
+function throwIfNullBigInt(value: BigInt | null): BigInt {
+  if (value === null) {
+    throw new Error("Value is null");
+  }
+  return value;
 }

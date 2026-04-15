@@ -1,5 +1,20 @@
 # Price feed entities
 
+type LatestRates @entity(immutable: false) {
+  id: Int8!
+
+  hashpriceBtcId: Int8
+  hashpriceBtcPrice: BigInt
+  hashpriceBtcUpdatedAt: BigInt
+  hashpriceBtcBlockNumber: BigInt
+
+  btcUsdId: Int8
+  btcUsdPrice: BigInt
+  btcUsdUpdatedAt: BigInt
+  btcUsdBlockNumber: BigInt
+  btcUsdAggregator: Bytes
+}
+
 type HashpriceMeta @entity(immutable: true) {
   id: Int8!
   hashpriceUsdAddress: Bytes!
@@ -9,13 +24,13 @@ type HashpriceMeta @entity(immutable: true) {
   hashpriceBtcDecimals: Int8!
   btcUsdDecimals: Int8!
   startBlock: BigInt!
-  pollingBlockInterval: BigInt!
 }
 
 type HashpriceUsd @entity(timeseries: true) {
   id: Int8!
   price: BigInt!
-  timestamp: Timestamp!
+  timestamp: Timestamp! # maximal timestamp of the two contributing feeds
+  minTimestamp: Timestamp! # minimal timestamp of the two contributing feeds
   blockNumber: BigInt!
 }
 
