@@ -20,19 +20,34 @@ export default defineConfig({
     tests: "tests",
   },
   solidity: {
-    version: "0.8.28",
+    compilers: [
+      {
+        version: "0.8.28",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
+      // chainlink contracts v0.6
+      {
+        version: "0.6.6",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
+    ],
     npmFilesToBuild: [
       "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
       "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol",
       "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV2V3Interface.sol",
+      "@chainlink/contracts-old/src/v0.6/AggregatorProxy.sol",
     ],
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-      },
-    },
   },
   networks: {
     default: {
