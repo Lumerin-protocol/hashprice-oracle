@@ -176,6 +176,15 @@ contract HashpriceBTC is AggregatorV3Interface {
         });
     }
 
+    /// @notice Returns a block entry relative to the current chain tip.
+    /// @dev Useful for reorg handling: iterate from index 0 upward until you find
+    ///      the last confirmed block that matches chain.
+    /// @param index Offset from the tip (0 = tip, 1 = tip-1, etc.)
+    function getBlockFromTip(uint8 index) external view returns (BlockEntry memory) {
+        if (index >= state.chainHeight) revert InsufficientData();
+        return _blockAt(state.chainHeight - index);
+    }
+
     // ─── Block submission ─────────────────────────────────────────────
 
     /// @notice Submit a single block (header + coinbase proof). Steady-state path.

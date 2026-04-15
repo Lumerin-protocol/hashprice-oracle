@@ -267,6 +267,47 @@ export const HashpriceBTCDeployAbi = [
   {
     "inputs": [
       {
+        "internalType": "uint8",
+        "name": "index",
+        "type": "uint8"
+      }
+    ],
+    "name": "getBlockFromTip",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "blockHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "timestamp",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "nBits",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "height",
+            "type": "uint32"
+          }
+        ],
+        "internalType": "struct HashpriceBTC.BlockEntry",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint80",
         "name": "",
         "type": "uint80"

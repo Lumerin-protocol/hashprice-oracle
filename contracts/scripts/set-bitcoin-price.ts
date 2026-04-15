@@ -12,11 +12,11 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("Connecting to BTCPriceOracleMock at:", oracleAddress);
+  console.log("Connecting to BTCUSDMock at:", oracleAddress);
 
   const pc = await viem.getPublicClient();
 
-  const btcPriceOracleMock = await viem.getContractAt("BTCPriceOracleMock", oracleAddress);
+  const btcPriceOracleMock = await viem.getContractAt("BTCUSDMock", oracleAddress);
 
   // Read current price from oracle
   const [, answer] = await btcPriceOracleMock.read.latestRoundData();

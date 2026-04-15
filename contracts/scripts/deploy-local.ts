@@ -86,7 +86,7 @@ async function main() {
   console.log("  Deployed at:", hashpriceBTC.address);
   console.log();
 
-  const btcUsdOracle = await viem.deployContract("BTCPriceOracleMock", []);
+  const btcUsdOracle = await viem.deployContract("BTCUSDMock", []);
   console.log("  Deployed at:", btcUsdOracle.address);
   console.log();
   await btcUsdOracle.write.setPrice([parseUnits("70000", 8)]);

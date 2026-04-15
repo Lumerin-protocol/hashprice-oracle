@@ -6,8 +6,8 @@ export async function deployHashpriceUSDFixture(conn: NetworkConnection) {
   const pc = await viem.getPublicClient();
   const tc = await viem.getTestClient();
 
-  const hashpriceMock = await viem.deployContract("BTCPriceOracleMock", []);
-  const btcUsdMock = await viem.deployContract("BTCPriceOracleMock", []);
+  const hashpriceMock = await viem.deployContract("BTCUSDMock", []);
+  const btcUsdMock = await viem.deployContract("BTCUSDMock", []);
 
   // hashprice ≈ 3200 sats (0.00003200 BTC) with 8 decimals
   await hashpriceMock.write.setPrice([3200n]);

@@ -10,9 +10,9 @@ const {
 } = await network.connect();
 
 describe("HashpriceBTC — AggregatorV3Interface", function () {
-  it("decimals() should return 8", async function () {
+  it("decimals() should return 16", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
-    assert.equal(await contracts.oracle.read.decimals(), 8);
+    assert.equal(await contracts.oracle.read.decimals(), 16);
   });
 
   it('description() should return "The price of 100 TH/s per day in BTC"', async function () {
@@ -86,10 +86,12 @@ describe("HashpriceBTC — latestRoundData()", function () {
     const avgFees = totalFees / BigInt(submittedBlocks.length);
 
     const HASHES_PER_100THS_PER_DAY = 8_640_000_000_000_000_000n;
+    const decimals = await contracts.oracle.read.decimals();
     const difficulty = nBitsToDifficulty(confirmedBlock.nBits);
     const rewardPerBlock = subsidy + avgFees;
     const expectedHashprice =
-      (HASHES_PER_100THS_PER_DAY * rewardPerBlock) / (difficulty * (1n << 32n));
+      (HASHES_PER_100THS_PER_DAY * rewardPerBlock * 10n ** BigInt(decimals - 8)) /
+      (difficulty * (1n << 32n));
 
     const [, answer] = await contracts.oracle.read.latestRoundData();
     assert.equal(answer, expectedHashprice);
@@ -98,7 +100,8 @@ describe("HashpriceBTC — latestRoundData()", function () {
   it("should return hashprice in a plausible range", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     const [, answer] = await contracts.oracle.read.latestRoundData();
-    assert.ok(answer > 100n);
-    assert.ok(answer < 1_000_000n);
+    // answer has 16 decimals: 1e16 = 1 BTC/100TH/day, plausible range ~1e12–1e15
+    assert.ok(answer > 10_000_000_000n);
+    assert.ok(answer < 1_000_000_000_000_000n);
   });
 });

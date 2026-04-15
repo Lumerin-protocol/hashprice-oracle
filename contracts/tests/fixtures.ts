@@ -20,7 +20,7 @@ export async function deployTokenOraclesAndMulticall3(conn: NetworkConnection) {
   const usdcMock = await getIERC20Metadata(_usdcMock.address as `0x${string}`);
 
   // Deploy BTC Price Oracle Mock
-  const btcPriceOracleMock = await viem.deployContract("BTCPriceOracleMock", []);
+  const btcPriceOracleMock = await viem.deployContract("BTCUSDMock", []);
 
   const btcPriceOracleDecimals = await btcPriceOracleMock.read.decimals();
 

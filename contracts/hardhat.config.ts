@@ -41,9 +41,9 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2025-11-23",
-      blockGasLimit: 60_000_000n,
+      blockGasLimit: 100_000_000n,
       loggingEnabled: true,
-      gas: 60_000_000n,
+      gas: "auto",
       gasPrice: "auto",
     },
     localhost: {
