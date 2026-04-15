@@ -48,6 +48,16 @@ export class OracleClient {
     this.log = log.child({ component: "oracle" });
   }
 
+  async getBlockFromTip(index: number): Promise<{ blockHash: `0x${string}`; height: number }> {
+    const entry = await this.pc.readContract({
+      address: this.address,
+      abi: HashpriceBTCAbi,
+      functionName: "getBlockFromTip",
+      args: [index],
+    });
+    return { blockHash: entry.blockHash, height: entry.height };
+  }
+
   async getState(): Promise<OracleState> {
     const [stateResult, chainTipHash] = await Promise.all([
       this.pc.readContract({

@@ -3,6 +3,7 @@ import pino from "pino";
 import { configFromEnv } from "../config.ts";
 import { setSha256 } from "../lib.ts";
 import { runKeeper } from "../core/keeper.ts";
+import { serializeError } from "../../lib/errSerializer.ts";
 
 setSha256((data) => {
   const hash = createHash("sha256").update(data).digest();
@@ -13,10 +14,9 @@ const config = configFromEnv(process.env as Record<string, string>);
 
 const log = pino({
   level: config.logLevel,
-  transport:
-    process.stdout.isTTY
-      ? { target: "pino-pretty", options: { colorize: true } }
-      : undefined,
+  transport: process.stdout.isTTY
+    ? { target: "pino-pretty", options: { colorize: true } }
+    : undefined,
 });
 
 async function loop(): Promise<never> {
@@ -30,7 +30,7 @@ async function loop(): Promise<never> {
         "tick complete",
       );
     } catch (err) {
-      log.error({ err }, "tick failed");
+      log.error({ err: serializeError(err) }, "tick failed");
     }
     await new Promise((resolve) => setTimeout(resolve, config.pollIntervalMs));
   }

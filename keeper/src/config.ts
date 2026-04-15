@@ -10,6 +10,7 @@ export interface KeeperConfig {
   logLevel: string;
   pollIntervalMs: number;
   maxBatchSize: number;
+  btcUsdAddress?: `0x${string}`;
 }
 
 const chainMap: Record<number, Chain> = {
@@ -40,8 +41,9 @@ export function configFromEnv(env: Record<string, string | undefined>): KeeperCo
     chainId: Number(required("CHAIN_ID")),
     hashpriceBtcAddress: required("HASHPRICE_BTC_ADDRESS") as `0x${string}`,
     privateKey: required("PRIVATE_KEY") as `0x${string}`,
-    logLevel: env["LOG_LEVEL"] ?? "info",
-    pollIntervalMs: Number(env["POLL_INTERVAL_MS"] ?? "60000"),
-    maxBatchSize: Number(env["MAX_BATCH_SIZE"] ?? "10"),
+    logLevel: env.LOG_LEVEL ?? "info",
+    pollIntervalMs: Number(env.POLL_INTERVAL_MS ?? "60000"),
+    maxBatchSize: Number(env.MAX_BATCH_SIZE ?? "10"),
+    btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
   };
 }

@@ -34,12 +34,14 @@ export class BitcoinProvider {
     const coinbaseStripped = stripWitness(coinbaseHex);
     const merkleProof = buildMerkleProof(block.tx);
 
-    this.log.debug({ height, hash, proofLen: merkleProof.length }, "fetched block data");
-
     return { height, hash, rawHeader, coinbaseStripped, merkleProof };
   }
 
   async getBlockRange(startHeight: number, count: number): Promise<BlockData[]> {
     return Promise.all(Array.from({ length: count }, (_, i) => this.getBlockData(startHeight + i)));
+  }
+
+  async getBlockHash(height: number): Promise<string> {
+    return this.rpc.getBlockHash(height);
   }
 }
