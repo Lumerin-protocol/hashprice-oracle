@@ -11,12 +11,8 @@ async function main() {
   console.log();
 
   console.log("Deploying HashpriceBTCDeploy...");
-  // const hashpriceBtc = await viem.deployContract("HashpriceBTCDeploy", []);
-  // console.log("Deployed at:", hashpriceBtc.address);
-  const hashpriceBtc = await viem.getContractAt(
-    "HashpriceBTCDeploy",
-    "0x172621a9e23cd3f439232f8cfd84848a9475ddfc",
-  );
+  const hashpriceBtc = await viem.deployContract("HashpriceBTCDeploy", []);
+  console.log("Deployed at:", hashpriceBtc.address);
 
   console.log();
   console.log("On-chain state:");

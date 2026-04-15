@@ -10,9 +10,9 @@ async function main() {
   const env = <
     {
       HASHPRICE_BTC_ADDRESS: `0x${string}`;
-      BTCUSD_ORACLE_ADDRESS: `0x${string}`;
+      BTC_USD_ADDRESS: `0x${string}`;
     }
-  >requireEnvsSet("HASHPRICE_BTC_ADDRESS", "BTCUSD_ORACLE_ADDRESS");
+  >requireEnvsSet("HASHPRICE_BTC_ADDRESS", "BTC_USD_ADDRESS");
 
   const [deployer] = await viem.getWalletClients();
   console.log("Deployer:", deployer.account.address);
@@ -20,7 +20,7 @@ async function main() {
 
   console.log("Upstream oracles:");
   console.log("  HashpriceBTC:", env.HASHPRICE_BTC_ADDRESS);
-  console.log("  BTC/USD:", env.BTCUSD_ORACLE_ADDRESS);
+  console.log("  BTC/USD:", env.BTC_USD_ADDRESS);
   console.log();
 
   const hashpriceBtc = await viem.getContractAt("HashpriceBTC", env.HASHPRICE_BTC_ADDRESS);
@@ -28,7 +28,7 @@ async function main() {
   console.log("  decimals:", await hashpriceBtc.read.decimals());
   console.log("  description:", await hashpriceBtc.read.description());
 
-  const btcUsdOracle = await viem.getContractAt("AggregatorV3Interface", env.BTCUSD_ORACLE_ADDRESS);
+  const btcUsdOracle = await viem.getContractAt("AggregatorV3Interface", env.BTC_USD_ADDRESS);
   const btcUsdDecimals = await btcUsdOracle.read.decimals();
   console.log("BTC/USD oracle details:");
   console.log("  decimals:", btcUsdDecimals);
@@ -37,7 +37,7 @@ async function main() {
   console.log("Deploying HashpriceUSD...");
   const hashpriceUsd = await viem.deployContract("HashpriceUSD", [
     env.HASHPRICE_BTC_ADDRESS,
-    env.BTCUSD_ORACLE_ADDRESS,
+    env.BTC_USD_ADDRESS,
   ]);
   console.log("Deployed at:", hashpriceUsd.address);
 
@@ -50,10 +50,7 @@ async function main() {
   console.log("  btcUsdOracle:", await hashpriceUsd.read.btcUsdOracle());
   console.log();
 
-  await verifyContract(hashpriceUsd.address, [
-    env.HASHPRICE_BTC_ADDRESS,
-    env.BTCUSD_ORACLE_ADDRESS,
-  ]);
+  await verifyContract(hashpriceUsd.address, [env.HASHPRICE_BTC_ADDRESS, env.BTC_USD_ADDRESS]);
 
   console.log("Done!");
 }

@@ -1,48 +1,52 @@
-export const BTCPriceOracleMockAbi = [
+export const AggregatorV2V3InterfaceAbi = [
   {
-    "inputs": [],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
-  },
-  {
+    "anonymous": false,
     "inputs": [
       {
-        "internalType": "address",
-        "name": "owner",
-        "type": "address"
-      }
-    ],
-    "name": "OwnableInvalidOwner",
-    "type": "error"
-  },
-  {
-    "inputs": [
+        "indexed": true,
+        "internalType": "int256",
+        "name": "current",
+        "type": "int256"
+      },
       {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "updatedAt",
+        "type": "uint256"
       }
     ],
-    "name": "OwnableUnauthorizedAccount",
-    "type": "error"
+    "name": "AnswerUpdated",
+    "type": "event"
   },
   {
     "anonymous": false,
     "inputs": [
       {
         "indexed": true,
-        "internalType": "address",
-        "name": "previousOwner",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
       },
       {
         "indexed": true,
         "internalType": "address",
-        "name": "newOwner",
+        "name": "startedBy",
         "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "startedAt",
+        "type": "uint256"
       }
     ],
-    "name": "OwnershipTransferred",
+    "name": "NewRound",
     "type": "event"
   },
   {
@@ -74,8 +78,27 @@ export const BTCPriceOracleMockAbi = [
   {
     "inputs": [
       {
-        "internalType": "uint80",
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAnswer",
+    "outputs": [
+      {
+        "internalType": "int256",
         "name": "",
+        "type": "int256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint80",
+        "name": "_roundId",
         "type": "uint80"
       }
     ],
@@ -83,31 +106,76 @@ export const BTCPriceOracleMockAbi = [
     "outputs": [
       {
         "internalType": "uint80",
-        "name": "",
+        "name": "roundId",
         "type": "uint80"
       },
       {
         "internalType": "int256",
-        "name": "",
+        "name": "answer",
         "type": "int256"
       },
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "startedAt",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "updatedAt",
         "type": "uint256"
       },
       {
         "internalType": "uint80",
-        "name": "",
+        "name": "answeredInRound",
         "type": "uint80"
       }
     ],
-    "stateMutability": "pure",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "roundId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getTimestamp",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "latestAnswer",
+    "outputs": [
+      {
+        "internalType": "int256",
+        "name": "",
+        "type": "int256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "latestRound",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -145,94 +213,15 @@ export const BTCPriceOracleMockAbi = [
   },
   {
     "inputs": [],
-    "name": "owner",
+    "name": "latestTimestamp",
     "outputs": [
       {
-        "internalType": "address",
+        "internalType": "uint256",
         "name": "",
-        "type": "address"
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "renounceOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint8",
-        "name": "newDecimals",
-        "type": "uint8"
-      }
-    ],
-    "name": "setDecimals",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "int256",
-        "name": "price",
-        "type": "int256"
-      }
-    ],
-    "name": "setPrice",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint80",
-        "name": "roundId",
-        "type": "uint80"
-      },
-      {
-        "internalType": "int256",
-        "name": "answer",
-        "type": "int256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "startedAt",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "updatedAt",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint80",
-        "name": "answeredInRound",
-        "type": "uint80"
-      }
-    ],
-    "name": "setRound",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "newOwner",
-        "type": "address"
-      }
-    ],
-    "name": "transferOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

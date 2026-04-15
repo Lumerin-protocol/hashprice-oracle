@@ -25,6 +25,7 @@ export default defineConfig({
       "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
       "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol",
+      "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV2V3Interface.sol",
     ],
     settings: {
       optimizer: {
@@ -51,7 +52,7 @@ export default defineConfig({
     },
     production: {
       type: "http",
-      url: configVariable("ETH_NODE_ADDRESS"),
+      url: configVariable("ETHEREUM_RPC_URL"),
       accounts: [configVariable("DEPLOYER_PRIVATEKEY")],
       gasPrice: "auto",
       gas: "auto",
