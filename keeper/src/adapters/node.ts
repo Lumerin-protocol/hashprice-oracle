@@ -25,10 +25,7 @@ async function loop(): Promise<never> {
   while (true) {
     try {
       const result = await runKeeper(config, log);
-      log.info(
-        { blocksSubmitted: result.blocksSubmitted, oracleHeight: result.oracleHeight },
-        "HashpriceBTC oracle is up to date",
-      );
+      log.info({ oracleHeight: result.oracleHeight }, "HashpriceBTC oracle is up to date");
     } catch (err) {
       log.error({ err: serializeError(err) }, "tick failed");
     }

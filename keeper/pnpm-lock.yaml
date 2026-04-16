@@ -15,9 +15,6 @@ importers:
         specifier: ^2.42.1
         version: 2.47.12(typescript@5.9.3)
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20250410.0
-        version: 4.20260410.1
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2
@@ -35,9 +32,6 @@ packages:
 
   '@adraffy/ens-normalize@1.11.1':
     resolution: {integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==}
-
-  '@cloudflare/workers-types@4.20260410.1':
-    resolution: {integrity: sha512-dPZT4aXxwhGHFhWA9iZhWVfFoO8g9exiLzeaS8y43Dw0Sard6Gb3o5LJjReav3ejHbQLHUfGEiZsRPGW8qmgMg==}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -414,8 +408,6 @@ packages:
 snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
-
-  '@cloudflare/workers-types@4.20260410.1': {}
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true

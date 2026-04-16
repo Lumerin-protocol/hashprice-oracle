@@ -121,7 +121,7 @@ export class OracleClient {
     });
 
     const hash = await this.wc.writeContract(request);
-    this.log.info({ txHash: hash, blockCount: blocks.length }, "submitBlocks tx sent");
+    this.log.debug({ txHash: hash, blockCount: blocks.length }, "submitBlocks tx sent");
 
     const receipt = await this.pc.waitForTransactionReceipt({ hash });
 
