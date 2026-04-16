@@ -26,9 +26,6 @@ dataSources:
       hashpriceStartBlock:
         type: BigInt
         data: "${HASHPRICE_START_BLOCK}"
-      hashpricePollingBlockInterval:
-        type: BigInt
-        data: "${HASHPRICE_POLLING_BLOCK_INTERVAL}"
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
