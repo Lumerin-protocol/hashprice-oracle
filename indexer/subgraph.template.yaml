@@ -55,6 +55,8 @@ dataSources:
       eventHandlers:
         - handler: handleHashpriceUpdated
           event: "HashpriceUpdated(indexed uint32,int256,uint256)"
+          calls:
+            aggregator: AggregatorProxy[${BTC_USD_ADDRESS}].aggregator()
 
 templates:
   - kind: ethereum

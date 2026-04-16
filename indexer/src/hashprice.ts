@@ -102,13 +102,10 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
   rates.hashpriceBtcBlockNumber = event.block.number;
   rates.save();
 
-  const meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (!meta) {
-    log.error("HashpriceMeta not found", []);
-    return;
-  }
+  const context = dataSource.context();
+  const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
 
-  const proxy = AggregatorProxy.bind(Address.fromBytes(meta.btcUsdAddress));
+  const proxy = AggregatorProxy.bind(btcUsdAddress);
   const aggResult = proxy.try_aggregator();
   if (!aggResult.reverted) {
     const storedAgg = rates.btcUsdAggregator;
@@ -118,6 +115,12 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
       rates.save();
       log.info("BtcUsd aggregator rotated: new aggregator {}", [aggResult.value.toHexString()]);
     }
+  }
+
+  const meta = HashpriceMeta.load(LATEST_RATES_ID);
+  if (!meta) {
+    log.error("HashpriceMeta not found", []);
+    return;
   }
 
   deriveHashpriceUsd(rates, meta);
