@@ -49,7 +49,10 @@ async function resolveAncestor(
 
     if (toDisplayHash(oracleEntry.blockHash) === btcHash) {
       if (i > 0) {
-        log.warn({ reorgDepth: i, ancestorHeight: height }, "reorg detected, found common ancestor");
+        log.warn(
+          { reorgDepth: i, ancestorHeight: height },
+          "reorg detected, found common ancestor",
+        );
       }
       return { ancestorHeight: height, isReorg: i > 0 };
     }
@@ -78,62 +81,53 @@ export async function runKeeper(config: KeeperConfig, log: Logger): Promise<Keep
     await updateBTCUSDMock(config, log);
   }
 
-  const [oracleState, btcTip] = await Promise.all([oracle.getState(), btc.getTipHeight()]);
+  for (;;) {
+    const [oracleState, btcTip] = await Promise.all([oracle.getState(), btc.getTipHeight()]);
+    const { ancestorHeight, isReorg } = await resolveAncestor(
+      oracle,
+      btc,
+      oracleState.chainHeight,
+      log,
+    );
 
-  const { ancestorHeight, isReorg } = await resolveAncestor(
-    oracle,
-    btc,
-    oracleState.chainHeight,
-    log,
-  );
+    const lag = btcTip - ancestorHeight;
 
-  const lag = btcTip - ancestorHeight;
+    if (!isReorg && lag <= 0) {
+      return {
+        oracleHeight: oracleState.chainHeight,
+        bitcoinTipHeight: btcTip,
+        blocksSubmitted: 0,
+        txHashes: [],
+      };
+    }
+    log.info(
+      {
+        oracleHeight: oracleState.chainHeight,
+        ancestorHeight,
+        isReorg,
+        bitcoinTip: btcTip,
+        lag,
+      },
+      "oracle is behind the Bitcoin chain",
+    );
 
-  log.info(
-    {
-      oracleHeight: oracleState.chainHeight,
-      ancestorHeight,
-      isReorg,
-      bitcoinTip: btcTip,
-      lag,
-    },
-    "chain state comparison",
-  );
+    const count = Math.min(lag, config.maxBatchSize);
+    const startHeight = ancestorHeight + 1;
 
-  if (!isReorg && lag <= 0) {
-    log.info("oracle is up to date");
-    return {
-      oracleHeight: oracleState.chainHeight,
-      bitcoinTipHeight: btcTip,
-      blocksSubmitted: 0,
-      txHashes: [],
-    };
+    log.info({ startHeight, count, isReorg }, "fetching Bitcoin blocks");
+    const blocks = await btc.getBlockRange(startHeight, count);
+
+    const prepared = blocks.map((b) => oracle.prepareBlock(b));
+    const receipt = await oracle.submitBlocks(ancestorHeight, prepared);
+
+    log.info(
+      {
+        txHash: receipt.transactionHash,
+        gasUsed: receipt.gasUsed.toString(),
+        blocksSubmitted: count,
+        remaining: btcTip - oracleState.chainHeight - count,
+      },
+      "block submission complete",
+    );
   }
-
-  const count = Math.min(lag, config.maxBatchSize);
-  const startHeight = ancestorHeight + 1;
-
-  log.info({ startHeight, count, isReorg }, "fetching Bitcoin blocks");
-  const blocks = await btc.getBlockRange(startHeight, count);
-
-  const prepared = blocks.map((b) => oracle.prepareBlock(b));
-  const txHash = await oracle.submitBlocks(ancestorHeight, prepared);
-  const txHashes = [txHash];
-
-  const newState = await oracle.getState();
-  log.info(
-    {
-      newHeight: newState.chainHeight,
-      blocksSubmitted: count,
-      remaining: btcTip - newState.chainHeight,
-    },
-    "submission complete",
-  );
-
-  return {
-    oracleHeight: newState.chainHeight,
-    bitcoinTipHeight: btcTip,
-    blocksSubmitted: count,
-    txHashes,
-  };
 }

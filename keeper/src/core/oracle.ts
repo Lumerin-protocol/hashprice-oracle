@@ -3,6 +3,7 @@ import {
   type Account,
   type Chain,
   type PublicClient,
+  type TransactionReceipt,
   type Transport,
   type WalletClient,
   createPublicClient,
@@ -100,7 +101,7 @@ export class OracleClient {
     return hash;
   }
 
-  async submitBlocks(ancestorHeight: number, blocks: PreparedBlock[]): Promise<`0x${string}`> {
+  async submitBlocks(ancestorHeight: number, blocks: PreparedBlock[]): Promise<TransactionReceipt> {
     let headers = "";
     const coinbaseTxs: `0x${string}`[] = [];
     const merkleProofs: `0x${string}`[][] = [];
@@ -123,11 +124,8 @@ export class OracleClient {
     this.log.info({ txHash: hash, blockCount: blocks.length }, "submitBlocks tx sent");
 
     const receipt = await this.pc.waitForTransactionReceipt({ hash });
-    this.log.info(
-      { txHash: hash, gasUsed: receipt.gasUsed.toString(), status: receipt.status },
-      "submitBlocks tx confirmed",
-    );
-    return hash;
+
+    return receipt;
   }
 
   prepareBlock(raw: {

@@ -15,8 +15,7 @@ import { BTCUSDMockAbi } from "../abi/BTCUSDMock.ts";
 import type { KeeperConfig } from "../config.ts";
 import { getChain } from "../config.ts";
 
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
+const COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
 
 async function fetchBTCUSDPrice(): Promise<number> {
   const response = await fetch(COINGECKO_URL);
@@ -61,7 +60,7 @@ export async function updateBTCUSDMock(config: KeeperConfig, log: Logger): Promi
     pc.readContract({ address, abi: BTCUSDMockAbi, functionName: "decimals" }),
   ]);
 
-  child.info({ exchangeRate }, "fetched BTC/USD exchange rate from CoinGecko");
+  child.debug({ exchangeRate }, "fetched BTC/USD exchange rate from CoinGecko");
 
   const priceBigInt = parseUnits(exchangeRate.toString(), decimals);
 
@@ -72,7 +71,7 @@ export async function updateBTCUSDMock(config: KeeperConfig, log: Logger): Promi
   });
 
   if (latestRoundData[1] === priceBigInt) {
-    child.info("BTC/USD price is already up to date");
+    child.info({ exchangeRate }, "BTC/USD price is up to date");
     return;
   }
 
@@ -85,11 +84,10 @@ export async function updateBTCUSDMock(config: KeeperConfig, log: Logger): Promi
   });
 
   const txHash = await wc.writeContract(request);
-  child.info({ txHash }, "setPrice tx sent");
 
   const receipt = await pc.waitForTransactionReceipt({ hash: txHash });
   child.info(
-    { txHash, gasUsed: receipt.gasUsed.toString(), status: receipt.status },
+    { txHash, gasUsed: receipt.gasUsed.toString(), status: receipt.status, exchangeRate },
     "BTC/USD mock price updated",
   );
 }
