@@ -94,7 +94,7 @@ jobs:
           echo "📦 Building Lambda deployment package with esbuild..."
 
           # Run the build script which creates dist/index.zip
-          pnpm build
+          pnpm build:lambda
 
           echo "✅ Package created: dist/index.zip"
           ls -lh dist/index.zip
