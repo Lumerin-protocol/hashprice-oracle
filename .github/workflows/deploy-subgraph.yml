@@ -142,7 +142,6 @@ jobs:
           HASHPRICE_USD_ADDRESS: ${{ vars.HASHPRICE_USD_ADDRESS }}
           BTC_USD_ADDRESS: ${{ vars.BTC_USD_ADDRESS }}
           HASHPRICE_START_BLOCK: ${{ vars.HASHPRICE_START_BLOCK }}
-          HASHPRICE_POLLING_BLOCK_INTERVAL: ${{ vars.HASHPRICE_POLLING_BLOCK_INTERVAL }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             echo "ℹ️ PR build — using .env.example dummy values"
@@ -154,6 +153,8 @@ jobs:
           echo "   BTC/USD Feed:        ${BTC_USD_ADDRESS}"
           pnpm prepare:env
           echo "✅ Configuration ready"
+          echo "--- subgraph.yaml ---"
+          cat subgraph.yaml
 
       - name: Generate code and build
         working-directory: ./indexer
