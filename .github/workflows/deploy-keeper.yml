@@ -70,6 +70,11 @@ jobs:
           echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
           echo "lambda_function=futures-oracle-update-v2" >> $GITHUB_OUTPUT
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: keeper/package.json
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

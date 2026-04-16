@@ -88,12 +88,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: indexer/package.json
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "yarn"
-          cache-dependency-path: indexer/yarn.lock
+          cache: "pnpm"
+          cache-dependency-path: indexer/pnpm-lock.yaml
 
       - name: Set environment outputs
         id: env
@@ -127,7 +132,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./indexer
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Prepare subgraph configuration
         working-directory: ./indexer
@@ -144,14 +149,14 @@ jobs:
           echo "   Network: ${NETWORK}"
           echo "   Hashrate Oracle: ${HASHRATE_ORACLE_ADDRESS} (block ${START_BLOCK_HASHRATE_ORACLE})"
           echo "   BTC Oracle:      ${BTC_TOKEN_ORACLE_ADDRESS} (block ${START_BLOCK_BTC_TOKEN_ORACLE})"
-          yarn prepare:env
+          pnpm prepare:env
           echo "✅ Configuration ready"
 
       - name: Generate code and build
         working-directory: ./indexer
         run: |
-          yarn codegen
-          yarn build
+          pnpm codegen
+          pnpm build
           echo "✅ Build complete"
 
       - name: Upload build artifacts
