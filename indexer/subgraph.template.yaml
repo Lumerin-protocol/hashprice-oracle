@@ -7,52 +7,79 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: HashrateOracle
+    name: HashpriceBTC
     network: "${NETWORK}"
     source:
-      address: "${HASHRATE_ORACLE_ADDRESS}"
-      startBlock: ${START_BLOCK_HASHRATE_ORACLE}
-      abi: HashrateOracle
+      address: "${HASHPRICE_BTC_ADDRESS}"
+      startBlock: ${HASHPRICE_START_BLOCK}
+      abi: HashpriceBTC
+    context:
+      hashpriceUsdAddress:
+        type: String
+        data: "${HASHPRICE_USD_ADDRESS}"
+      btcUsdAddress:
+        type: String
+        data: "${BTC_USD_ADDRESS}"
+      hashpriceBtcAddress:
+        type: String
+        data: "${HASHPRICE_BTC_ADDRESS}"
+      hashpriceStartBlock:
+        type: BigInt
+        data: "${HASHPRICE_START_BLOCK}"
+      hashpricePollingBlockInterval:
+        type: BigInt
+        data: "${HASHPRICE_POLLING_BLOCK_INTERVAL}"
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
+      file: ./src/hashprice.ts
       entities:
-        - HashrateIndex
+        - HashpriceBtc
+        - HashpriceUsd
+        - HashpriceMeta
+        - LatestRates
       abis:
-        - name: HashrateOracle
-          file: ../contracts/abi/HashrateOracle.json
-      eventHandlers:
-        - event: Initialized(uint64)
-          handler: handleInitialized
-      blockHandlers:
-        - handler: handleBlock
-          filter:
-            kind: polling
-            every: ${HASHRATE_ORACLE_POLLING_BLOCK_INTERVAL}
-      file: ./src/hashrate-oracle.ts
-  - kind: ethereum
-    name: BtcTokenOracle
-    network: "${NETWORK}"
-    source:
-      address: "${BTC_TOKEN_ORACLE_ADDRESS}"
-      startBlock: ${START_BLOCK_BTC_TOKEN_ORACLE}
-      abi: AggregatorV3Interface
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.9
-      language: wasm/assemblyscript
-      entities:
-        - BtcPriceIndex
-      abis:
+        - name: HashpriceBTC
+          file: ../contracts/abi/HashpriceBTC.json
         - name: AggregatorV3Interface
           file: ../contracts/abi/AggregatorV3Interface.json
+        - name: AggregatorProxy
+          file: ../contracts/abi/AggregatorProxy.json
+        - name: AggregatorV2V3Interface
+          file: ../contracts/abi/AggregatorV2V3Interface.json
       blockHandlers:
-        - handler: handleBlock
+        - handler: initFeeds
           filter:
-            kind: polling
-            every: ${BTC_TOKEN_ORACLE_POLLING_BLOCK_INTERVAL}
-      file: ./src/btc-token-oracle.ts
+            kind: once
+      eventHandlers:
+        - handler: handleHashpriceUpdated
+          event: "HashpriceUpdated(indexed uint32,int256,uint256)"
+          calls:
+            aggregator: AggregatorProxy[${BTC_USD_ADDRESS}].aggregator()
+
+templates:
+  - kind: ethereum
+    name: ChainlinkAggregator
+    network: "${NETWORK}"
+    source:
+      abi: AggregatorV2V3Interface
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - BtcUsd
+        - HashpriceUsd
+        - LatestRates
+      abis:
+        - name: AggregatorV2V3Interface
+          file: ../contracts/abi/AggregatorV2V3Interface.json
+      eventHandlers:
+        - handler: handleAnswerUpdated
+          event: "AnswerUpdated(indexed int256,indexed uint256,uint256)"
+      file: ./src/hashprice.ts
+
 # Required when deploying with `goldsky subgraph deploy ... --graft-from <name>/<version>`
 features:
   - grafting
