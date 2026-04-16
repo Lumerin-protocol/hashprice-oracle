@@ -114,7 +114,7 @@ export async function runKeeper(config: KeeperConfig, log: Logger): Promise<Keep
     const count = Math.min(lag, config.maxBatchSize);
     const startHeight = ancestorHeight + 1;
 
-    log.info({ startHeight, count, isReorg }, "fetching Bitcoin blocks");
+    log.debug({ startHeight, count, isReorg }, "fetching Bitcoin blocks");
     const blocks = await btc.getBlockRange(startHeight, count);
 
     const prepared = blocks.map((b) => oracle.prepareBlock(b));
