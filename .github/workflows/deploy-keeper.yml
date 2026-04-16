@@ -1,4 +1,4 @@
-name: Deploy Oracle Update Lambda Function
+name: Deploy hashprice keeper
 
 on:
   push:
@@ -6,14 +6,14 @@ on:
       - dev
       - stg
       - main
-      - 'cicd/**'
+      - "cicd/**"
     paths:
-      - 'oracle-update/**'
-      - '.github/workflows/deploy-oracle-update.yml'
+      - "keeper/**"
+      - ".github/workflows/deploy-keeper.yml"
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Target environment (dev=DEV, stg=STG, main=LMN/PROD)'
+        description: "Target environment (dev=DEV, stg=STG, main=LMN/PROD)"
         required: true
         type: choice
         options:
@@ -22,8 +22,8 @@ on:
           - main
 
 permissions:
-  id-token: write   # Required for OIDC
-  contents: write   # Required for creating git tags on main
+  id-token: write # Required for OIDC
+  contents: write # Required for creating git tags on main
 
 env:
   SERVICE_NAME: oracle-lambda-update
@@ -39,7 +39,7 @@ jobs:
       lambda_function: ${{ steps.env_config.outputs.lambda_function }}
       aws_region: ${{ steps.env_config.outputs.aws_region }}
       is_cicd_branch: ${{ steps.gen_tag.outputs.is_cicd_branch }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,8 +51,8 @@ jobs:
         id: gen_tag
         uses: ./.github/actions/gen-tag
         with:
-          component: oracle-update
-          major_version: '3'
+          component: keeper
+          major_version: "3"
           environment_override: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || '' }}
 
       - name: Environment config
@@ -65,24 +65,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'yarn'
-          cache-dependency-path: oracle-update/yarn.lock
+          node-version: "24"
+          cache: "pnpm"
+          cache-dependency-path: keeper/pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: ./oracle-update
+        working-directory: ./keeper
         run: |
           echo "📦 Installing dependencies..."
-          yarn install --frozen-lockfile
+          pnpm install --frozen-lockfile
 
       - name: Build Lambda package
-        working-directory: ./oracle-update
+        working-directory: ./keeper
         run: |
           echo "📦 Building Lambda deployment package with esbuild..."
-          
+
           # Run the build script which creates dist/index.zip
-          yarn build
-          
+          pnpm build
+
           echo "✅ Package created: dist/index.zip"
           ls -lh dist/index.zip
 
@@ -90,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lambda-package
-          path: oracle-update/dist/index.zip
+          path: keeper/dist/index.zip
           retention-days: 1
 
       - name: CI/CD test summary
@@ -111,7 +111,7 @@ jobs:
     if: needs.build.outputs.is_cicd_branch != 'true'
     outputs:
       lambda_version: ${{ steps.publish.outputs.lambda_version }}
-    
+
     steps:
       - name: Download Lambda package
         uses: actions/download-artifact@v4
@@ -130,13 +130,37 @@ jobs:
           echo "🚀 Deploying to ${{ needs.build.outputs.environment }} environment"
           echo "   Function: ${{ needs.build.outputs.lambda_function }}"
           echo "   Version: ${{ needs.build.outputs.version }}"
-          
+
           aws lambda update-function-code \
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --zip-file fileb://index.zip \
             --region ${{ needs.build.outputs.aws_region }}
-          
+
           echo "✅ Code uploaded successfully"
+
+      - name: Print Lambda environment variable keys
+        run: |
+          aws lambda get-function-configuration \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --region ${{ needs.build.outputs.aws_region }} \
+            --query 'Environment.Variables' \
+            | jq 'keys'
+
+      - name: Update Lambda environment variables
+        run: |
+          aws lambda update-function-configuration \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --region ${{ needs.build.outputs.aws_region }} \
+            --environment "Variables={
+              BITCOIN_RPC_URL=${{ secrets.BITCOIN_RPC_URL }},
+              ETHEREUM_RPC_URL=${{ secrets.ETHEREUM_RPC_URL }},
+              CHAIN_ID=${{ vars.CHAIN_ID }},
+              HASHPRICE_BTC_ADDRESS=${{ vars.HASHPRICE_BTC_ADDRESS }},
+              PRIVATE_KEY=${{ secrets.PRIVATE_KEY }},
+              LOG_LEVEL=${{ vars.LOG_LEVEL }},
+              MAX_BATCH_SIZE=${{ vars.MAX_BATCH_SIZE }},
+            }"
+          echo "✅ Environment variables updated"
 
       - name: Wait for function to update
         run: |
@@ -144,7 +168,7 @@ jobs:
           aws lambda wait function-updated \
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --region ${{ needs.build.outputs.aws_region }}
-          
+
           echo "✅ Function updated successfully"
 
       - name: Publish new version
@@ -155,7 +179,7 @@ jobs:
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --description "Version ${{ needs.build.outputs.version }} - Deployed by GitHub Actions" \
             --region ${{ needs.build.outputs.aws_region }})
-          
+
           LAMBDA_VERSION=$(echo $VERSION_INFO | jq -r '.Version')
           echo "lambda_version=${LAMBDA_VERSION}" >> $GITHUB_OUTPUT
           echo "✅ Published as version: ${LAMBDA_VERSION}"
@@ -165,7 +189,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, deploy]
     if: needs.build.outputs.is_cicd_branch != 'true'
-    
+
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -182,7 +206,7 @@ jobs:
             --invocation-type DryRun \
             --region ${{ needs.build.outputs.aws_region }} \
             response.json || true
-          
+
           echo "✅ Lambda function is responding"
 
   cleanup:
@@ -190,7 +214,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, deploy, verify]
     if: always() && needs.build.outputs.is_cicd_branch != 'true'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -208,7 +232,7 @@ jobs:
         run: |
           TAG_NAME="${{ needs.build.outputs.tag }}"
           echo "🏷️ Creating tag after successful deployment: $TAG_NAME"
-          
+
           # Check if tag already exists
           if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
             echo "⚠️ Tag $TAG_NAME already exists, skipping tag creation"
@@ -249,13 +273,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, deploy, verify, cleanup]
     if: always() && (needs.build.result == 'success')
-    
+
     steps:
       - name: Checkout (for composite action)
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      
+
       - name: Determine status
         id: status
         run: |
@@ -270,15 +294,14 @@ jobs:
           else
             echo "status=skipped" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Send Slack notification
         uses: ./.github/actions/slack-notify
         with:
           status: ${{ steps.status.outputs.status }}
           environment: ${{ needs.build.outputs.environment }}
-          service_name: 'Futures Oracle Update Lambda'
+          service_name: "Futures Oracle Update Lambda"
           version: ${{ needs.build.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: '${{ needs.build.outputs.is_cicd_branch == ''true'' && ''*Mode:* CI/CD Test (build only, no deploy)'' || format(''*Lambda Function:* `{0}` • *Lambda Version:* `{1}`'', needs.build.outputs.lambda_function, needs.deploy.outputs.lambda_version) }}'
-
+          additional_info: "${{ needs.build.outputs.is_cicd_branch == 'true' && '*Mode:* CI/CD Test (build only, no deploy)' || format('*Lambda Function:* `{0}` • *Lambda Version:* `{1}`', needs.build.outputs.lambda_function, needs.deploy.outputs.lambda_version) }}"

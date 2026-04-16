@@ -1,4 +1,4 @@
-name: Update Hashrate and BTC Token Oracles
+name: Deploy hashprice subgraph
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "cicd/**"
     paths:
       - "indexer/**"
-      - ".github/workflows/deploy-hr-btc-oracles.yml"
+      - ".github/workflows/deploy-subgraph.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -441,7 +441,7 @@ jobs:
         with:
           status: ${{ steps.status.outputs.status }}
           environment: ${{ needs.setup.outputs.environment }}
-          service_name: "Hashrate and BTC Graph Oracles"
+          service_name: "Hashprice Subgraph"
           version: ${{ needs.setup.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
