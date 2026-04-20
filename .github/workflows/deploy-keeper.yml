@@ -155,45 +155,18 @@ jobs:
 
       - name: Wait for code update to complete
         run: |
-          echo "⏳ Waiting for Lambda code update to finish before updating configuration..."
+          echo "⏳ Waiting for Lambda code update to finish..."
           aws lambda wait function-updated \
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --region ${{ needs.build.outputs.aws_region }}
 
           echo "✅ Code update complete"
 
-      - name: Print Lambda environment variable keys
-        run: |
-          aws lambda get-function-configuration \
-            --function-name ${{ needs.build.outputs.lambda_function }} \
-            --region ${{ needs.build.outputs.aws_region }} \
-            --query 'Environment.Variables' \
-            | jq 'keys'
-
-      - name: Update Lambda environment variables
-        run: |
-          aws lambda update-function-configuration \
-            --function-name ${{ needs.build.outputs.lambda_function }} \
-            --region ${{ needs.build.outputs.aws_region }} \
-            --environment "Variables={
-              BITCOIN_RPC_URL=${{ secrets.BITCOIN_RPC_URL }},
-              ETHEREUM_RPC_URL=${{ secrets.ETHEREUM_RPC_URL }},
-              CHAIN_ID=${{ vars.CHAIN_ID }},
-              HASHPRICE_BTC_ADDRESS=${{ vars.HASHPRICE_BTC_ADDRESS }},
-              PRIVATE_KEY=${{ secrets.PRIVATE_KEY }},
-              LOG_LEVEL=${{ vars.LOG_LEVEL }},
-              MAX_BATCH_SIZE=${{ vars.MAX_BATCH_SIZE }},
-            }"
-          echo "✅ Environment variables updated"
-
-      - name: Wait for configuration update to complete
-        run: |
-          echo "⏳ Waiting for Lambda configuration update to finish..."
-          aws lambda wait function-updated \
-            --function-name ${{ needs.build.outputs.lambda_function }} \
-            --region ${{ needs.build.outputs.aws_region }}
-
-          echo "✅ Function updated successfully"
+      # Lambda configuration (runtime, env vars, IAM, schedule) is owned by
+      # Terraform — see .bedrock/.terragrunt/05_oracle_lambda.tf. The GitHub
+      # Actions IAM role intentionally does NOT have UpdateFunctionConfiguration.
+      # If a new env var is needed, add it to the TF environment map and apply,
+      # then push code.
 
       - name: Publish new version
         id: publish

@@ -6,10 +6,15 @@
 # Spot indexer stays on Arbitrum Sepolia — use spot_indexer_contracts + spot_eth_rpc_url (secret).
 wallets = {
   clone_factory_address   = "0x998135c509b64083cd27ed976c1bcda35ab7a40b"
-  hashrate_oracle_address = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
+  hashrate_oracle_address = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f" # legacy — still used by spot_indexer
   futures_address         = "0x56d8d4a03a0f34b93b86e0b7941aff29178d0479"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x614dcafa33af0705c7b4a37667ef511f400f36d0" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
+  btcusd_oracle_address   = "0x614dcafa33af0705c7b4a37667ef511f400f36d0" # legacy BTCUSDMock (old keeper)
+
+  # Trustless oracle (Base Sepolia). Values mirror GitHub env `dev` vars as of 2026-04-16.
+  hashprice_btc_address = "0x6f501d6ea22c910e657ad3650f45a76dc525e387" # HashpriceBTC SPV contract
+  hashprice_usd_address = "0x865c4fb61b85cda3d39a94d4e8de6962f7626c4d" # HashpriceUSD aggregator
+  btc_usd_address       = "0x37b5e07c59238ad3bb11ac27129387a67f3340b6" # BTCUSDMock (dev only — keeper refreshes from CoinGecko)
 }
 
 # Spot marketplace / proxy-indexer (Arbitrum Sepolia) — must match spot-marketplace .bedrock/02-dev
@@ -44,12 +49,14 @@ spot_indexer = {
 }
 
 oracle_lambda = {
-  create       = true
-  protect      = false
-  svc_name     = "oracle-lambda"
-  chain_id     = "84532"
-  log_level    = "info"
-  job_interval = "5"
+  create         = true
+  protect        = false
+  svc_name       = "hashprice-keeper"
+  chain_id       = "84532" # Base Sepolia
+  log_level      = "info"
+  job_interval   = "5" # minutes — EventBridge schedule
+  keeper_max_batch_size = 10  # blocks per submitBlocks tx
+  keeper_confirmations  = 4   # L2 confirmations to wait after each tx
 }
 
 ########################################

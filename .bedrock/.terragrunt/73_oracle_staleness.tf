@@ -39,11 +39,13 @@ resource "aws_lambda_function" "oracle_staleness" {
 
   environment {
     variables = {
-      HASHRATE_ORACLE_ADDRESS = var.wallets.hashrate_oracle_address
-      ETH_RPC_URL             = var.oracle_lambda_secrets.eth_rpc_url
-      CW_NAMESPACE            = local.monitoring_namespace
-      ENVIRONMENT             = local.env_short
-      MAX_AGE_MINUTES         = tostring(var.alarm_thresholds.oracle_stale_threshold_minutes)
+      # HashpriceBTC exposes the Chainlink AggregatorV3 interface
+      # (latestRoundData / decimals) — see 73_oracle_staleness.py.
+      HASHPRICE_BTC_ADDRESS = var.wallets.hashprice_btc_address
+      ETH_RPC_URL           = var.oracle_lambda_secrets.eth_rpc_url
+      CW_NAMESPACE          = local.monitoring_namespace
+      ENVIRONMENT           = local.env_short
+      MAX_AGE_MINUTES       = tostring(var.alarm_thresholds.oracle_stale_threshold_minutes)
     }
   }
 

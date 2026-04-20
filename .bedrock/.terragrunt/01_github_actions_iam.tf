@@ -70,8 +70,14 @@ resource "aws_iam_role" "github_actions_hashprice_oracle" {
 }
 
 ################################################################################
-# LAMBDA UPDATE POLICY (for deploying Oracle Update Lambda via GitHub Actions)
+# LAMBDA UPDATE POLICY (for deploying Hashprice Keeper Lambda via GitHub Actions)
 ################################################################################
+# Scope: code-only deploys. GitHub Actions can upload a new zip and publish
+# a version, but NOT mutate the function's configuration (env vars, runtime,
+# memory, etc.). Configuration is Terraform-owned — see 05_oracle_lambda.tf.
+#
+# Do NOT add lambda:UpdateFunctionConfiguration here. If a new env var is
+# needed, add it to the TF environment map and apply, then push code.
 resource "aws_iam_role_policy" "github_lambda_update_oracle" {
   count = var.oracle_lambda.create ? 1 : 0
   name  = "lambda-update-futures-oracle"
@@ -89,14 +95,6 @@ resource "aws_iam_role_policy" "github_lambda_update_oracle" {
           "lambda:GetFunctionConfiguration",
           "lambda:PublishVersion",
           "lambda:InvokeFunction" # Allow testing the Lambda function
-        ]
-        Resource = aws_lambda_function.oracle_update[count.index].arn
-      },
-      {
-        Sid    = "UpdateFuturesOracleLambdaEnvironment"
-        Effect = "Allow"
-        Action = [
-          "lambda:UpdateFunctionConfiguration"
         ]
         Resource = aws_lambda_function.oracle_update[count.index].arn
       }

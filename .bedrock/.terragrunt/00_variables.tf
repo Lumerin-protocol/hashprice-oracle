@@ -6,10 +6,14 @@ variable "wallets" {
   type        = map(string)
   default = {
     clone_factory_address   = ""
-    hashrate_oracle_address = ""
+    hashrate_oracle_address = "" # legacy (pre-trustless oracle) — still consumed by spot_indexer
     futures_address         = ""
     multicall_address       = ""
-    btcusd_oracle_address   = ""
+    btcusd_oracle_address   = "" # legacy — superseded by btc_usd_address for the new keeper
+    # New trustless-oracle addresses (HashpriceBTC SPV + HashpriceUSD aggregator + BTC/USD feed)
+    hashprice_btc_address = ""
+    hashprice_usd_address = ""
+    btc_usd_address       = ""
   }
 }
 
@@ -72,8 +76,18 @@ variable "admin_api_key" {
 ################################################################################
 # Oracle Lambda Variables
 ################################################################################
+# Expected keys:
+#   create        (bool)   — create the Lambda and its schedule
+#   protect       (bool)   — prevent accidental destroy
+#   svc_name      (string) — friendly name / log tag
+#   chain_id      (string) — EVM chain id the keeper writes to
+#   log_level     (string) — trace|debug|info|warn|error|fatal
+#   job_interval  (string) — EventBridge rate, in minutes
+#   max_batch_size (number, optional, default 10) — blocks per submitBlocks tx
+#   confirmations  (number, optional, default 4)  — L2 confirmations to wait
+#   poll_interval_ms (number, optional, default 60000) — node daemon only
 variable "oracle_lambda" {
-  description = "Oracle Lambda to create"
+  description = "Oracle Lambda (HashpriceBTC keeper) configuration"
   type        = map(any)
 }
 variable "oracle_lambda_secrets" {

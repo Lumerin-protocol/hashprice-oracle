@@ -33,7 +33,9 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     pollIntervalMs: Number(env.KEEPER_POLL_INTERVAL_MS ?? "60000"),
     maxBatchSize: Number(env.KEEPER_MAX_BATCH_SIZE ?? "10"),
     btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
-    confirmations: Number(env.KEEPER_CONFIRMATIONS) ?? 4,
+    // `Number(undefined)` returns NaN (not nullish), so coalesce the string
+    // before coercing so the default of 4 actually applies when the var is unset.
+    confirmations: Number(env.KEEPER_CONFIRMATIONS ?? "4"),
   };
 }
 
