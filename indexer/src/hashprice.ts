@@ -62,19 +62,22 @@ export function initFeeds(block: ethereum.Block): void {
 
     const hashpriceBtcDecimalsResult = hashpriceBtcContract.try_decimals();
     if (hashpriceBtcDecimalsResult.reverted) {
-      throw new Error("Failed to get HashpriceBTC decimals");
+      log.error("Failed to get HashpriceBTC decimals", []);
+      return;
     }
     meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
 
     const btcUsdDecimalsResult = btcUsdProxy.try_decimals();
     if (btcUsdDecimalsResult.reverted) {
-      throw new Error("Failed to get BTC/USD decimals");
+      log.error("Failed to get BTC/USD decimals", []);
+      return;
     }
     meta.btcUsdDecimals = btcUsdDecimalsResult.value;
 
     const hashpriceUsdDecimalsResult = hashpriceUsdContract.try_decimals();
     if (hashpriceUsdDecimalsResult.reverted) {
-      throw new Error("Failed to get HashpriceUSD decimals");
+      log.error("Failed to get HashpriceUSD decimals", []);
+      return;
     }
     meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
     meta.save();
