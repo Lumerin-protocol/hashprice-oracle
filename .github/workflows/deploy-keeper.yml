@@ -153,6 +153,15 @@ jobs:
 
           echo "✅ Code uploaded successfully"
 
+      - name: Wait for code update to complete
+        run: |
+          echo "⏳ Waiting for Lambda code update to finish before updating configuration..."
+          aws lambda wait function-updated \
+            --function-name ${{ needs.build.outputs.lambda_function }} \
+            --region ${{ needs.build.outputs.aws_region }}
+
+          echo "✅ Code update complete"
+
       - name: Print Lambda environment variable keys
         run: |
           aws lambda get-function-configuration \
@@ -177,9 +186,9 @@ jobs:
             }"
           echo "✅ Environment variables updated"
 
-      - name: Wait for function to update
+      - name: Wait for configuration update to complete
         run: |
-          echo "⏳ Waiting for Lambda function to update..."
+          echo "⏳ Waiting for Lambda configuration update to finish..."
           aws lambda wait function-updated \
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --region ${{ needs.build.outputs.aws_region }}
