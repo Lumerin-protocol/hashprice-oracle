@@ -10,7 +10,9 @@
     "dev": "node --env-file=../.env --watch src/adapters/node.ts",
     "dev-local": "node --env-file=../.env.local --watch src/adapters/node.ts",
     "start": "node --env-file=../.env src/adapters/node.ts",
-    "build:lambda": "esbuild src/adapters/lambda.ts --bundle --minify --sourcemap --platform=node --target=es2024 --format=esm --outfile=dist/index.mjs && cd dist && zip -r index.zip index.mjs*",
+    "invoke:lambda": "node --env-file=../.env scripts/invoke-lambda.ts",
+    "invoke:bundle": "pnpm build:lambda && node --env-file=../.env scripts/invoke-bundle.ts",
+    "build:lambda": "node scripts/build-lambda.ts",
     "fetch-fixtures": "node --env-file=../.env scripts/fetch-fixtures.ts",
     "typecheck": "tsgo --noEmit"
   },
