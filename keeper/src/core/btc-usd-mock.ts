@@ -12,7 +12,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { BTCUSDMockAbi } from "../abi/BTCUSDMock.ts";
-import type { KeeperConfig } from "../config.ts";
+import type { Config } from "../config.ts";
 import { getChain } from "../config.ts";
 
 const COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
@@ -37,7 +37,7 @@ async function fetchBTCUSDPrice(): Promise<number> {
   return price;
 }
 
-export async function updateBTCUSDMock(config: KeeperConfig, log: Logger): Promise<void> {
+export async function updateBTCUSDMock(config: Config, log: Logger): Promise<void> {
   if (!config.btcUsdAddress) return;
 
   const child = log.child({ component: "btc-usd-mock" });
@@ -85,7 +85,10 @@ export async function updateBTCUSDMock(config: KeeperConfig, log: Logger): Promi
 
   const txHash = await wc.writeContract(request);
 
-  const receipt = await pc.waitForTransactionReceipt({ hash: txHash });
+  const receipt = await pc.waitForTransactionReceipt({
+    hash: txHash,
+    confirmations: config.confirmations,
+  });
   child.info(
     { txHash, gasUsed: receipt.gasUsed.toString(), status: receipt.status, exchangeRate },
     "BTC/USD mock price updated",
