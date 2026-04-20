@@ -1,18 +1,6 @@
 import type { Chain } from "viem";
 import { arbitrum, arbitrumSepolia, base, baseSepolia, mainnet, hardhat } from "viem/chains";
 
-export interface KeeperConfig {
-  bitcoinRpcUrl: string;
-  ethereumRpcUrl: string;
-  chainId: number;
-  hashpriceBtcAddress: `0x${string}`;
-  privateKey: `0x${string}`;
-  logLevel: string;
-  pollIntervalMs: number;
-  maxBatchSize: number;
-  btcUsdAddress?: `0x${string}`;
-}
-
 const chainMap: Record<number, Chain> = {
   [mainnet.id]: mainnet,
   [arbitrum.id]: arbitrum,
@@ -28,7 +16,7 @@ export function getChain(chainId: number): Chain {
   return chain;
 }
 
-export function configFromEnv(env: Record<string, string | undefined>): KeeperConfig {
+export function configFromEnv(env: Record<string, string | undefined>) {
   const required = (key: string): string => {
     const val = env[key];
     if (!val) throw new Error(`Missing required env var: ${key}`);
@@ -45,5 +33,8 @@ export function configFromEnv(env: Record<string, string | undefined>): KeeperCo
     pollIntervalMs: Number(env.KEEPER_POLL_INTERVAL_MS ?? "60000"),
     maxBatchSize: Number(env.KEEPER_MAX_BATCH_SIZE ?? "10"),
     btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
+    confirmations: Number(env.KEEPER_CONFIRMATIONS) ?? 4,
   };
 }
+
+export type Config = ReturnType<typeof configFromEnv>;
