@@ -61,7 +61,8 @@ jobs:
         with:
           component: keeper
           major_version: "3"
-          environment_override: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || '' }}
+          environment_override: ${{ github.event_name == 'workflow_dispatch' &&
+            github.event.inputs.environment || '' }}
 
       - name: Environment config
         id: env_config
@@ -136,7 +137,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' &&
+            secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg'
+            && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
           aws-region: ${{ needs.build.outputs.aws_region }}
           role-session-name: GitHubActions-FuturesOracleUpdate-${{ github.run_id }}
 
@@ -183,6 +186,7 @@ jobs:
               PRIVATE_KEY=${{ secrets.PRIVATE_KEY }},
               LOG_LEVEL=${{ vars.LOG_LEVEL }},
               MAX_BATCH_SIZE=${{ vars.MAX_BATCH_SIZE }},
+              BTC_USD_ADDRESS=${{ vars.BTC_USD_ADDRESS }},
             }"
           echo "✅ Environment variables updated"
 
@@ -211,14 +215,16 @@ jobs:
   verify:
     name: 🔍 Verify
     runs-on: ubuntu-latest
-    needs: [build, deploy]
+    needs: [ build, deploy ]
     if: github.event_name != 'pull_request'
 
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg' && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' &&
+            secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg'
+            && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
           aws-region: ${{ needs.build.outputs.aws_region }}
           role-session-name: GitHubActions-FuturesOracleUpdate-Verify-${{ github.run_id }}
 
@@ -236,7 +242,7 @@ jobs:
   cleanup:
     name: 🧹 Cleanup
     runs-on: ubuntu-latest
-    needs: [build, deploy, verify]
+    needs: [ build, deploy, verify ]
     if: always() && github.event_name != 'pull_request'
 
     steps:
@@ -295,8 +301,9 @@ jobs:
   notify:
     name: 📢 Notify
     runs-on: ubuntu-latest
-    needs: [build, deploy, verify, cleanup]
-    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request'
+    needs: [ build, deploy, verify, cleanup ]
+    if: always() && needs.build.result == 'success' && github.event_name !=
+      'pull_request'
 
     steps:
       - name: Checkout (for composite action)
@@ -326,4 +333,6 @@ jobs:
           version: ${{ needs.build.outputs.version }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          additional_info: "${{ format('*Lambda Function:* `{0}` • *Lambda Version:* `{1}`', needs.build.outputs.lambda_function, needs.deploy.outputs.lambda_version) }}"
+          additional_info: "${{ format('*Lambda Function:* `{0}` • *Lambda Version:*
+            `{1}`', needs.build.outputs.lambda_function,
+            needs.deploy.outputs.lambda_version) }}"
