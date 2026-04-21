@@ -299,12 +299,71 @@ interface ChainlinkRound {
   updatedAt: number;
 }
 
+// Cache fetched AnswerUpdated logs on disk so repeat runs don't re-scan
+// thousands of Ethereum blocks. Layout mirrors the BTC block cache: one file
+// per fixed-size chunk, scoped by chain id + proxy address so different
+// networks/feeds don't collide.
+const CHAINLINK_CACHE_DIR = resolve(
+  fileURLToPath(import.meta.url),
+  "../../.cache/chainlink-rounds",
+);
+const CHAINLINK_CACHE_CHUNK_SIZE = 10_000n;
+
+interface SerializedChainlinkRound {
+  roundId: string;
+  price: string;
+  updatedAt: number;
+}
+
+function chainlinkCacheDir(chainId: number, proxy: `0x${string}`): string {
+  return resolve(CHAINLINK_CACHE_DIR, `${chainId}-${proxy.toLowerCase()}`);
+}
+
+function chainlinkCachePath(chainId: number, proxy: `0x${string}`, chunkStart: bigint): string {
+  return resolve(chainlinkCacheDir(chainId, proxy), `${chunkStart}.json`);
+}
+
+function readChainlinkChunkFromCache(
+  chainId: number,
+  proxy: `0x${string}`,
+  chunkStart: bigint,
+): ChainlinkRound[] | null {
+  const path = chainlinkCachePath(chainId, proxy, chunkStart);
+  if (!existsSync(path)) return null;
+  try {
+    const arr = JSON.parse(readFileSync(path, "utf8")) as SerializedChainlinkRound[];
+    if (!Array.isArray(arr)) return null;
+    return arr.map((r) => ({
+      roundId: BigInt(r.roundId),
+      price: BigInt(r.price),
+      updatedAt: r.updatedAt,
+    }));
+  } catch {
+    // Corrupt cache entry — fall through to refetch.
+    return null;
+  }
+}
+
+function writeChainlinkChunkToCache(
+  chainId: number,
+  proxy: `0x${string}`,
+  chunkStart: bigint,
+  rounds: ChainlinkRound[],
+): void {
+  mkdirSync(chainlinkCacheDir(chainId, proxy), { recursive: true });
+  const serialized: SerializedChainlinkRound[] = rounds.map((r) => ({
+    roundId: r.roundId.toString(),
+    price: r.price.toString(),
+    updatedAt: r.updatedAt,
+  }));
+  writeFileSync(chainlinkCachePath(chainId, proxy, chunkStart), JSON.stringify(serialized), "utf8");
+}
+
 async function fetchChainlinkHistory(
   ethClient: ReturnType<typeof createPublicClient>,
   proxyAddress: `0x${string}`,
   fromBlock: bigint,
   toBlock: bigint,
-  chunkSize = 2000,
 ): Promise<ChainlinkRound[]> {
   const currentPhaseId = await ethClient.readContract({
     address: proxyAddress,
@@ -327,34 +386,66 @@ async function fetchChainlinkHistory(
 
   const ZERO = "0x0000000000000000000000000000000000000000";
   const aggregators = [...new Set(phaseAddrs.filter((a) => a !== ZERO))];
-  console.log(`  Chainlink phases: ${currentPhaseId}, aggregators: ${aggregators.length}`);
+  const chainId = ethClient.chain?.id;
+  if (chainId === undefined) {
+    throw new Error("ethClient is missing chain.id — cannot scope Chainlink cache");
+  }
+  console.log(
+    `  Chainlink phases: ${currentPhaseId}, aggregators: ${aggregators.length}, cache: ${chainlinkCacheDir(chainId, proxyAddress)}`,
+  );
 
   const rounds: ChainlinkRound[] = [];
-  const seen = new Set<string>();
+  const seenRoundIds = new Set<string>();
+  let cacheHits = 0;
+  let cacheMisses = 0;
 
-  for (let from = fromBlock; from <= toBlock; ) {
-    const to = from + BigInt(chunkSize) - 1n < toBlock ? from + BigInt(chunkSize) - 1n : toBlock;
-    process.stdout.write(`  AnswerUpdated: blocks ${from}–${to} (${rounds.length} so far)\r`);
+  // Iterate over CHAINLINK_CACHE_CHUNK_SIZE-aligned ranges so cache files are
+  // shared across runs even when fromBlock/toBlock differ. The first/last
+  // chunks may extend slightly outside the requested window (extra rounds get
+  // filtered by updatedAt downstream); only fully-covered chunks are cached so
+  // we never persist a partial trailing window past the current Ethereum tip.
+  let from = (fromBlock / CHAINLINK_CACHE_CHUNK_SIZE) * CHAINLINK_CACHE_CHUNK_SIZE;
+  while (from <= toBlock) {
+    const chunkEnd = from + CHAINLINK_CACHE_CHUNK_SIZE - 1n;
+    const fetchTo = chunkEnd < toBlock ? chunkEnd : toBlock;
+    const isFullChunk = chunkEnd <= toBlock;
 
-    const logs = await ethClient.getLogs({
-      address: aggregators,
-      event: ANSWER_UPDATED_ABI[0],
-      fromBlock: from,
-      toBlock: to,
-    });
+    let chunkRounds = isFullChunk ? readChainlinkChunkFromCache(chainId, proxyAddress, from) : null;
 
-    for (const log of logs) {
-      const key = `${log.blockNumber}-${log.logIndex}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const args = log.args as { current: bigint; roundId: bigint; updatedAt: bigint };
-      rounds.push({
-        roundId: args.roundId,
-        price: args.current,
-        updatedAt: Number(args.updatedAt),
+    if (chunkRounds) {
+      cacheHits++;
+    } else {
+      cacheMisses++;
+      const logs = await ethClient.getLogs({
+        address: aggregators,
+        event: ANSWER_UPDATED_ABI[0],
+        fromBlock: from,
+        toBlock: fetchTo,
       });
+      chunkRounds = logs.map((log) => {
+        const args = log.args as { current: bigint; roundId: bigint; updatedAt: bigint };
+        return {
+          roundId: args.roundId,
+          price: args.current,
+          updatedAt: Number(args.updatedAt),
+        };
+      });
+      if (isFullChunk) {
+        writeChainlinkChunkToCache(chainId, proxyAddress, from, chunkRounds);
+      }
     }
-    from = to + 1n;
+
+    for (const r of chunkRounds) {
+      const key = r.roundId.toString();
+      if (seenRoundIds.has(key)) continue;
+      seenRoundIds.add(key);
+      rounds.push(r);
+    }
+
+    process.stdout.write(
+      `  AnswerUpdated: blocks ${from}–${fetchTo}  (cached=${cacheHits} fetched=${cacheMisses}, ${rounds.length} rounds)\r`,
+    );
+    from = chunkEnd + 1n;
   }
 
   process.stdout.write("\n");
@@ -414,6 +505,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
 
 async function main() {
+  if (!process.env.ETH_SEED_START_BLOCK) {
+    console.error(`Missing required env var: ETH_SEED_START_BLOCK`);
+    return;
+  }
+  const ethFromBlock = BigInt(process.env.ETH_SEED_START_BLOCK);
   const bitcoinRpcUrl = required("BITCOIN_RPC_URL");
   const ethereumRpcUrl = required("ETHEREUM_RPC_URL");
   const chainId = Number(required("CHAIN_ID"));
@@ -468,7 +564,35 @@ async function main() {
   const localPc = await viem.getPublicClient();
   const [owner] = await viem.getWalletClients();
 
-  console.log("\nDeploying HashpriceBTC with checkpoint = first seed block...");
+  // BtcUsd / HashpriceBtc / HashpriceUsd are timeseries entities whose
+  // `timestamp` field is auto-populated from `block.timestamp` by graph-node
+  // (any value the mapping assigns is silently overridden). To reproduce
+  // mainnet Chainlink updatedAt values in the indexer we have to mine each
+  // setRound tx in a block whose timestamp equals that updatedAt. EDR's
+  // evm_setNextBlockTimestamp only moves forward, so the node's latest block
+  // must currently be earlier than the seed window — i.e. the node should be
+  // freshly started (its genesis is configured via the `node` network's
+  // `initialDate` in hardhat.config.ts).
+  const latestTs = Number((await localPc.getBlock({ blockTag: "latest" })).timestamp);
+  const deployStartTs = checkpoint.time - 60;
+  if (latestTs >= deployStartTs) {
+    console.error(
+      `\nLatest local block timestamp (${latestTs} = ${new Date(latestTs * 1000).toISOString()})\n` +
+        `is past the seed-window start (${deployStartTs} = ${new Date(deployStartTs * 1000).toISOString()}).\n` +
+        `EDR's evm_setNextBlockTimestamp only moves forward and hardhat_reset is unsupported,\n` +
+        `so restart the hardhat node (cd contracts && pnpm hardhat node) before re-running this\n` +
+        `script. If the seed window predates the configured 'node' network 'initialDate' in\n` +
+        `hardhat.config.ts, lower that value too.`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `\nPinning EVM clock to ${deployStartTs} (${new Date(deployStartTs * 1000).toISOString()}) for deploys...`,
+  );
+
+  console.log("Deploying HashpriceBTC with checkpoint = first seed block...");
+  await setEvmTimestamp(localPc, deployStartTs);
   const hashpriceBTC = await viem.deployContract("HashpriceBTC", [
     checkpointHashLE,
     btcSeedStart,
@@ -480,10 +604,12 @@ async function main() {
   console.log("  Deployed at:", hashpriceBTC.address);
 
   console.log("Deploying BTCUSDMock...");
+  await setEvmTimestamp(localPc, deployStartTs + 1);
   const btcUsdMock = await viem.deployContract("BTCUSDMock", []);
   console.log("  Deployed at:", btcUsdMock.address);
 
   console.log("Deploying HashpriceUSD...");
+  await setEvmTimestamp(localPc, deployStartTs + 2);
   const hashpriceUSD = await viem.deployContract("HashpriceUSD", [
     hashpriceBTC.address as `0x${string}`,
     btcUsdMock.address,
@@ -515,9 +641,7 @@ async function main() {
   const seedFromBlock = await localPc.getBlockNumber();
 
   console.log(`\n=== Seeding history ===`);
-  console.log(
-    `Owner:          ${owner.account.address}`,
-  );
+  console.log(`Owner:          ${owner.account.address}`);
   console.log(
     `Bitcoin blocks: ${btcSeedStart + 1} → ${btcSeedEnd} (${btcSeedEnd - btcSeedStart} blocks; checkpoint at ${btcSeedStart})`,
   );
@@ -554,9 +678,6 @@ async function main() {
   const startTimestamp = checkpoint.time;
   const endTimestamp = btcBlocks[btcBlocks.length - 1]?.timestamp ?? checkpoint.time;
 
-  const ethFromBlock = process.env.ETH_SEED_START_BLOCK
-    ? BigInt(process.env.ETH_SEED_START_BLOCK)
-    : await findEthBlockAtTimestamp(ethClient, startTimestamp);
   const ethToBlock = await ethClient.getBlockNumber();
 
   console.log(`  Ethereum blocks: ${ethFromBlock} → ${ethToBlock}`);
@@ -573,22 +694,45 @@ async function main() {
   );
   console.log(`  → ${filteredRounds.length} Chainlink rounds in time window`);
 
-  // ── Merge and sort by timestamp ───────────────────────────────────────────
+  // ── Merge BTC + Chainlink streams ─────────────────────────────────────────
+  // BTC blocks MUST be submitted in height order — each header embeds its
+  // parent hash, and HashpriceBTC.submitBlock reverts with BrokenChain() if the
+  // parent doesn't match the current tip. Bitcoin block timestamps are NOT
+  // strictly monotonic (the protocol only requires them to exceed the median of
+  // the last 11 blocks), so a naive sort-by-timestamp can reorder adjacent
+  // blocks and break the chain. Instead, walk both queues in their natural
+  // order and interleave by timestamp, comparing Chainlink rounds against a
+  // clamped (monotonic) BTC timestamp.
   type SeedEvent =
     | { kind: "btc"; timestamp: number; block: BtcBlock }
     | { kind: "btcusd"; timestamp: number; round: ChainlinkRound };
 
-  const events: SeedEvent[] = [
-    ...btcBlocks.map((b) => ({ kind: "btc" as const, timestamp: b.timestamp, block: b })),
-    ...filteredRounds.map((r) => ({ kind: "btcusd" as const, timestamp: r.updatedAt, round: r })),
-  ].sort((a, b) => a.timestamp - b.timestamp);
+  const events: SeedEvent[] = [];
+  let lastBtcTs = checkpoint.time;
+  let bi = 0;
+  let ri = 0;
+  while (bi < btcBlocks.length || ri < filteredRounds.length) {
+    const btc = btcBlocks[bi];
+    const round = filteredRounds[ri];
+    const effectiveBtcTs = btc ? Math.max(btc.timestamp, lastBtcTs) : Number.POSITIVE_INFINITY;
+    const roundTs = round ? round.updatedAt : Number.POSITIVE_INFINITY;
+    if (btc && effectiveBtcTs <= roundTs) {
+      events.push({ kind: "btc", timestamp: effectiveBtcTs, block: btc });
+      lastBtcTs = effectiveBtcTs;
+      bi++;
+    } else if (round) {
+      events.push({ kind: "btcusd", timestamp: roundTs, round });
+      ri++;
+    }
+  }
 
   console.log(`\nReplaying ${events.length} events to local contracts...`);
 
   // ── Replay ────────────────────────────────────────────────────────────────
   // Read the actual latest EVM timestamp after every mined block so we always
-  // have a correct floor — Bitcoin timestamps can go slightly backwards (the
-  // protocol only requires them to exceed the median of the last 11 blocks).
+  // have a correct floor — the merge above already produced a non-decreasing
+  // ev.timestamp stream, but two events can share a timestamp and the EVM
+  // requires strict monotonicity, so we still clamp to evmTs + 1 below.
   async function currentEvmTs(): Promise<number> {
     const block = await localPc.getBlock({ blockTag: "latest" });
     return Number(block.timestamp);
@@ -613,7 +757,8 @@ async function main() {
     const evmTs = await currentEvmTs();
 
     if (ev.kind === "btc") {
-      // Clamp: never go below the current EVM tip (Bitcoin allows slight regression).
+      // ev.timestamp is already monotonic-clamped across BTC blocks; bump
+      // above evmTs so the EVM's strict monotonicity rule is satisfied.
       const ts = Math.max(ev.timestamp, evmTs + 1);
       await setEvmTimestamp(localPc, ts);
 
@@ -646,11 +791,13 @@ async function main() {
         const msg = err instanceof Error ? err.message : String(err);
         btcErrors++;
         console.warn(`\n  [btc] block ${ev.block.height} SKIPPED: ${msg.split("\n")[0]}`);
+        throw err;
       }
     } else {
-      // setRound sets updatedAt explicitly from the Chainlink historical value,
-      // so the EVM block.timestamp does not affect BtcUsd.timestamp in the schema.
-      // Still pin EVM time forward so subsequent BTC blocks have a valid floor.
+      // BtcUsd is a timeseries entity — graph-node ignores any timestamp the
+      // mapping assigns and uses block.timestamp instead. So we mine the
+      // setRound tx in a block whose timestamp is the real Chainlink updatedAt
+      // (clamped to evmTs + 1 in the rare case rounds share a timestamp).
       const ts = Math.max(ev.timestamp, evmTs + 1);
       await setEvmTimestamp(localPc, ts);
 
@@ -687,103 +834,6 @@ async function main() {
   console.log("=== Done ===");
   console.log(`  Bitcoin blocks submitted: ${btcCount} (${btcErrors} skipped)`);
   console.log(`  BTC/USD rounds replayed:  ${usdCount}`);
-
-  // ── Event dump ────────────────────────────────────────────────────────────
-  // Decode every log we captured from tx receipts during replay so you can
-  // sanity-check what the indexer will see.
-  const seedToBlock = await localPc.getBlockNumber();
-  console.log(
-    `\n=== Events emitted (Ethereum blocks ${seedFromBlock + 1n} → ${seedToBlock}, ${capturedLogs.length} raw logs) ===`,
-  );
-
-  const EVENT_ABIS: AbiEvent[] = [
-    parseAbi([
-      "event HashpriceUpdated(uint32 indexed confirmedHeight, int256 hashprice, uint256 avgFees)",
-    ])[0],
-    parseAbi([
-      "event BlockSubmitted(bytes32 indexed blockHash, uint32 indexed height, uint64 fees)",
-    ])[0],
-    parseAbi(["event ChainReorg(bytes32 indexed newTip, uint32 indexed newHeight)"])[0],
-    parseAbi([
-      "event DifficultyChanged(uint32 indexed height, uint32 nBits, uint256 difficulty)",
-    ])[0],
-    parseAbi([
-      "event AnswerUpdated(int256 indexed current, uint256 indexed roundId, uint256 updatedAt)",
-    ])[0],
-  ];
-
-  const counts: Record<string, number> = {};
-  type DecodedEntry = {
-    log: (typeof capturedLogs)[number];
-    eventName: string;
-    args: Record<string, unknown>;
-  };
-  const decoded: DecodedEntry[] = [];
-  let undecoded = 0;
-
-  for (const l of capturedLogs) {
-    let ok = false;
-    for (const abi of EVENT_ABIS) {
-      try {
-        const d = decodeEventLog({
-          abi: [abi],
-          data: l.data,
-          topics: l.topics as [`0x${string}`, ...`0x${string}`[]],
-          strict: true,
-        });
-        const eventName = d.eventName as string;
-        counts[eventName] = (counts[eventName] ?? 0) + 1;
-        decoded.push({ log: l, eventName, args: d.args as Record<string, unknown> });
-        ok = true;
-        break;
-      } catch {
-        // Not this event, try next.
-      }
-    }
-    if (!ok) undecoded++;
-  }
-
-  console.log(`\n  Counts:`);
-  for (const name of [
-    "BlockSubmitted",
-    "HashpriceUpdated",
-    "DifficultyChanged",
-    "ChainReorg",
-    "AnswerUpdated",
-  ]) {
-    console.log(`    ${name.padEnd(18)} ${counts[name] ?? 0}`);
-  }
-  if (undecoded > 0) console.log(`    (undecoded)        ${undecoded}`);
-
-  const fmtArgs = (name: string, a: Record<string, unknown>): string => {
-    if (name === "BlockSubmitted") {
-      return `btc=${a.height} fees=${a.fees} hash=${a.blockHash}`;
-    }
-    if (name === "HashpriceUpdated") {
-      return `confirmedHeight=${a.confirmedHeight} hashprice=${a.hashprice} avgFees=${a.avgFees}`;
-    }
-    if (name === "DifficultyChanged") {
-      const nBits = a.nBits as number;
-      return `height=${a.height} nBits=0x${nBits.toString(16)} difficulty=${a.difficulty}`;
-    }
-    if (name === "ChainReorg") {
-      return `newHeight=${a.newHeight} newTip=${a.newTip}`;
-    }
-    if (name === "AnswerUpdated") {
-      const ts = Number(a.updatedAt);
-      return `roundId=${a.roundId} price=${a.current} updatedAt=${ts} (${new Date(ts * 1000).toISOString()})`;
-    }
-    return JSON.stringify(a, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
-  };
-
-  if (decoded.length > 0) {
-    console.log(`\n  Event log:`);
-    for (const d of decoded) {
-      console.log(
-        `    eth=${d.log.blockNumber}  ${d.eventName.padEnd(18)} ${fmtArgs(d.eventName, d.args)}`,
-      );
-    }
-  }
 }
 
 function writeEnvLocal(params: Record<string, string>) {
