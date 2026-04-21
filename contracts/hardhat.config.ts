@@ -61,6 +61,21 @@ export default defineConfig({
       gas: "auto",
       gasPrice: "auto",
     },
+    // `hardhat node` defaults to the `node` network and requires it to be
+    // edr-simulated. We pin the genesis well in the past so seed-history.ts can
+    // mine deploy/replay blocks at historical Bitcoin/Chainlink timestamps via
+    // evm_setNextBlockTimestamp (which only moves forward).
+    node: {
+      type: "edr-simulated",
+      mining: {
+        auto: true,
+      },
+      initialDate: "2024-01-01",
+      blockGasLimit: 100_000_000n,
+      loggingEnabled: true,
+      gas: "auto",
+      gasPrice: "auto",
+    },
     localhost: {
       type: "http",
       url: "http://127.0.0.1:8545",
