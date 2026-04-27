@@ -6,10 +6,11 @@ variable "wallets" {
   type        = map(string)
   default = {
     clone_factory_address   = ""
-    hashrate_oracle_address = ""
+    hashrate_oracle_address = "" # Legacy — superseded by hashprice_btc_address for the trustless keeper
     futures_address         = ""
     multicall_address       = ""
     btcusd_oracle_address   = ""
+    hashprice_btc_address   = "" # Trustless oracle (HashpriceBTC). Used by the staleness check Lambda.
   }
 }
 
