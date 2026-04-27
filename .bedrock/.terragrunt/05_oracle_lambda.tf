@@ -77,6 +77,7 @@ resource "aws_lambda_function" "oracle_update" {
   handler          = "index.handler"
   runtime          = "nodejs24.x"
   timeout          = 60
+  memory_size      = 256 # bumped from default 128MB — observed 111MB peak with batch submissions
   source_code_hash = filebase64sha256("placeholder-lambda.zip")
 
   # Placeholder so the environment block exists at create-time. GitHub Actions

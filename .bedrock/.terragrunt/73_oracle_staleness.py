@@ -148,6 +148,11 @@ def lambda_handler(event, context):
     decimals = get_decimals()
     raw_answer = round_data["answer"]
     answer_normalized = (raw_answer / (10 ** decimals)) if decimals > 0 else float(raw_answer)
+    # Sats-per-hash is 1e8 × BTC-per-hash; if decimals >= 8 we can compute it
+    # cheaply by trimming the fixed-point divisor. Keeps the human-readable
+    # dashboard metric in tidy integer territory (e.g. ~4660 sats/hash) instead
+    # of forcing CloudWatch to render scientific notation (~4.66e-5).
+    answer_sats = (raw_answer / (10 ** (decimals - 8))) if decimals >= 8 else None
 
     current_time = int(time.time())
     updated_at = round_data["updated_at"]
@@ -158,10 +163,12 @@ def lambda_handler(event, context):
     print("Oracle data (latestRoundData):")
     print(f"  Round ID:           {round_data['round_id']}")
     print(f"  Answered in round:  {round_data['answered_in_round']}")
-    print(f"  Answer (raw):       {raw_answer}")
-    print(f"  Decimals:           {decimals if decimals > 0 else 'unknown'}")
+    print(f"  Answer (raw int):    {raw_answer}")
+    print(f"  Decimals:            {decimals if decimals > 0 else 'unknown'}")
     if decimals > 0:
         print(f"  Answer (normalized): {answer_normalized}")
+    if answer_sats is not None:
+        print(f"  Answer (sats):       {answer_sats:.4f}")
     print(f"  Updated at:         {datetime.fromtimestamp(updated_at, tz=timezone.utc).isoformat()}")
     print(f"  Age:                {age_minutes:.2f} minutes ({age_seconds} seconds)")
     if is_stale:
@@ -169,44 +176,26 @@ def lambda_handler(event, context):
     else:
         print(f"Oracle data is fresh (age <= {MAX_AGE_MINUTES} min)")
 
+    dim = [{"Name": "Environment", "Value": ENVIRONMENT}]
     metric_data = [
-        {
-            "MetricName": "oracle_data_age_minutes",
-            "Value": age_minutes,
-            "Unit": "Count",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
-        {
-            "MetricName": "oracle_data_age_seconds",
-            "Value": age_seconds,
-            "Unit": "Seconds",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
-        {
-            "MetricName": "oracle_is_stale",
-            "Value": 1 if is_stale else 0,
-            "Unit": "Count",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
-        {
-            "MetricName": "oracle_latest_answer",
-            "Value": float(answer_normalized),
-            "Unit": "None",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
-        {
-            "MetricName": "oracle_latest_round",
-            "Value": float(round_data["round_id"]),
-            "Unit": "Count",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
-        {
-            "MetricName": "oracle_staleness_check_success",
-            "Value": 1,
-            "Unit": "Count",
-            "Dimensions": [{"Name": "Environment", "Value": ENVIRONMENT}],
-        },
+        {"MetricName": "oracle_data_age_minutes", "Value": age_minutes, "Unit": "Count", "Dimensions": dim},
+        {"MetricName": "oracle_data_age_seconds", "Value": age_seconds, "Unit": "Seconds", "Dimensions": dim},
+        {"MetricName": "oracle_is_stale", "Value": 1 if is_stale else 0, "Unit": "Count", "Dimensions": dim},
+        # Normalized float (e.g. 4.66e-5). Useful for programmatic comparison;
+        # CloudWatch will render in scientific notation.
+        {"MetricName": "oracle_latest_answer", "Value": float(answer_normalized), "Unit": "None", "Dimensions": dim},
+        # Raw int256 cast to float — no scaling. Big integer-shaped value;
+        # easiest to read on dashboards when units don't matter.
+        {"MetricName": "oracle_latest_answer_raw", "Value": float(raw_answer), "Unit": "None", "Dimensions": dim},
+        {"MetricName": "oracle_latest_round", "Value": float(round_data["round_id"]), "Unit": "Count", "Dimensions": dim},
+        {"MetricName": "oracle_staleness_check_success", "Value": 1, "Unit": "Count", "Dimensions": dim},
     ]
+    if answer_sats is not None:
+        # 1e8 × normalized answer. Tidy small integer (~4,660); friendliest
+        # dashboard view when the contract value is BTC-denominated.
+        metric_data.append(
+            {"MetricName": "oracle_latest_answer_sats", "Value": float(answer_sats), "Unit": "None", "Dimensions": dim}
+        )
     push_to_cloudwatch(metric_data)
 
     return {
