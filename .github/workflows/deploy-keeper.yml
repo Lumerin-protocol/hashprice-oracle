@@ -123,8 +123,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name != 'pull_request'
-    # TODO: Uncomment this after adding environment level policy to the IAM role
-    # environment: ${{ needs.build.outputs.environment }}
+    # Declaring `environment:` makes GH emit an env-scoped OIDC sub
+    # (repo:OWNER/REPO:environment:NAME) AND resolves env-scoped vars/secrets
+    # (e.g. PRIVATE_KEY) before falling back to repo level. The IAM trust
+    # policy in .bedrock/.terragrunt/01_github_actions_iam.tf accepts both
+    # branch and environment subs, so cicd/** branch pushes still work.
+    environment: ${{ needs.build.outputs.environment }}
     outputs:
       lambda_version: ${{ steps.publish.outputs.lambda_version }}
 
@@ -217,6 +221,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build, deploy ]
     if: github.event_name != 'pull_request'
+    # Same env-scoped OIDC sub as the deploy job — the verify job assumes the
+    # same AWS role and would otherwise fall back to a branch-scoped sub.
+    environment: ${{ needs.build.outputs.environment }}
 
     steps:
       - name: Configure AWS credentials
