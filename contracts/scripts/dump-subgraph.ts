@@ -33,10 +33,13 @@ interface CollectionSpec {
 const COLLECTIONS: CollectionSpec[] = [
   { field: "btcUsds", fields: "id price timestamp", outFile: "btcUsds.json" },
   { field: "btcUsdCandles", fields: "id high low sum count timestamp", outFile: "btcUsdCandles-hour.json", interval: "hour" },
+  { field: "btcUsdCandles", fields: "id high low sum count timestamp", outFile: "btcUsdCandles-day.json", interval: "day" },
   { field: "hashpriceBtcs", fields: "id price timestamp", outFile: "hashpriceBtcs.json" },
   { field: "hashpriceBtcCandles", fields: "id high low sum count timestamp", outFile: "hashpriceBtcCandles-hour.json", interval: "hour" },
+  { field: "hashpriceBtcCandles", fields: "id high low sum count timestamp", outFile: "hashpriceBtcCandles-day.json", interval: "day" },
   { field: "hashpriceUsds", fields: "id price timestamp", outFile: "hashpriceUsds.json" },
   { field: "hashpriceUsdCandles", fields: "id high low sum count timestamp", outFile: "hashpriceUsdCandles-hour.json", interval: "hour" },
+  { field: "hashpriceUsdCandles", fields: "id high low sum count timestamp", outFile: "hashpriceUsdCandles-day.json", interval: "day" },
 ];
 
 interface GraphQLResponse<T> {
