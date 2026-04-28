@@ -10,7 +10,7 @@ wallets = {
   futures_address         = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
   btcusd_oracle_address   = "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" #"0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
-  hashprice_btc_address   = ""                                           # TODO: populate when HashpriceBTC is deployed to STG (until then, oracle staleness check returns 500)
+  hashprice_btc_address   = "0x8a770d423f6c596ef1af00cfc20e6989246fbc5a" # Trustless oracle on Base mainnet — matches GH stg env HASHPRICE_BTC_ADDRESS
 }
 
 spot_indexer_contracts = {
