@@ -35,10 +35,11 @@ async function main() {
   console.log();
 
   console.log("Deploying HashpriceUSD...");
-  const hashpriceUsd = await viem.deployContract("HashpriceUSD", [
-    env.HASHPRICE_BTC_ADDRESS,
-    env.BTC_USD_ADDRESS,
-  ]);
+  const hashpriceUsd = await viem.deployContract(
+    "HashpriceUSD",
+    [env.HASHPRICE_BTC_ADDRESS, env.BTC_USD_ADDRESS],
+    { confirmations: 5 },
+  );
   console.log("Deployed at:", hashpriceUsd.address);
 
   console.log();

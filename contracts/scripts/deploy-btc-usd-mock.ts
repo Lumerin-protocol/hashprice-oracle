@@ -13,7 +13,7 @@ async function main() {
   console.log("Deployer address:", deployer.account.address);
 
   // Deploy USDC Mock contract
-  const btcUsdMock = await viem.deployContract("BTCUSDMock", []);
+  const btcUsdMock = await viem.deployContract("BTCUSDMock", [], { confirmations: 5 });
   console.log("Deployed at:", btcUsdMock.address);
 
   const btcPrice = "96936.15";

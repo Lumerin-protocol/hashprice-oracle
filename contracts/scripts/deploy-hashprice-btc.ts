@@ -11,7 +11,7 @@ async function main() {
   console.log();
 
   console.log("Deploying HashpriceBTCDeploy...");
-  const hashpriceBtc = await viem.deployContract("HashpriceBTCDeploy", []);
+  const hashpriceBtc = await viem.deployContract("HashpriceBTCDeploy", [], { confirmations: 5 });
   console.log("Deployed at:", hashpriceBtc.address);
 
   console.log();
