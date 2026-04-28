@@ -11,9 +11,8 @@ services:
       - ipfs
       - postgres
     extra_hosts:
-      - localhost:host-gateway
-    env_file:
-      - .env
+      - "host.docker.internal:host-gateway"
+      - "localhost:host-gateway"
     environment:
       postgres_host: postgres
       postgres_user: graph-node

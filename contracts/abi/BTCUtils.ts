@@ -1,0 +1,22 @@
+export const BTCUtilsAbi = [
+  {
+    "inputs": [],
+    "name": "InvalidCoinbaseTx",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidHeaderLength",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidNBits",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "Sha256PrecompileMissing",
+    "type": "error"
+  }
+] as const;

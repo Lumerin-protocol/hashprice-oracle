@@ -3,17 +3,18 @@
   "license": "UNLICENSED",
   "scripts": {
     "clean": "rm -rf data generated build",
-    "codegen": "graph codegen",
+    "codegen": "rm -rf generated && graph codegen",
     "prepare:env": "envsubst < subgraph.template.yaml > subgraph.yaml",
-    "prepare-local": "set -a && source .env && set +a && envsubst < subgraph.template.yaml > subgraph.yaml",
+    "prepare-local": "set -a && source ../.env.local && set +a && envsubst < subgraph.template.yaml > subgraph.yaml",
+    "prepare-env": "set -a && source ../.env && set +a && envsubst < subgraph.template.yaml > subgraph.yaml",
     "build": "graph build",
     "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ hashprice",
     "create-local": "graph create --node http://localhost:8020/ hashprice",
     "remove-local": "graph remove --node http://localhost:8020/ hashprice",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 --version-label 0 hashprice",
-    "setup-local": "yarn prepare-local && yarn codegen && yarn build && yarn create-local && yarn deploy-local",
+    "setup-local": "pnpm prepare-local && pnpm codegen && pnpm build && pnpm create-local && pnpm deploy-local",
     "test": "graph test",
-    "indexer": "docker-compose up"
+    "indexer": "docker compose --env-file ../.env up"
   },
   "dependencies": {
     "@graphprotocol/graph-ts": "0.37.0",
@@ -25,5 +26,11 @@
     "@graphprotocol/graph-cli": "^0.98.1",
     "matchstick-as": "0.6.0",
     "typescript": "^5.9.3"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "matchstick-as"
+    ]
   }
 }

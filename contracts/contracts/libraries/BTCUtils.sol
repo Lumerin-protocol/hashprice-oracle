@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.0;
+
+/// @title BTCUtils
+/// @notice Pure utility functions for Bitcoin data structures
+library BTCUtils {
+    struct HeaderInfo {
+        bytes32 prevBlockHash;
+        bytes32 merkleRoot;
+        uint32 timestamp;
+        uint32 nBits;
+    }
+
+    error InvalidCoinbaseTx();
+    error InvalidHeaderLength();
+    error InvalidNBits();
+    error Sha256PrecompileMissing();
+
+    /// @dev Bitcoin difficulty-1 target (genesis nBits 0x1d00ffff decoded).
+    uint256 internal constant DIFF1_TARGET = 0x00000000FFFF0000000000000000000000000000000000000000000000000000;
+
+    /// @dev Maximum nBits exponent; targets above 2^256 are invalid.
+    uint256 internal constant MAX_NBITS_EXPONENT = 32;
+
+    /// @dev Number of blocks between each block subsidy halving.
+    uint256 internal constant HALVING_INTERVAL = 210_000;
+
+    /// @dev After this many halvings the subsidy is zero (2^64 >> 64 == 0).
+    uint256 internal constant MAX_HALVINGS = 64;
+
+    /// @dev Satoshis in one BTC.
+    uint8 internal constant BTC_DECIMALS = 8;
+
+    /// @dev Initial block subsidy: 50 BTC in satoshis.
+    uint256 internal constant INITIAL_SUBSIDY = 50 * 10 ** BTC_DECIMALS;
+
+    /// @notice Parse an 80-byte Bitcoin block header
+    /// @dev Bitcoin header layout (all little-endian):
+    ///   [0..4)   version
+    ///   [4..36)  prevBlockHash (raw dsha256 output byte order)
+    ///   [36..68) merkleRoot    (internal byte order)
+    ///   [68..72) timestamp
+    ///   [72..76) nBits (compact target)
+    ///   [76..80) nonce
+    function parseHeader(bytes memory header) internal pure returns (HeaderInfo memory) {
+        bytes32 prevHash = readBytes32Mem(header, 4);
+        bytes32 merkleRootVal = readBytes32Mem(header, 36);
+        uint32 ts = readUint32LEMem(header, 68);
+        uint32 bits = readUint32LEMem(header, 72);
+
+        return HeaderInfo({ prevBlockHash: prevHash, merkleRoot: merkleRootVal, timestamp: ts, nBits: bits });
+    }
+
+    /// @notice Revert if the SHA-256 precompile (address(2)) is absent or malfunctioning.
+    /// @dev Hashes the empty string and compares against the known digest.
+    ///      SHA-256("") = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    ///      Zero-length input avoids clobbering scratch space used by subsequent assembly.
+    ///      Catches two failure modes: staticcall returning false (precompile absent) and
+    ///      staticcall returning true with zeroed output (broken zkEVM stub).
+    function requireSha256Precompile() internal view {
+        bytes32 expected = 0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855;
+        bool ok;
+        bytes32 result;
+        assembly {
+            ok := staticcall(gas(), 2, 0x00, 0, 0x00, 32)
+            result := mload(0x00)
+        }
+        if (!ok || result != expected) revert Sha256PrecompileMissing();
+    }
+
+    /// @notice Double-SHA256 using the SHA-256 precompile (address(2)) — gas-optimized variant.
+    /// @dev Calls staticcall(2, ...) twice, storing the intermediate hash in scratch space (0x00–0x1f)
+    ///      to avoid any heap allocation between the two passes.
+    ///      Must be `view` rather than `pure` because the compiler classifies staticcall as state-reading.
+    function hash256View(bytes memory data) internal view returns (bytes32 res) {
+        assembly {
+            pop(staticcall(gas(), 2, add(data, 32), mload(data), 0x00, 32))
+            pop(staticcall(gas(), 2, 0x00, 32, 0x00, 32))
+            res := mload(0x00)
+        }
+    }
+
+    /// @notice Double-SHA256 of two concatenated bytes32 values — zero-allocation merkle step.
+    /// @dev Writes both words into scratch space then calls the SHA-256 precompile twice in-place.
+    ///      Equivalent to dsha256(abi.encodePacked(a, b)) with no heap allocation.
+    function hash256Pair(bytes32 a, bytes32 b) internal view returns (bytes32 res) {
+        assembly {
+            mstore(0x00, a)
+            mstore(0x20, b)
+            pop(staticcall(gas(), 2, 0x00, 64, 0x00, 32))
+            pop(staticcall(gas(), 2, 0x00, 32, 0x00, 32))
+            res := mload(0x00)
+        }
+    }
+
+    /// @notice Expand nBits compact target to 256-bit target
+    /// @dev nBits format: [exponent (1 byte)][coefficient (3 bytes)]
+    ///      target = coefficient * 2^(8 * (exponent - 3))
+    ///      Bitcoin's maximum valid exponent is 32 (0x20); anything above that would require
+    ///      more than 256 bits to represent and is rejected as invalid.
+    function nBitsToTarget(uint32 nBits) internal pure returns (uint256) {
+        uint256 exponent = uint256(nBits >> 24);
+        uint256 coefficient = uint256(nBits & 0x7fffff);
+        if (exponent > MAX_NBITS_EXPONENT) revert InvalidNBits();
+        if (exponent <= 3) {
+            return coefficient >> (8 * (3 - exponent));
+        }
+        return coefficient << (8 * (exponent - 3));
+    }
+
+    /// @notice Expected number of hashes to mine a block at the given target
+    /// @dev work = 2^256 / (target + 1)
+    function targetToWork(uint256 target) internal pure returns (uint256) {
+        return type(uint256).max / (target + 1);
+    }
+
+    /// @notice Convert nBits to difficulty
+    /// @dev difficulty = diff1Target / currentTarget
+    function nBitsToDifficulty(uint32 nBits) internal pure returns (uint256) {
+        uint256 target = nBitsToTarget(nBits);
+        return DIFF1_TARGET / target;
+    }
+
+    /// @notice Compute block subsidy given height (handles halvings)
+    /// @dev 50 BTC initially, halves every 210,000 blocks
+    function getBlockSubsidy(uint256 height) internal pure returns (uint64) {
+        uint256 halvings = height / HALVING_INTERVAL;
+        if (halvings >= MAX_HALVINGS) return 0;
+        return uint64(INITIAL_SUBSIDY >> halvings);
+    }
+
+    /// @notice Read a Bitcoin varint from raw bytes
+    /// @return value The decoded varint value
+    /// @return size Number of bytes consumed
+    function readVarint(bytes calldata data, uint256 offset) internal pure returns (uint64 value, uint256 size) {
+        uint8 first = uint8(data[offset]);
+        if (first < 0xfd) {
+            return (uint64(first), 1);
+        } else if (first == 0xfd) {
+            return (uint64(readUint16LE(data, offset + 1)), 3);
+        } else if (first == 0xfe) {
+            return (uint64(readUint32LE(data, offset + 1)), 5);
+        } else {
+            return (readUint64LE(data, offset + 1), 9);
+        }
+    }
+
+    /// @notice Parse a raw Bitcoin coinbase tx and return total output value (satoshis)
+    /// @dev The tx must be in non-witness serialization (for txid computation).
+    ///      Layout: version(4) | vinCount(varint,=1) | vin | voutCount(varint) | vouts | locktime(4)
+    function parseCoinbaseOutputValue(bytes calldata rawTx) internal pure returns (uint64 totalValue) {
+        uint256 offset = 4; // skip version
+
+        // Skip vin (always exactly 1 input for coinbase)
+        (uint64 vinCount, uint256 vinSize) = readVarint(rawTx, offset);
+        offset += vinSize;
+        if (vinCount != 1) revert InvalidCoinbaseTx();
+
+        // Skip the single input: prevHash(32) + prevIndex(4) + scriptLen(varint) + script + sequence(4)
+        offset += 36; // prevHash + prevIndex
+        (uint64 scriptLen, uint256 scriptLenSize) = readVarint(rawTx, offset);
+        offset += scriptLenSize + uint256(scriptLen) + 4; // script + sequence
+
+        // Parse outputs
+        (uint64 voutCount, uint256 voutSize) = readVarint(rawTx, offset);
+        offset += voutSize;
+
+        for (uint64 i = 0; i < voutCount; i++) {
+            totalValue += readUint64LE(rawTx, offset);
+            offset += 8;
+            (uint64 pkScriptLen, uint256 pkSize) = readVarint(rawTx, offset);
+            offset += pkSize + uint256(pkScriptLen);
+        }
+    }
+
+    /// @notice Reverse the byte order of a bytes32 value
+    function reverseBytes32(bytes32 input) internal pure returns (bytes32) {
+        uint256 v = uint256(input);
+        // swap bytes
+        v = ((v & 0xFF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00) >> 8)
+            | ((v & 0x00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF) << 8);
+        // swap 2-byte pairs
+        v = ((v & 0xFFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000) >> 16)
+            | ((v & 0x0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF) << 16);
+        // swap 4-byte pairs
+        v = ((v & 0xFFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000) >> 32)
+            | ((v & 0x00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF) << 32);
+        // swap 8-byte pairs
+        v = ((v & 0xFFFFFFFFFFFFFFFF0000000000000000FFFFFFFFFFFFFFFF0000000000000000) >> 64)
+            | ((v & 0x0000000000000000FFFFFFFFFFFFFFFF0000000000000000FFFFFFFFFFFFFFFF) << 64);
+        // swap 16-byte halves
+        v = (v >> 128) | (v << 128);
+        return bytes32(v);
+    }
+
+    /// @notice Read a uint16 in little-endian from calldata
+    function readUint16LE(bytes calldata data, uint256 offset) internal pure returns (uint16) {
+        return uint16(uint8(data[offset])) | (uint16(uint8(data[offset + 1])) << 8);
+    }
+
+    /// @notice Read a uint32 in little-endian from calldata
+    function readUint32LE(bytes calldata data, uint256 offset) internal pure returns (uint32) {
+        return uint32(uint8(data[offset])) | (uint32(uint8(data[offset + 1])) << 8)
+            | (uint32(uint8(data[offset + 2])) << 16) | (uint32(uint8(data[offset + 3])) << 24);
+    }
+
+    /// @notice Read a bytes32 from memory at the given byte offset
+    function readBytes32Mem(bytes memory data, uint256 offset) internal pure returns (bytes32 result) {
+        assembly {
+            result := mload(add(add(data, 32), offset))
+        }
+    }
+
+    /// @notice Read a uint32 in little-endian from memory
+    function readUint32LEMem(bytes memory data, uint256 offset) internal pure returns (uint32) {
+        return uint32(uint8(data[offset])) | (uint32(uint8(data[offset + 1])) << 8)
+            | (uint32(uint8(data[offset + 2])) << 16) | (uint32(uint8(data[offset + 3])) << 24);
+    }
+
+    /// @notice Read a uint64 in little-endian from calldata
+    function readUint64LE(bytes calldata data, uint256 offset) internal pure returns (uint64) {
+        return uint64(uint8(data[offset])) | (uint64(uint8(data[offset + 1])) << 8)
+            | (uint64(uint8(data[offset + 2])) << 16) | (uint64(uint8(data[offset + 3])) << 24)
+            | (uint64(uint8(data[offset + 4])) << 32) | (uint64(uint8(data[offset + 5])) << 40)
+            | (uint64(uint8(data[offset + 6])) << 48) | (uint64(uint8(data[offset + 7])) << 56);
+    }
+}

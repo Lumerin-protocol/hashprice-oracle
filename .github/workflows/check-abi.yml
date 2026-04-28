@@ -6,6 +6,8 @@ on:
       - "contracts/**"
       - ".github/workflows/check-abi.yml"
   push:
+    branches:
+      - main
     paths:
       - "contracts/**"
       - ".github/workflows/check-abi.yml"
@@ -30,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
           cache-dependency-path: contracts/pnpm-lock.yaml
 

@@ -3,9 +3,10 @@
   "overrides": [
     {
       "includes": [
-        "indexer/src"
+        "./indexer/src/**"
       ],
       "linter": {
+        "enabled": true,
         "rules": {
           "complexity": {
             "noForEach": "off"

@@ -33,17 +33,20 @@ resource "aws_lambda_function" "oracle_staleness" {
   runtime       = "python3.12"
   timeout       = 60
   memory_size   = 256
-  
+
   filename         = data.archive_file.oracle_staleness[0].output_path
   source_code_hash = data.archive_file.oracle_staleness[0].output_base64sha256
 
   environment {
     variables = {
-      HASHRATE_ORACLE_ADDRESS = var.wallets.hashrate_oracle_address
-      ETH_RPC_URL             = var.oracle_lambda_secrets.eth_rpc_url
-      CW_NAMESPACE            = local.monitoring_namespace
-      ENVIRONMENT             = local.env_short
-      MAX_AGE_MINUTES         = tostring(var.alarm_thresholds.oracle_stale_threshold_minutes)
+      # Trustless oracle (HashpriceBTC, Chainlink AggregatorV3 interface).
+      # Empty in stg/lmn until the new contract is deployed there — the Lambda
+      # logs "Missing configuration" and returns 500 in that case.
+      HASHPRICE_BTC_ADDRESS = var.wallets.hashprice_btc_address
+      ETH_RPC_URL           = var.oracle_lambda_secrets.eth_rpc_url
+      CW_NAMESPACE          = local.monitoring_namespace
+      ENVIRONMENT           = local.env_short
+      MAX_AGE_MINUTES       = tostring(var.alarm_thresholds.oracle_stale_threshold_minutes)
     }
   }
 

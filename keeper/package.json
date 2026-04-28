@@ -1,0 +1,35 @@
+{
+  "name": "hashprice-keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --env-file=../.env --watch src/adapters/node.ts",
+    "dev-local": "node --env-file=../.env.local --watch src/adapters/node.ts",
+    "start": "node --env-file=../.env src/adapters/node.ts",
+    "invoke:lambda": "node --env-file=../.env scripts/invoke-lambda.ts",
+    "invoke:bundle": "pnpm build:lambda && node --env-file=../.env scripts/invoke-bundle.ts",
+    "build:lambda": "node scripts/build-lambda.ts",
+    "fetch-fixtures": "node --env-file=../.env scripts/fetch-fixtures.ts",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "pino": "^9.6.0",
+    "viem": "^2.42.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@typescript/native-preview": "7.0.0-dev.20260410.1",
+    "esbuild": "^0.25.4",
+    "pino-pretty": "^13.0.0"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
