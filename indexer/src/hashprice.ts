@@ -23,19 +23,6 @@ import { ChainlinkAggregator } from "../generated/templates";
 
 const LATEST_RATES_ID = 0;
 
-// The HashpriceBTC oracle answers the price of 100 TH/s per day. The trading venues denominate one
-// contract in 1 PH/s per day (= 1000 TH/s per day), so this indexer rebases every hashprice answer by
-// CONTRACT_SIZE_HPS_DAY / ORACLE_UNIT_HPS_DAY (= 10x). Applied uniformly across the whole re-indexed
-// history, this keeps a single continuous per-PH series with no discontinuity. BTC/USD is left untouched.
-const CONTRACT_SIZE_HPS_DAY = BigInt.fromI64(1_000_000_000_000_000); // 1e15 = 1 PH/s over a day
-const ORACLE_UNIT_HPS_DAY = BigInt.fromI64(100_000_000_000_000); // 100 TH/s over a day
-const HASHRATE_UNIT = "PH/s/day";
-
-// Rebase a raw hashprice answer (per 100 TH/s/day) to the contract unit (per 1 PH/s/day).
-function toContractUnit(rawHashprice: BigInt): BigInt {
-  return rawHashprice.times(CONTRACT_SIZE_HPS_DAY).div(ORACLE_UNIT_HPS_DAY);
-}
-
 // Once handler — bootstraps the BTC/USD aggregator dynamic data source and initializes HashpriceMeta
 export function initFeeds(block: ethereum.Block): void {
   log.info("===============inside initFeeds", []);
@@ -72,8 +59,6 @@ export function initFeeds(block: ethereum.Block): void {
     meta.hashpriceUsdAddress = hashpriceUsdAddress;
     meta.btcUsdAddress = btcUsdAddress;
     meta.startBlock = hashpriceStartBlock;
-    // Prices are rebased from the oracle's 100 TH/s/day basis to the 1 PH/s/day contract unit.
-    meta.hashrateUnit = HASHRATE_UNIT;
 
     const hashpriceBtcDecimalsResult = hashpriceBtcContract.try_decimals();
     if (hashpriceBtcDecimalsResult.reverted) {
@@ -102,10 +87,9 @@ export function initFeeds(block: ethereum.Block): void {
 // Handles hashprice updates — saves HashpriceBtc and derives HashpriceUsd from latest BtcUsd
 export function handleHashpriceUpdated(event: HashpriceUpdated): void {
   log.info("handleHashpriceUpdated: bitcoin block {}", [event.params.confirmedHeight.toString()]);
-  const hashpricePerPh = toContractUnit(event.params.hashprice);
   const hpBtc = new HashpriceBtc(0);
   hpBtc.id = event.params.confirmedHeight.toI64();
-  hpBtc.price = hashpricePerPh;
+  hpBtc.price = event.params.hashprice;
   hpBtc.timestamp = event.block.timestamp.toI64();
   hpBtc.blockNumber = event.block.number;
   hpBtc.save();
@@ -116,7 +100,7 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     rates.id = LATEST_RATES_ID;
   }
   rates.hashpriceBtcId = hpBtc.id;
-  rates.hashpriceBtcPrice = hashpricePerPh;
+  rates.hashpriceBtcPrice = event.params.hashprice;
   rates.hashpriceBtcUpdatedAt = event.block.timestamp;
   rates.hashpriceBtcBlockNumber = event.block.number;
   rates.save();
