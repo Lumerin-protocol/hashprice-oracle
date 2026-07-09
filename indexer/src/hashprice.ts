@@ -23,11 +23,6 @@ import { ChainlinkAggregator } from "../generated/templates";
 
 const LATEST_RATES_ID = 0;
 
-// The HashpriceBTC oracle answers the price of 100 TH/s per day; this indexer stores that raw basis
-// unchanged. Consumers (e.g. the frontend) apply any unit conversion, such as the 10x rebase to the
-// 1 PH/s/day venue contract unit.
-const HASHRATE_UNIT = "100 TH/s·day";
-
 // Once handler — bootstraps the BTC/USD aggregator dynamic data source and initializes HashpriceMeta
 export function initFeeds(block: ethereum.Block): void {
   log.info("===============inside initFeeds", []);
@@ -64,8 +59,6 @@ export function initFeeds(block: ethereum.Block): void {
     meta.hashpriceUsdAddress = hashpriceUsdAddress;
     meta.btcUsdAddress = btcUsdAddress;
     meta.startBlock = hashpriceStartBlock;
-    // Raw oracle basis; consumers apply any unit conversion (e.g. 10x to per-PH).
-    meta.hashrateUnit = HASHRATE_UNIT;
 
     const hashpriceBtcDecimalsResult = hashpriceBtcContract.try_decimals();
     if (hashpriceBtcDecimalsResult.reverted) {

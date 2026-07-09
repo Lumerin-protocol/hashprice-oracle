@@ -24,9 +24,6 @@ type HashpriceMeta @entity(immutable: true) {
   hashpriceBtcDecimals: Int8!
   btcUsdDecimals: Int8!
   startBlock: BigInt!
-  # Hashrate unit the stored prices are denominated in. Prices are indexed at the oracle's raw
-  # quote basis (100 TH/s over a day); consumers apply any unit conversion (e.g. 10x to per-PH).
-  hashrateUnit: String!
 }
 
 type HashpriceUsd @entity(timeseries: true) {
