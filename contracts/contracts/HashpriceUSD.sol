@@ -6,7 +6,7 @@ import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/inte
 /// @title HashpriceUSD
 /// @notice Combines a hashprice-in-BTC feed with a BTC/USD feed to produce hashprice in USD.
 ///         Both upstream feeds must implement AggregatorV3Interface.
-///         Output: price of 100 TH/s per day denominated in USD (8 decimals).
+///         Output: price of 1 PH/s per day denominated in USD (8 decimals).
 ///
 /// @dev Timestamp semantics (aggregated feed with two independent sources):
 ///      - startedAt = max(hashprice.updatedAt, btcUsd.updatedAt)
@@ -27,7 +27,7 @@ contract HashpriceUSD is AggregatorV3Interface {
 
     error NotImplemented();
 
-    /// @param _hashpriceOracle Hashprice oracle returning price of 100 TH/s per day in BTC
+    /// @param _hashpriceOracle Hashprice oracle returning price of 1 PH/s per day in BTC
     /// @param _btcUsdOracle BTC/USD price oracle (e.g. Chainlink)
     constructor(address _hashpriceOracle, address _btcUsdOracle) {
         hashpriceOracle = AggregatorV3Interface(_hashpriceOracle);
@@ -41,7 +41,7 @@ contract HashpriceUSD is AggregatorV3Interface {
     }
 
     function description() external pure returns (string memory) {
-        return "The price of 100 TH/s per day in USD";
+        return "The price of 1 PH/s per day in USD";
     }
 
     function version() external pure returns (uint256) {
@@ -52,7 +52,7 @@ contract HashpriceUSD is AggregatorV3Interface {
         revert NotImplemented();
     }
 
-    /// @notice Returns the latest hashprice of 100 TH/s per day in USD
+    /// @notice Returns the latest hashprice of 1 PH/s per day in USD
     /// @return roundId Composite round id encoding both upstream round ids
     /// @return answer Hashprice in USD (8 decimals)
     /// @return startedAt Most recent update from either source (round initiation)

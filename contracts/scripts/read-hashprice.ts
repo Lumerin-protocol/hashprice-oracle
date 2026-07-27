@@ -31,7 +31,7 @@ async function main() {
   console.log("Description:       ", description);
   console.log("Round ID:          ", roundId.toString());
   console.log("Answer (raw):      ", answer.toString());
-  console.log(`Answer (formatted):  ${price.toFixed(8)} BTC / 100 TH/s / day`);
+  console.log(`Answer (formatted):  ${price.toFixed(8)} BTC / 1 PH/s / day`);
   console.log("Decimals:          ", decimals);
   console.log(
     "Started at:        ",

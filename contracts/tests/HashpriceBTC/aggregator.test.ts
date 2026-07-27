@@ -15,9 +15,9 @@ describe("HashpriceBTC — AggregatorV3Interface", function () {
     assert.equal(await contracts.oracle.read.decimals(), 16);
   });
 
-  it('description() should return "The price of 100 TH/s per day in BTC"', async function () {
+  it('description() should return "The price of 1 PH/s per day in BTC"', async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
-    assert.equal(await contracts.oracle.read.description(), "The price of 100 TH/s per day in BTC");
+    assert.equal(await contracts.oracle.read.description(), "The price of 1 PH/s per day in BTC");
   });
 
   it("version() should return 1", async function () {
@@ -85,12 +85,12 @@ describe("HashpriceBTC — latestRoundData()", function () {
     }
     const avgFees = totalFees / BigInt(submittedBlocks.length);
 
-    const HASHES_PER_100THS_PER_DAY = 8_640_000_000_000_000_000n;
+    const HASHES_PER_1PHS_PER_DAY = 86_400_000_000_000_000_000n;
     const decimals = await contracts.oracle.read.decimals();
     const difficulty = nBitsToDifficulty(confirmedBlock.nBits);
     const rewardPerBlock = subsidy + avgFees;
     const expectedHashprice =
-      (HASHES_PER_100THS_PER_DAY * rewardPerBlock * 10n ** BigInt(decimals - 8)) /
+      (HASHES_PER_1PHS_PER_DAY * rewardPerBlock * 10n ** BigInt(decimals - 8)) /
       (difficulty * (1n << 32n));
 
     const [, answer] = await contracts.oracle.read.latestRoundData();
@@ -100,8 +100,8 @@ describe("HashpriceBTC — latestRoundData()", function () {
   it("should return hashprice in a plausible range", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     const [, answer] = await contracts.oracle.read.latestRoundData();
-    // answer has 16 decimals: 1e16 = 1 BTC/100TH/day, plausible range ~1e12–1e15
-    assert.ok(answer > 10_000_000_000n);
-    assert.ok(answer < 1_000_000_000_000_000n);
+    // answer has 16 decimals: 1e16 = 1 BTC/1PH/day, plausible range ~1e13–1e16
+    assert.ok(answer > 100_000_000_000n);
+    assert.ok(answer < 10_000_000_000_000_000n);
   });
 });

@@ -1,21 +1,13 @@
-import { configVariable, defineConfig, overrideTask } from "hardhat/config";
+import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
+import hardhatViemAbi from "hardhat-viem-abi";
 import { tryLoadEnvFile } from "./lib/env.ts";
 
 tryLoadEnvFile("./../.env");
 tryLoadEnvFile(".env");
 
-const codegenPlugin = {
-  id: "codegen-after-compile",
-  tasks: [
-    overrideTask(["compile"])
-      .setAction(() => import("./scripts/compile-action.ts"))
-      .build(),
-  ],
-};
-
 export default defineConfig({
-  plugins: [hardhatToolboxViem, codegenPlugin],
+  plugins: [hardhatToolboxViem, hardhatViemAbi],
   paths: {
     tests: "tests",
   },
