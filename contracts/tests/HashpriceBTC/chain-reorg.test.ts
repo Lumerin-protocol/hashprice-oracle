@@ -460,9 +460,95 @@ describe("HashpriceBTC — Chain reorg", function () {
     const newTip = await oracle.read.chainTipHash();
     assert.equal(newTip.toLowerCase(), hex(chainB[chainB.length - 1].hash).toLowerCase());
 
-    const [, , epochStartTimestamp] = await oracle.read.state();
+    const [
+      ,
+      ,
+      epochStartTimestamp,
+      epochStartNBits,
+      ,
+      epochStartHeight,
+      prevEpochStartTimestamp,
+      prevEpochStartNBits,
+    ] = await oracle.read.state();
     // Chain B's retarget block 2016 timestamp = chainB_block2015_ts + 600.
     assert.equal(epochStartTimestamp, chainB_block2015_ts + 600);
+    assert.equal(epochStartNBits, HARDER_EPOCH_NBITS);
+    assert.equal(epochStartHeight, 2016);
+    assert.equal(prevEpochStartTimestamp, baseTs);
+    assert.equal(prevEpochStartNBits, EPOCH_NBITS);
+  });
+
+  it("should leave epoch state intact when a boundary-crossing reorg is rejected", async function () {
+    const { oracle, checkpointHeight, fakeCheckpointHash, baseTs } =
+      await loadFixture(deployRetargetBoundaryFixture);
+
+    const stateBefore = await oracle.read.state();
+    const tipBefore = await oracle.read.chainTipHash();
+
+    // Same-height fork with equal work (all EPOCH_NBITS) → NotHeaviestChain after restore path runs.
+    const chainB_block2015_ts = baseTs + RETARGET_EXPECTED_TIMESPAN;
+    const chainB_b2015 = mineSyntheticBlock(
+      fakeCheckpointHash,
+      2015,
+      chainB_block2015_ts,
+      EPOCH_NBITS,
+      500n,
+    );
+    const chainB_rest = mineChain(
+      chainB_b2015.hash,
+      2016,
+      3,
+      chainB_block2015_ts,
+      EPOCH_NBITS,
+      5000n,
+    );
+    const batchB = formatBatch([chainB_b2015, ...chainB_rest]);
+
+    await catchError(oracle.abi, "NotHeaviestChain", async () => {
+      await oracle.write.submitBlocks([
+        checkpointHeight,
+        batchB.headers,
+        batchB.coinbaseTxs,
+        batchB.merkleProofs,
+      ]);
+    });
+
+    assert.equal(await oracle.read.chainTipHash(), tipBefore);
+    const stateAfter = await oracle.read.state();
+    assert.deepEqual(stateAfter, stateBefore);
+  });
+
+  it("should not restore epoch start when ancestorHeight equals epochStartHeight", async function () {
+    const { oracle, pc, chainA, chainA_block2016_ts } =
+      await loadFixture(deployRetargetBoundaryFixture);
+
+    const [, , epochStartTimestampBefore, , , epochStartHeight] = await oracle.read.state();
+    assert.equal(epochStartHeight, 2016);
+    assert.equal(epochStartTimestampBefore, chainA_block2016_ts);
+
+    // Fork from the retarget block itself (ancestor == epoch start) — restore must not fire.
+    // chainA[1] is height 2016; extend 2017–2019 so the fork is longer than tip 2018.
+    const block2016 = chainA[1];
+    const extension = mineChain(
+      block2016.hash,
+      2017,
+      3,
+      chainA_block2016_ts,
+      EPOCH_NBITS,
+      2000n,
+    );
+    const batch = formatBatch(extension);
+    const tx = await oracle.write.submitBlocks([
+      2016,
+      batch.headers,
+      batch.coinbaseTxs,
+      batch.merkleProofs,
+    ]);
+    await pc.waitForTransactionReceipt({ hash: tx });
+
+    const [, , epochStartTimestampAfter, , , epochStartHeightAfter] = await oracle.read.state();
+    assert.equal(epochStartHeightAfter, 2016);
+    assert.equal(epochStartTimestampAfter, epochStartTimestampBefore);
   });
 
   it("should allow extending the chain with submitBlock after a reorg", async function () {

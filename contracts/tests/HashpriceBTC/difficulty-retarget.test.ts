@@ -100,10 +100,22 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
     const receipt = await pc.waitForTransactionReceipt({ hash: tx });
     assert.equal(receipt.status, "success");
 
-    const [, , epochStartTimestamp, epochStartNBits] = await oracle.read.state();
+    const [
+      ,
+      ,
+      epochStartTimestamp,
+      epochStartNBits,
+      ,
+      epochStartHeight,
+      prevEpochStartTimestamp,
+      prevEpochStartNBits,
+    ] = await oracle.read.state();
     assert.equal(epochStartTimestamp, retargetTs);
     assert.notEqual(epochStartTimestamp, checkpointTs, "must not store H-1 timestamp");
     assert.equal(epochStartNBits, EPOCH_NBITS);
+    assert.equal(epochStartHeight, 2016);
+    assert.equal(prevEpochStartTimestamp, epochStartTs);
+    assert.equal(prevEpochStartNBits, EPOCH_NBITS);
   });
 
   // Mirrors mainnet failure at height 959616: after the previous retarget, storing time(H-1)
@@ -252,6 +264,77 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
     const minedRetarget = mineHeader(retargetHeader);
 
     // Coinbase/proof are dummy — the contract reverts on difficulty before reaching them
+    await catchError(oracle.abi, "InvalidRetarget", async () => {
+      await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
+    });
+  });
+
+  it("should clamp a backwards epoch-end timestamp instead of panicking", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    const checkpointHeight = 2015;
+    const latestBlock = await pc.getBlock({});
+    // epochStart after H-1 timestamp → unsigned subtract would panic without the clamp guard.
+    const checkpointTs = Number(latestBlock.timestamp) + 1000;
+    const epochStartTs = checkpointTs + 10_000;
+    const fakeCheckpointHash = "dd".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(epochStartTs + 1) });
+
+    const oracle = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      epochStartTs,
+      EPOCH_NBITS,
+    ]);
+
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: checkpointTs + 600,
+      nBits: EPOCH_NBITS,
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    // Min timespan clamp ⇒ expectedTarget ≈ oldTarget/4; same nBits is far outside 0.1%.
+    await catchError(oracle.abi, "InvalidRetarget", async () => {
+      await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
+    });
+  });
+
+  it("should not panic when easy-target × 4× timespan saturates expectedTarget", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    const checkpointHeight = 2015;
+    const latestBlock = await pc.getBlock({});
+    const epochStartTs = Number(latestBlock.timestamp) + 1000;
+    // Force the max timespan clamp (4× expected).
+    const checkpointTs = epochStartTs + 4 * RETARGET_EXPECTED_TIMESPAN;
+    const retargetTs = checkpointTs + 600;
+    const fakeCheckpointHash = "ee".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(retargetTs + 1) });
+
+    const oracle = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      epochStartTs,
+      EPOCH_NBITS,
+    ]);
+
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: retargetTs,
+      nBits: EPOCH_NBITS,
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    // Quotient saturates to uint256.max for this easy target; must revert cleanly, not Panic(0x11).
     await catchError(oracle.abi, "InvalidRetarget", async () => {
       await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
     });

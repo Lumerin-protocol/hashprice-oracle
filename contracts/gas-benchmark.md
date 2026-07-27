@@ -1,14 +1,14 @@
 # Gas Benchmark — HashpriceBTC
 
-_Last updated: 2026-04-15_
+_Last updated: 2026-07-27_
 
 ## `submitBlock` — one-by-one over 155 real mainnet blocks
 
 | Metric | Gas |
 |--------|----:|
-| Average (all 155 blocks) | 121,020 |
-| Average cold (first 144 blocks, writing fee window) | 121,983 |
-| Average warm (last 11 blocks, steady state) | 108,423 |
+| Average (all 155 blocks) | 121,380 |
+| Average cold (first 144 blocks, writing fee window) | 122,342 |
+| Average warm (last 11 blocks, steady state) | 108,782 |
 
 ## `latestRoundData` — read-only call
 
@@ -20,4 +20,4 @@ _Last updated: 2026-04-15_
 
 | Value |
 |-------|
-| 454735517056 sats / 4547.35517056 BTC per 100 TH/s/day |
+| 4547355170565 sats / 45473.55170565 BTC per 1 PH/s/day |
