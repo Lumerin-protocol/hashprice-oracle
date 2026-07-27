@@ -117,15 +117,14 @@ const RETARGET_EXPECTED_TIMESPAN = 2016 * 10 * 60;
  *
  * Chain A (4 blocks 2015–2018, all EPOCH_NBITS) becomes the canonical tip at 2018.
  * Chain A's retarget at block 2016 keeps EPOCH_NBITS (actualTimespan ≈ EXPECTED_TIMESPAN).
- * After chain A: state.epochStartNBits = EPOCH_NBITS, epochStartTimestamp = chainA_block2015_ts.
+ * After chain A: state.epochStartNBits = EPOCH_NBITS, epochStartTimestamp = chainA_block2016_ts
+ * (first block of the new epoch, matching Bitcoin).
  *
  * Chain B (4 blocks 2015–2018) forks from the same ancestor (2014):
- *   - Block 2015: EPOCH_NBITS, timestamp = chainA_block2015_ts + EXPECTED_TIMESPAN.
- *     This overwrites _blockAt(2015) so chain B's retarget at block 2016 sees
- *     actualTimespan = EXPECTED_TIMESPAN → expectedTarget = nBitsToTarget(EPOCH_NBITS).
+ *   - Block 2015: EPOCH_NBITS, timestamp = baseTs + EXPECTED_TIMESPAN (Bitcoin-correct
+ *     timespan against the restored previous epoch start).
  *   - Blocks 2016–2018: HARDER_EPOCH_NBITS (0x20555555) → each block carries work=3 vs work=2.
  * Same height (2018), more cumulative work → should trigger ChainReorg.
- * With H-1 bug: always NotHeaviestChain. With fix: ChainReorg accepted.
  */
 async function deployRetargetBoundaryFixture(conn: NetworkConnection) {
   const { viem } = conn;
@@ -173,8 +172,8 @@ async function deployRetargetBoundaryFixture(conn: NetworkConnection) {
   ]);
   await pc.waitForTransactionReceipt({ hash: txA });
 
-  // After chain A's retarget: state.epochStartTimestamp = chainA_block2015_ts = checkpointTs + 600.
-  const chainA_block2015_ts = checkpointTs + 600;
+  // After chain A's retarget: state.epochStartTimestamp = chainA_block2016_ts = checkpointTs + 1200.
+  const chainA_block2016_ts = checkpointTs + 1200;
 
   return {
     oracle,
@@ -182,8 +181,9 @@ async function deployRetargetBoundaryFixture(conn: NetworkConnection) {
     checkpointHeight,
     fakeCheckpointHash,
     checkpointTs,
+    baseTs,
     chainA,
-    chainA_block2015_ts,
+    chainA_block2016_ts,
   };
 }
 
@@ -375,25 +375,17 @@ describe("HashpriceBTC — Chain reorg", function () {
     assert.equal(heightAfter, heightBefore);
   });
 
-  // H-1 regression: the old _isHeavierChain read the ring buffer AFTER _processHeader
-  // already overwrote it with the new fork's data, so oldNBits == newNBits and the
-  // heavier-chain check always returned false. Fix: snapshot work before the loop.
+  // H-1 work-snapshot regression: the old heavier-chain check read the ring buffer AFTER
+  // _processHeader overwrote it, so oldWork == newWork always. Fix: snapshot before the loop.
+  // Timestamps use the original epoch start (baseTs); submitBlocks restores that clock when
+  // the fork rewinds past the last retarget (see the epoch-restore test below).
   it("should accept a same-height fork with strictly greater cumulative work (ChainReorg)", async function () {
-    const { oracle, pc, checkpointHeight, fakeCheckpointHash, chainA_block2015_ts } =
+    const { oracle, pc, checkpointHeight, fakeCheckpointHash, baseTs } =
       await loadFixture(deployRetargetBoundaryFixture);
 
-    // Chain B forks from the same ancestor (height 2014) and ends at the same height (2018).
-    //
-    // Block 2015 uses EPOCH_NBITS (must match ancestor's nBits; 2015%2016≠0 so no retarget).
-    // Its timestamp is chainA_block2015_ts + EXPECTED_TIMESPAN so that when block 2016's
-    // _verifyRetarget runs it sees actualTimespan = EXPECTED_TIMESPAN → expectedTarget =
-    // nBitsToTarget(EPOCH_NBITS), and HARDER_EPOCH_NBITS is within the 0.1% tolerance.
-    //
-    // Without this careful timestamp, chain A's retarget would have set
-    // state.epochStartTimestamp = chainA_block2015_ts, and _blockAt(2015) (still chain A's
-    // data) would give actualTimespan = 0 → InvalidRetarget for chain B.
-    // Chain B's block 2015 *overwrites* _blockAt(2015) before its own block 2016 retarget.
-    const chainB_block2015_ts = chainA_block2015_ts + RETARGET_EXPECTED_TIMESPAN;
+    // Chain B forks from height 2014 and ends at 2018 with more work per post-retarget block.
+    // Block 2015 timestamp yields actualTimespan = EXPECTED against the restored epoch start.
+    const chainB_block2015_ts = baseTs + RETARGET_EXPECTED_TIMESPAN;
     const chainB_b2015 = mineSyntheticBlock(
       fakeCheckpointHash,
       2015,
@@ -403,7 +395,6 @@ describe("HashpriceBTC — Chain reorg", function () {
     );
 
     // Blocks 2016–2018 at HARDER_EPOCH_NBITS: each carries more work per block.
-    // Block 2016 is the retarget block; it passes _verifyRetarget as shown above.
     const chainB_rest = mineChain(
       chainB_b2015.hash,
       2016,
@@ -415,8 +406,6 @@ describe("HashpriceBTC — Chain reorg", function () {
     const chainB = [chainB_b2015, ...chainB_rest];
     const batchB = formatBatch(chainB);
 
-    // Expected (after H-1 fix): snapshotted work shows chain B is heavier → ChainReorg.
-    // Before fix: ring buffer overwritten before comparison → oldWork==newWork → NotHeaviestChain.
     const tx = await oracle.write.submitBlocks([
       checkpointHeight,
       batchB.headers,
@@ -428,6 +417,52 @@ describe("HashpriceBTC — Chain reorg", function () {
 
     const newTip = await oracle.read.chainTipHash();
     assert.equal(newTip.toLowerCase(), hex(chainB[chainB.length - 1].hash).toLowerCase());
+  });
+
+  // Regression: after chain A retargets, state.epochStart* points at block 2016. A reorg that
+  // forks below 2016 must restore the *previous* epoch start (baseTs) before re-verifying
+  // the retarget. Without that restore, timespan is measured from chain A's 2016 timestamp
+  // and a correctly timed fork reverts (underflow / InvalidRetarget).
+  it("should restore previous epoch start when a reorg re-crosses a retarget boundary", async function () {
+    const { oracle, pc, checkpointHeight, fakeCheckpointHash, baseTs } =
+      await loadFixture(deployRetargetBoundaryFixture);
+
+    // Bitcoin-correct timespan for retarget at 2016: time(2015) - time(epochStart).
+    // epochStart is still baseTs until the reorg's own block 2016 is accepted.
+    const chainB_block2015_ts = baseTs + RETARGET_EXPECTED_TIMESPAN;
+    const chainB_b2015 = mineSyntheticBlock(
+      fakeCheckpointHash,
+      2015,
+      chainB_block2015_ts,
+      EPOCH_NBITS,
+      500n,
+    );
+    const chainB_rest = mineChain(
+      chainB_b2015.hash,
+      2016,
+      3,
+      chainB_block2015_ts,
+      HARDER_EPOCH_NBITS,
+      5000n,
+    );
+    const chainB = [chainB_b2015, ...chainB_rest];
+    const batchB = formatBatch(chainB);
+
+    const tx = await oracle.write.submitBlocks([
+      checkpointHeight,
+      batchB.headers,
+      batchB.coinbaseTxs,
+      batchB.merkleProofs,
+    ]);
+    const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+    assert.equal(receipt.status, "success");
+
+    const newTip = await oracle.read.chainTipHash();
+    assert.equal(newTip.toLowerCase(), hex(chainB[chainB.length - 1].hash).toLowerCase());
+
+    const [, , epochStartTimestamp] = await oracle.read.state();
+    // Chain B's retarget block 2016 timestamp = chainB_block2015_ts + 600.
+    assert.equal(epochStartTimestamp, chainB_block2015_ts + 600);
   });
 
   it("should allow extending the chain with submitBlock after a reorg", async function () {

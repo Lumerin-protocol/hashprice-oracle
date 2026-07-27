@@ -65,6 +65,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 epochStartTimestamp;
         uint32 epochStartNBits;
         uint32 lastSubmittedAt;
+        /// @dev Height of the first block of the current difficulty epoch (last retarget height).
+        uint32 epochStartHeight;
+        /// @dev Epoch-start values from before the last retarget; restored when a reorg
+        ///      forks below `epochStartHeight` so the retarget can be re-verified.
+        uint32 prevEpochStartTimestamp;
+        uint32 prevEpochStartNBits;
     }
 
     /// @dev Cached output of latestRoundData(), refreshed on every block submission.
@@ -167,12 +173,16 @@ contract HashpriceBTC is AggregatorV3Interface {
         BTCUtils.requireSha256Precompile();
         _setBlockAt(height, blockHash, timestamp, nBits);
         chainTipHash = blockHash;
+        uint32 epochStartHeight = height - (height % uint32(RETARGET_INTERVAL));
         state = PackedState({
             chainHeight: height,
             blockCount: 0,
             epochStartTimestamp: _epochStartTimestamp,
             epochStartNBits: _epochStartNBits,
-            lastSubmittedAt: 0
+            lastSubmittedAt: 0,
+            epochStartHeight: epochStartHeight,
+            prevEpochStartTimestamp: _epochStartTimestamp,
+            prevEpochStartNBits: _epochStartNBits
         });
     }
 
@@ -195,17 +205,17 @@ contract HashpriceBTC is AggregatorV3Interface {
         _validateHeaderLength(header);
         PackedState memory s = state;
 
-        BlockEntry memory cur = BlockEntry({
+        BlockEntry memory tip = BlockEntry({
             blockHash: chainTipHash,
             timestamp: 0,
             nBits: _blockAt(s.chainHeight).nBits,
             height: s.chainHeight
         });
 
-        _processHeader(header, coinbaseTx, merkleProof, cur, s);
-        chainTipHash = cur.blockHash;
+        _processHeader(header, coinbaseTx, merkleProof, tip, s);
+        chainTipHash = tip.blockHash;
 
-        s.chainHeight = cur.height;
+        s.chainHeight = tip.height;
         s.blockCount++;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
@@ -233,7 +243,15 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (ancestor.height != ancestorHeight) revert AncestorNotInBuffer();
 
         PackedState memory s = state;
-        BlockEntry memory cur = ancestor;
+        BlockEntry memory tip = ancestor;
+
+        // A reorg that forks below the last retarget must re-verify that retarget against
+        // the previous epoch's start clock, not the tip's already-updated values.
+        if (ancestorHeight < s.epochStartHeight) {
+            s.epochStartTimestamp = s.prevEpochStartTimestamp;
+            s.epochStartNBits = s.prevEpochStartNBits;
+            s.epochStartHeight -= uint32(RETARGET_INTERVAL);
+        }
 
         // Snapshot cumulative work of both chains BEFORE the processing loop.
         // _processHeader calls _setBlockAt which overwrites the ring buffer slot for each
@@ -244,29 +262,29 @@ contract HashpriceBTC is AggregatorV3Interface {
             _snapshotForkWork(headers, ancestorHeight, count, s.chainHeight);
 
         for (uint256 i = 0; i < count; i++) {
-            _processHeader(_sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], cur, s);
+            _processHeader(_sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], tip, s);
         }
 
-        if (cur.height < s.chainHeight) {
+        if (tip.height < s.chainHeight) {
             revert NotHeaviestChain();
         }
 
-        if (cur.height > s.chainHeight) {
+        if (tip.height > s.chainHeight) {
             // Emit ChainReorg when the fork diverges below the current tip (some canonical
             // blocks are being replaced). A plain extension (ancestorHeight == chainHeight)
             // is not a reorg and does not emit the event.
             if (ancestorHeight < s.chainHeight) {
-                emit ChainReorg(cur.blockHash, cur.height);
+                emit ChainReorg(tip.blockHash, tip.height);
             }
-            s.chainHeight = cur.height;
+            s.chainHeight = tip.height;
             s.blockCount += uint32(count);
         } else if (snapshotNewWork > snapshotOldWork) {
-            emit ChainReorg(cur.blockHash, cur.height);
+            emit ChainReorg(tip.blockHash, tip.height);
         } else {
             revert NotHeaviestChain();
         }
 
-        chainTipHash = cur.blockHash;
+        chainTipHash = tip.blockHash;
         s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
 
@@ -279,35 +297,36 @@ contract HashpriceBTC is AggregatorV3Interface {
         return headers[index * HEADER_SIZE:(index + 1) * HEADER_SIZE];
     }
 
-    /// @dev Process a single header inside submitBlocks. Mutates `cur` in place.
+    /// @dev Validate and append one header onto `tip`. Mutates `tip` to the accepted block.
     function _processHeader(
         bytes calldata header,
         bytes calldata coinbaseTx,
         bytes32[] calldata merkleProof,
-        BlockEntry memory cur,
+        BlockEntry memory tip,
         PackedState memory s
     ) internal {
-        BTCUtils.HeaderInfo memory info = BTCUtils.parseHeader(header);
-        _validateChainLinkage(info.prevBlockHash, cur.blockHash);
+        BTCUtils.HeaderInfo memory incoming = BTCUtils.parseHeader(header);
+        _validateChainLinkage(incoming.prevBlockHash, tip.blockHash);
 
-        uint256 target = BTCUtils.nBitsToTarget(info.nBits);
+        uint256 target = BTCUtils.nBitsToTarget(incoming.nBits);
         bytes32 blockHash = BTCUtils.hash256View(header);
-
-        cur.height++;
+        uint32 newHeight = tip.height + 1;
 
         _validateWork(blockHash, target);
-        _validateTimestamp(info.timestamp);
-        _validateDifficulty(cur.height, info.nBits, cur.nBits, s);
+        _validateTimestamp(incoming.timestamp);
+        _validateDifficulty(tip, incoming, newHeight, s);
 
-        uint64 fees = _verifyCoinbaseAndExtractFees(cur.height, info.merkleRoot, coinbaseTx, merkleProof);
+        uint64 fees = _verifyCoinbaseAndExtractFees(newHeight, incoming.merkleRoot, coinbaseTx, merkleProof);
 
-        _updateFees(fees, cur.height);
-        _setBlockAt(cur.height, blockHash, info.timestamp, info.nBits);
+        _updateFees(fees, newHeight);
+        _setBlockAt(newHeight, blockHash, incoming.timestamp, incoming.nBits);
 
-        cur.blockHash = blockHash;
-        cur.nBits = info.nBits;
+        tip.blockHash = blockHash;
+        tip.nBits = incoming.nBits;
+        tip.height = newHeight;
+        tip.timestamp = incoming.timestamp;
 
-        emit BlockSubmitted(blockHash, cur.height, fees);
+        emit BlockSubmitted(blockHash, newHeight, fees);
     }
 
     // ─── AggregatorV3Interface ────────────────────────────────────────
@@ -477,29 +496,44 @@ contract HashpriceBTC is AggregatorV3Interface {
         }
     }
 
-    function _validateDifficulty(uint32 height, uint32 newNBits, uint32 prevNBits, PackedState memory s) internal {
-        if (height % RETARGET_INTERVAL == 0) {
-            _verifyRetarget(height, newNBits, s);
-            emit DifficultyChanged(height, newNBits, BTCUtils.nBitsToDifficulty(newNBits));
+    /// @param tip Parent tip before accepting the new block (provides previous nBits).
+    /// @param incoming Parsed fields of the new header being validated.
+    /// @param newHeight Height of the incoming block (`tip.height + 1`).
+    function _validateDifficulty(
+        BlockEntry memory tip,
+        BTCUtils.HeaderInfo memory incoming,
+        uint32 newHeight,
+        PackedState memory s
+    ) internal {
+        if (newHeight % RETARGET_INTERVAL == 0) {
+            _verifyRetarget(newHeight, incoming, s);
+            emit DifficultyChanged(newHeight, incoming.nBits, BTCUtils.nBitsToDifficulty(incoming.nBits));
         } else {
-            if (newNBits != prevNBits) revert UnexpectedDifficultyChange();
+            if (incoming.nBits != tip.nBits) revert UnexpectedDifficultyChange();
         }
     }
 
-    function _verifyRetarget(uint32 height, uint32 newNBits, PackedState memory s) internal view {
-        uint256 startTime = uint256(s.epochStartTimestamp);
-        BlockEntry storage lastBlock = _blockAt(height - 1);
-        if (lastBlock.height != height - 1) revert AncestorNotInBuffer();
-        uint256 endTime = uint256(lastBlock.timestamp);
+    /// @dev At retarget height H: timespan is time(H-1) - epochStart. The new epoch then
+    ///      starts at the incoming block H itself (Bitcoin rule), so store its timestamp/nBits.
+    ///      Storing time(H-1) here is an off-by-one that drifts expectedTarget outside the
+    ///      0.1% tolerance at the following boundary.
+    /// @param newHeight Retarget height H (multiple of RETARGET_INTERVAL).
+    /// @param incoming Header of block H (first block of the new difficulty epoch).
+    function _verifyRetarget(uint32 newHeight, BTCUtils.HeaderInfo memory incoming, PackedState memory s) internal view {
+        uint256 epochStartTime = uint256(s.epochStartTimestamp);
+        // Last block of the epoch that just ended (height H-1).
+        BlockEntry storage prevEpochEnd = _blockAt(newHeight - 1);
+        if (prevEpochEnd.height != newHeight - 1) revert AncestorNotInBuffer();
+        uint256 epochEndTime = uint256(prevEpochEnd.timestamp);
 
-        uint256 actualTimespan = endTime - startTime;
+        uint256 actualTimespan = epochEndTime - epochStartTime;
 
         if (actualTimespan < EXPECTED_TIMESPAN / 4) actualTimespan = EXPECTED_TIMESPAN / 4;
         if (actualTimespan > EXPECTED_TIMESPAN * 4) actualTimespan = EXPECTED_TIMESPAN * 4;
 
         uint256 oldTarget = BTCUtils.nBitsToTarget(s.epochStartNBits);
-        uint256 newTarget = BTCUtils.nBitsToTarget(newNBits);
-        uint256 expectedTarget = oldTarget / EXPECTED_TIMESPAN * actualTimespan;
+        uint256 newTarget = BTCUtils.nBitsToTarget(incoming.nBits);
+        uint256 expectedTarget = _expectedRetargetTarget(oldTarget, actualTimespan);
 
         uint256 tolerance = expectedTarget / 1000;
         if (tolerance == 0) tolerance = 1;
@@ -507,8 +541,21 @@ contract HashpriceBTC is AggregatorV3Interface {
             revert InvalidRetarget();
         }
 
-        s.epochStartTimestamp = lastBlock.timestamp;
-        s.epochStartNBits = newNBits;
+        // Incoming block H is the first block of the new epoch.
+        s.prevEpochStartTimestamp = s.epochStartTimestamp;
+        s.prevEpochStartNBits = s.epochStartNBits;
+        s.epochStartTimestamp = incoming.timestamp;
+        s.epochStartNBits = incoming.nBits;
+        s.epochStartHeight = newHeight;
+    }
+
+    /// @dev Bitcoin: `oldTarget * actualTimespan / EXPECTED_TIMESPAN`. Fall back to
+    ///      divide-first only when the product would overflow uint256 (easy/test targets).
+    function _expectedRetargetTarget(uint256 oldTarget, uint256 actualTimespan) private pure returns (uint256) {
+        if (oldTarget > type(uint256).max / actualTimespan) {
+            return oldTarget / EXPECTED_TIMESPAN * actualTimespan;
+        }
+        return oldTarget * actualTimespan / EXPECTED_TIMESPAN;
     }
 
     function _validateWork(bytes32 blockHash, uint256 target) internal pure {
