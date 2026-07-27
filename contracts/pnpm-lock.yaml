@@ -61,8 +61,8 @@ importers:
         specifier: 3.2.0
         version: 3.2.0
       hardhat-viem-abi:
-        specifier: github:lsheva/hardhat-viem-abi#v1.0.0-alpha.1&path:packages/hardhat-viem-abi
-        version: git+https://git@github.com:lsheva/hardhat-viem-abi.git#194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9&path:packages/hardhat-viem-abi(hardhat@3.2.0)(viem@2.47.11(typescript@5.9.3)(zod@3.25.76))
+        specifier: https://github.com/lsheva/hardhat-viem-abi.git#v1.0.0-alpha.1&path:packages/hardhat-viem-abi
+        version: https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9#path:packages/hardhat-viem-abi(hardhat@3.2.0)(viem@2.47.11(typescript@5.9.3)(zod@3.25.76))
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
@@ -1410,8 +1410,8 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
-  hardhat-viem-abi@git+https://git@github.com:lsheva/hardhat-viem-abi.git#194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9&path:packages/hardhat-viem-abi:
-    resolution: {commit: 194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9, path: packages/hardhat-viem-abi, repo: git@github.com:lsheva/hardhat-viem-abi.git, type: git}
+  hardhat-viem-abi@https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9#path:packages/hardhat-viem-abi:
+    resolution: {path: packages/hardhat-viem-abi, tarball: https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9}
     version: 1.0.0-alpha.1
     engines: {node: '>=22'}
     peerDependencies:
@@ -4025,7 +4025,7 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  hardhat-viem-abi@git+https://git@github.com:lsheva/hardhat-viem-abi.git#194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9&path:packages/hardhat-viem-abi(hardhat@3.2.0)(viem@2.47.11(typescript@5.9.3)(zod@3.25.76)):
+  hardhat-viem-abi@https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9#path:packages/hardhat-viem-abi(hardhat@3.2.0)(viem@2.47.11(typescript@5.9.3)(zod@3.25.76)):
     dependencies:
       hardhat: 3.2.0
       viem: 2.47.11(typescript@5.9.3)(zod@3.25.76)
