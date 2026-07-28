@@ -15,6 +15,7 @@
  *
  * Usage:
  *   BTC_SEED_START=945478 BTC_SEED_END=945504 pnpm seed-history
+ *   SEED_DAYS=14 pnpm seed-history
  *
  * Required env vars:
  *   BITCOIN_RPC_URL           Bitcoin Core RPC endpoint
@@ -23,12 +24,21 @@
  *   CHAIN_ID                  Production chain ID (for Chainlink RPC)
  *   BTC_SEED_START            First Bitcoin block height — used as the
  *                             HashpriceBTC checkpoint; submissions begin at
- *                             BTC_SEED_START + 1.
+ *                             BTC_SEED_START + 1. May be omitted when
+ *                             SEED_DAYS is set (see below).
  *
  * Optional:
+ *   SEED_DAYS                 Number of days of history to seed, counting
+ *                             back from BTC_SEED_END. When set, this takes
+ *                             precedence over BTC_SEED_START (BTC_SEED_START
+ *                             is derived instead and a warning is printed if
+ *                             both are provided).
  *   BTC_SEED_END              Last Bitcoin block height (default: tip − 6)
  *   ETH_SEED_START_BLOCK      Ethereum block to start Chainlink log query from
- *                             (auto-estimated from BTC_SEED_START block timestamp if omitted)
+ *                             (auto-estimated from the Bitcoin checkpoint's
+ *                             timestamp, minus a safety slack, if omitted)
+ *   BTC_FETCH_CONCURRENCY     Number of Bitcoin blocks to fetch in parallel
+ *                             (default: 24)
  */
 
 import { createHash } from "node:crypto";
@@ -281,11 +291,37 @@ async function fetchBtcBlock(rpcUrl: string, height: number): Promise<BtcBlock> 
   return result;
 }
 
+// ─── Bounded-concurrency parallel map ─────────────────────────────────────────
+
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+  onProgress?: (done: number, total: number) => void,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  let done = 0;
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
+  async function runOne(): Promise<void> {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i], i);
+      done++;
+      onProgress?.(done, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => runOne()));
+  return results;
+}
+
 // ─── Chainlink history ────────────────────────────────────────────────────────
 
 const PROXY_ABI = parseAbi([
   "function phaseId() view returns (uint16)",
   "function phaseAggregators(uint16 phase) view returns (address)",
+  "function aggregator() view returns (address)",
   "function decimals() view returns (uint8)",
 ]);
 
@@ -359,39 +395,77 @@ function writeChainlinkChunkToCache(
   writeFileSync(chainlinkCachePath(chainId, proxy, chunkStart), JSON.stringify(serialized), "utf8");
 }
 
+// Resolves the set of underlying aggregator addresses whose AnswerUpdated
+// logs make up a Chainlink feed's history. Handles both the standard
+// EACAggregatorProxy (phaseId/phaseAggregators) shape and simpler proxies
+// that only expose aggregator(), falling back to treating the configured
+// address itself as the aggregator if neither interface is present.
+async function resolveChainlinkAggregators(
+  ethClient: ReturnType<typeof createPublicClient>,
+  proxyAddress: `0x${string}`,
+): Promise<`0x${string}`[]> {
+  const bytecode = await ethClient.getBytecode({ address: proxyAddress });
+  if (!bytecode || bytecode === "0x") {
+    throw new Error(
+      `No contract code at CHAINLINK_BTC_USD_ADDRESS (${proxyAddress}) on chain ${ethClient.chain?.id}. ` +
+        `Make sure this is the Chainlink BTC/USD proxy address on Base mainnet (or whichever chain ` +
+        `ETHEREUM_RPC_URL / CHAIN_ID point to), not a local/testnet placeholder.`,
+    );
+  }
+
+  const ZERO: `0x${string}` = "0x0000000000000000000000000000000000000000";
+
+  try {
+    const currentPhaseId = await ethClient.readContract({
+      address: proxyAddress,
+      abi: PROXY_ABI,
+      functionName: "phaseId",
+    });
+    const phases = Array.from({ length: currentPhaseId }, (_, i) => i + 1);
+    const phaseAddrs = await Promise.all(
+      phases.map(
+        (phase) =>
+          ethClient.readContract({
+            address: proxyAddress,
+            abi: PROXY_ABI,
+            functionName: "phaseAggregators",
+            args: [phase],
+          }) as Promise<`0x${string}`>,
+      ),
+    );
+    const aggregators = [...new Set(phaseAddrs.filter((a) => a !== ZERO))];
+    if (aggregators.length > 0) return aggregators;
+  } catch {
+    // Not a phased EACAggregatorProxy — fall through to other strategies.
+  }
+
+  try {
+    const aggregator = (await ethClient.readContract({
+      address: proxyAddress,
+      abi: PROXY_ABI,
+      functionName: "aggregator",
+    })) as `0x${string}`;
+    if (aggregator && aggregator !== ZERO) return [aggregator];
+  } catch {
+    // No aggregator() either — fall through to treating the proxy as the aggregator.
+  }
+
+  return [proxyAddress];
+}
+
 async function fetchChainlinkHistory(
   ethClient: ReturnType<typeof createPublicClient>,
   proxyAddress: `0x${string}`,
   fromBlock: bigint,
   toBlock: bigint,
 ): Promise<ChainlinkRound[]> {
-  const currentPhaseId = await ethClient.readContract({
-    address: proxyAddress,
-    abi: PROXY_ABI,
-    functionName: "phaseId",
-  });
-
-  const phases = Array.from({ length: currentPhaseId }, (_, i) => i + 1);
-  const phaseAddrs = await Promise.all(
-    phases.map(
-      (phase) =>
-        ethClient.readContract({
-          address: proxyAddress,
-          abi: PROXY_ABI,
-          functionName: "phaseAggregators",
-          args: [phase],
-        }) as Promise<`0x${string}`>,
-    ),
-  );
-
-  const ZERO = "0x0000000000000000000000000000000000000000";
-  const aggregators = [...new Set(phaseAddrs.filter((a) => a !== ZERO))];
+  const aggregators = await resolveChainlinkAggregators(ethClient, proxyAddress);
   const chainId = ethClient.chain?.id;
   if (chainId === undefined) {
     throw new Error("ethClient is missing chain.id — cannot scope Chainlink cache");
   }
   console.log(
-    `  Chainlink phases: ${currentPhaseId}, aggregators: ${aggregators.length}, cache: ${chainlinkCacheDir(chainId, proxyAddress)}`,
+    `  Chainlink aggregators: ${aggregators.length}, cache: ${chainlinkCacheDir(chainId, proxyAddress)}`,
   );
 
   const rounds: ChainlinkRound[] = [];
@@ -505,20 +579,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
 
 async function main() {
-  if (!process.env.ETH_SEED_START_BLOCK) {
-    console.error(`Missing required env var: ETH_SEED_START_BLOCK`);
-    return;
-  }
-  const ethFromBlock = BigInt(process.env.ETH_SEED_START_BLOCK);
   const bitcoinRpcUrl = required("BITCOIN_RPC_URL");
   const ethereumRpcUrl = required("ETHEREUM_RPC_URL");
   const chainId = Number(required("CHAIN_ID"));
   const chainlinkProxy = required("CHAINLINK_BTC_USD_ADDRESS") as `0x${string}`;
-  const btcSeedStart = Number(required("BTC_SEED_START"));
 
   // ── Determine Bitcoin block range ─────────────────────────────────────────
   const tipHeight = await btcRpc<number>(bitcoinRpcUrl, "getblockcount");
   const btcSeedEnd = process.env.BTC_SEED_END ? Number(process.env.BTC_SEED_END) : tipHeight - 6;
+
+  let btcSeedStart: number;
+  if (process.env.SEED_DAYS) {
+    if (process.env.BTC_SEED_START) {
+      console.warn(
+        `Both SEED_DAYS and BTC_SEED_START are set — SEED_DAYS takes precedence, BTC_SEED_START will be ignored.`,
+      );
+    }
+    const days = Number(process.env.SEED_DAYS);
+    // ~144 Bitcoin blocks/day plus a small safety margin so the checkpoint
+    // sits comfortably before the requested window.
+    btcSeedStart = btcSeedEnd - Math.ceil(144 * days) - 50;
+  } else {
+    btcSeedStart = Number(required("BTC_SEED_START"));
+  }
 
   if (btcSeedStart >= btcSeedEnd) {
     console.error(`BTC_SEED_START (${btcSeedStart}) >= end (${btcSeedEnd})`);
@@ -554,6 +637,25 @@ async function main() {
     `(${new Date(epochHeader.time * 1000).toISOString()})`,
   );
   console.log("Epoch start nBits: ", `0x${epochHeader.bits}`);
+
+  // ── Connect to the production Ethereum chain (Chainlink history) ──────────
+  const chain = CHAIN_MAP[chainId];
+  if (!chain) {
+    console.error(`Unsupported chain ID: ${chainId}`);
+    process.exit(1);
+  }
+  const ethClient = createPublicClient({ chain, transport: http(ethereumRpcUrl) });
+
+  let ethFromBlock: bigint;
+  if (process.env.ETH_SEED_START_BLOCK) {
+    ethFromBlock = BigInt(process.env.ETH_SEED_START_BLOCK);
+  } else {
+    console.log("\nEstimating ETH_SEED_START_BLOCK from Bitcoin checkpoint timestamp...");
+    const estimated = await findEthBlockAtTimestamp(ethClient, checkpoint.time);
+    const slack = 5000n;
+    ethFromBlock = estimated > slack ? estimated - slack : 0n;
+    console.log(`  → ETH_SEED_START_BLOCK ≈ ${ethFromBlock} (estimated, ${slack}-block slack)`);
+  }
 
   // ── Connect to local Hardhat node + deploy contracts ──────────────────────
   console.log("\nCompiling contracts...");
@@ -637,9 +739,6 @@ async function main() {
     HASHPRICE_POLLING_BLOCK_INTERVAL: "1",
   });
 
-  // Snapshot the local chain tip so we can fetch emitted events at the end.
-  const seedFromBlock = await localPc.getBlockNumber();
-
   console.log(`\n=== Seeding history ===`);
   console.log(`Owner:          ${owner.account.address}`);
   console.log(
@@ -650,31 +749,36 @@ async function main() {
 
   // ── Fetch Bitcoin blocks to submit (skip checkpoint itself) ───────────────
   // Blocks are cached to disk (.cache/btc-blocks/) so restarts don't re-download.
-  console.log(`\nFetching Bitcoin blocks (cache: ${BTC_CACHE_DIR})...`);
-  const btcBlocks: BtcBlock[] = [];
+  // Fetched with bounded concurrency since each block requires a handful of
+  // sequential RPC round-trips (hash → header/block → coinbase tx).
+  const btcFetchConcurrency = process.env.BTC_FETCH_CONCURRENCY
+    ? Number(process.env.BTC_FETCH_CONCURRENCY)
+    : 24;
+  console.log(
+    `\nFetching Bitcoin blocks (cache: ${BTC_CACHE_DIR}, concurrency: ${btcFetchConcurrency})...`,
+  );
+  const heights = Array.from({ length: btcSeedEnd - btcSeedStart }, (_, i) => btcSeedStart + 1 + i);
   let cacheHits = 0;
   let cacheMisses = 0;
-  for (let h = btcSeedStart + 1; h <= btcSeedEnd; h++) {
-    const wasCached = readBtcBlockFromCache(h) !== null;
-    if (wasCached) cacheHits++;
+  for (const h of heights) {
+    if (readBtcBlockFromCache(h) !== null) cacheHits++;
     else cacheMisses++;
-    process.stdout.write(
-      `  block ${h} / ${btcSeedEnd}  (cached=${cacheHits} fetched=${cacheMisses})\r`,
-    );
-    btcBlocks.push(await fetchBtcBlock(bitcoinRpcUrl, h));
   }
+  const btcBlocks = await mapPool(
+    heights,
+    btcFetchConcurrency,
+    (h) => fetchBtcBlock(bitcoinRpcUrl, h),
+    (done, total) => {
+      process.stdout.write(
+        `  block ${done} / ${total}  (cached=${cacheHits} fetched=${cacheMisses})\r`,
+      );
+    },
+  );
   process.stdout.write("\n");
   console.log(`  → ${btcBlocks.length} blocks (${cacheHits} cached, ${cacheMisses} fetched)`);
 
   // ── Fetch Chainlink BTC/USD history ──────────────────────────────────────
   console.log("\nFetching Chainlink BTC/USD history...");
-  const chain = CHAIN_MAP[chainId];
-  if (!chain) {
-    console.error(`Unsupported chain ID: ${chainId}`);
-    process.exit(1);
-  }
-  const ethClient = createPublicClient({ chain, transport: http(ethereumRpcUrl) });
-
   const startTimestamp = checkpoint.time;
   const endTimestamp = btcBlocks[btcBlocks.length - 1]?.timestamp ?? checkpoint.time;
 

@@ -1,6 +1,7 @@
 {
   "name": "marketplace",
   "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
     "clean": "rm -rf data generated build",
     "codegen": "rm -rf generated && graph codegen",
@@ -13,6 +14,7 @@
     "remove-local": "graph remove --node http://localhost:8020/ hashprice",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 --version-label 0 hashprice",
     "setup-local": "pnpm prepare-local && pnpm codegen && pnpm build && pnpm create-local && pnpm deploy-local",
+    "seed:generate": "node --experimental-strip-types scripts/generate-seed.ts",
     "test": "graph test",
     "indexer": "docker compose --env-file ../.env up"
   },
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@graphprotocol/graph-cli": "^0.98.1",
     "matchstick-as": "0.6.0",
+    "testcontainers": "^10.28.0",
     "typescript": "^5.9.3"
   },
   "packageManager": "pnpm@10.28.1",

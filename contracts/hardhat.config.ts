@@ -48,6 +48,9 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2025-11-23",
+      // Cancun: avoid EIP-7825 (Osaka+) 16M tx gas cap so graph-node eth_call
+      // (default gas 50M) works against this node during local indexing.
+      hardfork: "cancun",
       blockGasLimit: 100_000_000n,
       loggingEnabled: true,
       gas: "auto",
@@ -63,6 +66,7 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2024-01-01",
+      hardfork: "cancun",
       blockGasLimit: 100_000_000n,
       loggingEnabled: true,
       gas: "auto",
