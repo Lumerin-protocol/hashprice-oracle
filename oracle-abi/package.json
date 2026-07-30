@@ -1,6 +1,6 @@
 {
   "name": "@hashpower/oracle-abi",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "ABIs and deployment addresses for the Hashpower hashprice oracle contracts (HashpriceBTC, HashpriceUSD) on Base",
   "license": "MIT",
   "type": "module",
