@@ -28,16 +28,6 @@ on:
           - dev
           - stg
           - main
-      graft:
-        description: "Graft from the currently tagged version instead of reindexing from scratch"
-        required: false
-        default: false
-        type: boolean
-      graft_block:
-        description: "Graft at this block instead of the base's head. Must be within the base's retained history (prune: auto keeps very little)."
-        required: false
-        default: ""
-        type: string
 
 concurrency:
   group: ci-oracles-subgraph-${{ github.ref }}
@@ -230,81 +220,12 @@ jobs:
           SUBGRAPH_VERSION: ${{ needs.build.outputs.version }}
           GOLDSKY_ROLLING_TAG: ${{ needs.build.outputs.goldsky_rolling_tag }}
           GOLDSKY_ENDPOINT: ${{ needs.build.outputs.goldsky_endpoint }}
-          GRAFT_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.graft || vars.SUBGRAPH_GRAFT || 'false' }}
-          # Optional pin, e.g. "v3.1.95-dev" or "hpow-oracles/v3.1.95-dev". Empty = auto-select latest.
-          GRAFT_BASE_OVERRIDE: ${{ vars.SUBGRAPH_GRAFT_BASE }}
-          # Optional graft block. Empty = graft at the base's head.
-          GRAFT_BLOCK: ${{ github.event_name == 'workflow_dispatch' && inputs.graft_block || vars.SUBGRAPH_GRAFT_BLOCK }}
         run: |
           echo "🚀 Goldsky Subgraph Deployment"
           echo "   Subgraph:  ${GOLDSKY_SUBGRAPH_NAME}"
           echo "   Version:   ${SUBGRAPH_VERSION}"
           echo "   Tag:       ${GOLDSKY_ROLLING_TAG}"
-          echo "   Graft:     ${GRAFT_ENABLED}"
           echo ""
-
-          # `goldsky subgraph list` is scoped to the token's project — it cannot see another
-          # environment's subgraphs — and renders two line shapes:
-          #   * <name>/<version>
-          #   * <name>/<tag> -> <name>/<version>
-          GOLDSKY_LIST=/tmp/goldsky-list.txt
-          deployed_versions() {
-            grep -E "^\* ${GOLDSKY_SUBGRAPH_NAME}/[^ ]+$" "$GOLDSKY_LIST" \
-              | sed -E "s#^\* ${GOLDSKY_SUBGRAPH_NAME}/##"
-          }
-          tagged_version() {
-            grep -E "^\* ${GOLDSKY_SUBGRAPH_NAME}/${1} -> " "$GOLDSKY_LIST" \
-              | awk '{print $4}' | head -1
-          }
-
-          # --- Resolve graft base ---
-          # Grafting copies the base subgraph's data up to its latest indexed block and
-          # continues from there, so additive schema changes ship without a full reindex.
-          # Only additive changes are valid: new entity types and *nullable* attributes.
-          GRAFT_ARGS=()
-          GRAFT_BASE=""
-          if [ "${GRAFT_ENABLED}" = "true" ]; then
-            goldsky subgraph list --token "${GOLDSKY_API_KEY}" > "$GOLDSKY_LIST" 2>/dev/null || true
-
-            if [ -n "${GRAFT_BASE_OVERRIDE}" ]; then
-              case "${GRAFT_BASE_OVERRIDE}" in
-                */*) GRAFT_BASE="${GRAFT_BASE_OVERRIDE}" ;;
-                *)   GRAFT_BASE="${GOLDSKY_SUBGRAPH_NAME}/${GRAFT_BASE_OVERRIDE}" ;;
-              esac
-              echo "🌱 Graft base pinned by SUBGRAPH_GRAFT_BASE: ${GRAFT_BASE}"
-              # Accept a tag alias as the override, but record the concrete version it maps to.
-              ALIASED=$(grep -E "^\* ${GRAFT_BASE} -> " "$GOLDSKY_LIST" | awk '{print $4}' | head -1)
-              if [ -n "$ALIASED" ]; then
-                echo "   tag resolves to ${ALIASED}"
-                GRAFT_BASE="$ALIASED"
-              fi
-              if ! deployed_versions | grep -qxF "${GRAFT_BASE#*/}"; then
-                echo "❌ ${GRAFT_BASE} is not deployed in this project. Available:"
-                deployed_versions | sed 's/^/     /'
-                exit 1
-              fi
-            else
-              # Latest deployed version of this subgraph, by version order (sort -V, so
-              # v3.1.100 sorts above v3.1.95). Never pick by list position: the CLI does
-              # not order by recency.
-              GRAFT_VERSION=$(deployed_versions | sort -V | tail -1)
-              if [ -z "$GRAFT_VERSION" ]; then
-                echo "❌ Grafting requested but ${GOLDSKY_SUBGRAPH_NAME} has no deployed versions."
-                echo "   Deploy once without grafting to establish a base, or pin SUBGRAPH_GRAFT_BASE."
-                exit 1
-              fi
-              GRAFT_BASE="${GOLDSKY_SUBGRAPH_NAME}/${GRAFT_VERSION}"
-              echo "🌱 Graft base auto-selected (latest of $(deployed_versions | wc -l | tr -d ' ') deployed versions): ${GRAFT_BASE}"
-            fi
-
-            # Usually the same thing; differs if a past deploy succeeded but tagging failed.
-            TAGGED=$(tagged_version "${GOLDSKY_ROLLING_TAG}")
-            if [ -n "$TAGGED" ] && [ "$TAGGED" != "$GRAFT_BASE" ]; then
-              echo "⚠️  Tag ${GOLDSKY_ROLLING_TAG} currently serves ${TAGGED}, which is not the graft base."
-            fi
-            echo ""
-            GRAFT_ARGS=(--graft-from "${GRAFT_BASE}")
-          fi
 
           # --- Pre-flight: check current deployment ---
           if [ -n "${GOLDSKY_ENDPOINT}" ]; then
@@ -314,49 +235,6 @@ jobs:
               "${GOLDSKY_ENDPOINT}" 2>/dev/null || true)
             echo "   $(echo "$CURRENT" | jq -c '.data._meta // "unavailable"' 2>/dev/null || echo 'unavailable')"
             echo ""
-
-            # A graft inherits the base's state, so refuse to build on a broken one. Query the
-            # base's own endpoint rather than the tag's — they are not always the same version.
-            if [ -n "${GRAFT_BASE}" ]; then
-              BASE_ENDPOINT=$(echo "${GOLDSKY_ENDPOINT}" \
-                | sed "s#/subgraphs/${GOLDSKY_SUBGRAPH_NAME}/[^/]*/gn#/subgraphs/${GOLDSKY_SUBGRAPH_NAME}/${GRAFT_BASE#*/}/gn#")
-              BASE_META=$(curl -s -X POST -H "Content-Type: application/json" \
-                -d '{"query":"{ _meta { deployment hasIndexingErrors block { number } } }"}' \
-                "${BASE_ENDPOINT}" 2>/dev/null || true)
-              echo "📊 Graft base ${GRAFT_BASE}:"
-              echo "   $(echo "$BASE_META" | jq -c '.data._meta // "unavailable"' 2>/dev/null || echo 'unavailable')"
-              echo ""
-              if [ "$(echo "$BASE_META" | jq -r '.data._meta.hasIndexingErrors // "unknown"' 2>/dev/null || echo unknown)" = "true" ]; then
-                echo "❌ Graft base has indexing errors — refusing to graft onto it."
-                echo "   Fix the base, pin a healthy SUBGRAPH_GRAFT_BASE, or deploy without grafting."
-                exit 1
-              fi
-
-              # Grafting at a past block requires the base to still hold history there.
-              # `indexerHints: prune: auto` discards all but a small window, and older
-              # graph-node versions accept an out-of-range graft block silently and then
-              # fail at runtime with "unexpected null in handler" on every event. So probe
-              # the block with a time-travel query and refuse if it has been pruned away.
-              if [ -n "${GRAFT_BLOCK}" ]; then
-                case "${GRAFT_BLOCK}" in
-                  ''|*[!0-9]*) echo "❌ GRAFT_BLOCK '${GRAFT_BLOCK}' is not a block number."; exit 1 ;;
-                esac
-                PROBE=$(curl -s -X POST -H "Content-Type: application/json" \
-                  -d "{\"query\":\"{ _meta(block:{number:${GRAFT_BLOCK}}) { block { number } } }\"}" \
-                  "${BASE_ENDPOINT}" 2>/dev/null || true)
-                PROBE_ERR=$(echo "$PROBE" | jq -r '.errors[0].message // empty' 2>/dev/null || true)
-                if [ -n "$PROBE_ERR" ]; then
-                  echo "❌ Cannot graft ${GRAFT_BASE} at block ${GRAFT_BLOCK}:"
-                  echo "   ${PROBE_ERR}"
-                  echo "   The base's history is pruned (indexerHints: prune: auto). Graft at its"
-                  echo "   head by leaving GRAFT_BLOCK empty, or deploy without grafting."
-                  exit 1
-                fi
-                echo "🌱 Grafting at block ${GRAFT_BLOCK} (verified present in base history)"
-                echo ""
-                GRAFT_ARGS+=(--start-block "${GRAFT_BLOCK}")
-              fi
-            fi
           fi
 
           # --- Deploy new version ---
@@ -364,7 +242,6 @@ jobs:
           set +e
           DEPLOY_OUTPUT=$(goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_VERSION}" \
             --path . \
-            "${GRAFT_ARGS[@]}" \
             --token "${GOLDSKY_API_KEY}" 2>&1)
           DEPLOY_EXIT=$?
           set -e
@@ -381,11 +258,6 @@ jobs:
               CONFLICT=$(echo "$DEPLOY_OUTPUT" | grep -oP 'under the name \K\S+(?=\.)' || true)
               echo ""
               echo "⚠️  Duplicate content detected — conflicts with ${CONFLICT}"
-              if [ -n "${GRAFT_BASE}" ] && [ "${CONFLICT}" = "${GRAFT_BASE}" ]; then
-                echo "❌ The conflicting version is the graft base — refusing to delete it."
-                echo "   Bump the version instead; deleting the base would force a full reindex."
-                exit 1
-              fi
               echo "   Removing conflicting version and retrying..."
               goldsky subgraph tag delete "${CONFLICT}" --tag "${GOLDSKY_ROLLING_TAG}" --token "${GOLDSKY_API_KEY}" --force 2>/dev/null || true
               goldsky subgraph delete "${CONFLICT}" --token "${GOLDSKY_API_KEY}" --force 2>/dev/null || true
@@ -393,7 +265,6 @@ jobs:
               echo "📤 Retrying deploy..."
               goldsky subgraph deploy "${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_VERSION}" \
                 --path . \
-                "${GRAFT_ARGS[@]}" \
                 --token "${GOLDSKY_API_KEY}"
             else
               echo ""
@@ -421,7 +292,11 @@ jobs:
           if [ $TAG_EXIT -ne 0 ]; then
             echo "   Tag may exist on another version — moving it..."
             # Find the version that currently holds this tag
-            OLD_TAGGED=$(resolve_tagged_versions "${GOLDSKY_ROLLING_TAG}" | head -1)
+            LIST_OUTPUT=$(goldsky subgraph list --token "${GOLDSKY_API_KEY}" 2>/dev/null || true)
+            OLD_TAGGED=$(echo "$LIST_OUTPUT" \
+              | grep "${GOLDSKY_SUBGRAPH_NAME}/" \
+              | grep "${GOLDSKY_ROLLING_TAG}" \
+              | awk '{print $1}' | head -1)
             if [ -n "$OLD_TAGGED" ]; then
               echo "   Removing tag from ${OLD_TAGGED}..."
               goldsky subgraph tag delete "${OLD_TAGGED}" \
