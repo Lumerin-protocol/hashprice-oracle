@@ -36,6 +36,7 @@ dataSources:
         - HashpriceUsd
         - HashpriceMeta
         - LatestRates
+        - NetworkHashrate
       abis:
         - name: HashpriceBTC
           file: ../contracts/abi/HashpriceBTC.json

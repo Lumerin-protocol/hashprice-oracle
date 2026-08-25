@@ -8,6 +8,11 @@ type LatestRates @entity(immutable: false) {
   hashpriceBtcUpdatedAt: BigInt
   hashpriceBtcBlockNumber: BigInt
 
+  networkHashrateId: Int8
+  networkHashrate: BigInt
+  networkHashrateUpdatedAt: BigInt
+  networkHashrateBlockNumber: BigInt
+
   btcUsdId: Int8
   btcUsdPrice: BigInt
   btcUsdUpdatedAt: BigInt
@@ -39,6 +44,25 @@ type HashpriceBtc @entity(timeseries: true) {
   price: BigInt!
   timestamp: Timestamp!
   blockNumber: BigInt!
+  # Bitcoin block height the price was derived from, which is also the oracle's
+  # Chainlink roundId. graph-node assigns `id` itself for timeseries entities, so
+  # this has to be its own field to be queryable.
+  confirmedHeight: BigInt!
+  # 144-block SMA of transaction fees in satoshis, as reported by the event. Together
+  # with confirmedHeight this makes the row self-describing: subsidy is a pure function
+  # of height, so hashrate is recomputable from the row alone.
+  avgFees: BigInt!
+}
+
+# Difficulty-implied Bitcoin network hashrate in hashes/second, derived from the same
+# HashpriceUpdated event that feeds HashpriceBtc. Written once per confirmed block, but
+# the value is a function of difficulty alone, so it only steps at a retarget (~2016 blocks).
+type NetworkHashrate @entity(timeseries: true) {
+  id: Int8!
+  hashrate: BigInt!
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+  confirmedHeight: BigInt!
 }
 
 type BtcUsd @entity(timeseries: true) {
@@ -70,6 +94,23 @@ type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "Hashpr
   low: BigInt! @aggregate(fn: "min", arg: "price")
   sum: BigInt! @aggregate(fn: "sum", arg: "price")
   count: BigInt! @aggregate(fn: "count", arg: "price")
+
+  timestamp: Timestamp!
+}
+
+# Network hashrate
+#
+# Kept for shape parity with the price feeds. Note the series is a step function that
+# changes only at a difficulty retarget, so within an epoch high, low and sum/count are
+# all the same number.
+
+type NetworkHashrateCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "hashrate")
+  low: BigInt! @aggregate(fn: "min", arg: "hashrate")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashrate")
+  count: BigInt! @aggregate(fn: "count", arg: "hashrate")
 
   timestamp: Timestamp!
 }
