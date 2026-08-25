@@ -291,12 +291,14 @@ jobs:
 
           if [ $TAG_EXIT -ne 0 ]; then
             echo "   Tag may exist on another version — moving it..."
-            # Find the version that currently holds this tag
+            # Find the version that currently holds this tag. `goldsky subgraph list`
+            # renders an alias as `* <name>/<tag> -> <name>/<version>`, so the version
+            # is field 4 — field 1 is the bullet.
             LIST_OUTPUT=$(goldsky subgraph list --token "${GOLDSKY_API_KEY}" 2>/dev/null || true)
             OLD_TAGGED=$(echo "$LIST_OUTPUT" \
               | grep "${GOLDSKY_SUBGRAPH_NAME}/" \
               | grep "${GOLDSKY_ROLLING_TAG}" \
-              | awk '{print $1}' | head -1)
+              | awk '{print $4}' | head -1)
             if [ -n "$OLD_TAGGED" ]; then
               echo "   Removing tag from ${OLD_TAGGED}..."
               goldsky subgraph tag delete "${OLD_TAGGED}" \
