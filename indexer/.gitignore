@@ -2,6 +2,16 @@ build
 data
 generated
 subgraph.yaml
+
+# Hardhat
+artifacts
+cache
+
+# matchstick binary cache and the runner/JSON IO that matchstick-ts generates
+tests/.bin
+tests/.latest.json
+tests/.tmp
+tests/runner.test.ts
 .env
 !.env.example
 node_modules

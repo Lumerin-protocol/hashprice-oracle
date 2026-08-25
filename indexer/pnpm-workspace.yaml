@@ -6,3 +6,9 @@ allowBuilds:
   matchstick-as: true
   protobufjs: false
   ssh2: false
+  # git-hosted; must run their prepare/build scripts to compile from source.
+  # Keyed on the resolved tarball URL, so these stay pinned to the commit the
+  # v0.4.2 tag points at even though package.json depends on the tag.
+  esbuild: true
+  matchstick-ts@https://codeload.github.com/lsheva/matchstick-ts/tar.gz/d613d674898f6d0d01a880dd4e1b514f707b93b9#path:packages/matchstick-ts: true
+  hardhat-matchstick-ts@https://codeload.github.com/lsheva/matchstick-ts/tar.gz/d613d674898f6d0d01a880dd4e1b514f707b93b9#path:packages/hardhat-matchstick-ts: true
