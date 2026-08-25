@@ -15,7 +15,10 @@
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 --version-label 0 hashprice",
     "setup-local": "pnpm prepare-local && pnpm codegen && pnpm build && pnpm create-local && pnpm deploy-local",
     "seed:generate": "node --experimental-strip-types scripts/generate-seed.ts",
-    "test": "graph test",
+    "test": "pnpm test:integration",
+    "test:unit": "graph test",
+    "test:integration": "hardhat test nodejs",
+    "test:integration:debug": "MATCHSTICK_VERBOSE=true hardhat test nodejs",
     "indexer": "docker compose --env-file ../.env up"
   },
   "dependencies": {
@@ -26,7 +29,15 @@
   },
   "devDependencies": {
     "@graphprotocol/graph-cli": "^0.98.1",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.11",
+    "@nomicfoundation/hardhat-node-test-runner": "^3.1.0",
+    "@nomicfoundation/hardhat-viem": "^3.0.9",
+    "@types/node": "^25.9.5",
+    "assemblyscript": "0.19.23",
+    "hardhat": "^3.14.0",
+    "hardhat-matchstick-ts": "github:lsheva/matchstick-ts#v0.4.2&path:packages/hardhat-matchstick-ts",
     "matchstick-as": "0.6.0",
+    "matchstick-ts": "github:lsheva/matchstick-ts#v0.4.2&path:packages/matchstick-ts",
     "testcontainers": "^10.28.0",
     "typescript": "^5.9.3"
   },
