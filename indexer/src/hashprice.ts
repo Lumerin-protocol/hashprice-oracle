@@ -18,10 +18,21 @@ import {
   HashpriceBtc,
   HashpriceMeta,
   LatestRates,
+  NetworkHashrate,
 } from "../generated/schema";
 import { ChainlinkAggregator } from "../generated/templates";
 
 const LATEST_RATES_ID = 0;
+
+const HALVING_INTERVAL = BigInt.fromI32(210000);
+const MAX_HALVINGS = 64;
+// 50 BTC in satoshis
+const INITIAL_SUBSIDY = BigInt.fromI64(5_000_000_000);
+const TWO = BigInt.fromI32(2);
+
+// HASHES_PER_1PHS_PER_DAY (1e15 * 86400) * 10^(DECIMALS - BTC_DECIMALS) / 600s per block
+// = 8.64e19 * 1e8 / 600. See deriveNetworkHashrate.
+const HASHRATE_NUMERATOR = BigInt.fromString("14400000000000000000000000");
 
 // Once handler — bootstraps the BTC/USD aggregator dynamic data source and initializes HashpriceMeta
 export function initFeeds(block: ethereum.Block): void {
@@ -87,11 +98,18 @@ export function initFeeds(block: ethereum.Block): void {
 // Handles hashprice updates — saves HashpriceBtc and derives HashpriceUsd from latest BtcUsd
 export function handleHashpriceUpdated(event: HashpriceUpdated): void {
   log.info("handleHashpriceUpdated: bitcoin block {}", [event.params.confirmedHeight.toString()]);
+  const networkHashrate = deriveNetworkHashrate(
+    event.params.confirmedHeight,
+    event.params.hashprice,
+    event.params.avgFees,
+  );
+
   const hpBtc = new HashpriceBtc(0);
-  hpBtc.id = event.params.confirmedHeight.toI64();
   hpBtc.price = event.params.hashprice;
   hpBtc.timestamp = event.block.timestamp.toI64();
   hpBtc.blockNumber = event.block.number;
+  hpBtc.confirmedHeight = event.params.confirmedHeight;
+  hpBtc.avgFees = event.params.avgFees;
   hpBtc.save();
 
   let rates = LatestRates.load(LATEST_RATES_ID);
@@ -99,10 +117,25 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     rates = new LatestRates(LATEST_RATES_ID);
     rates.id = LATEST_RATES_ID;
   }
-  rates.hashpriceBtcId = hpBtc.id;
+  rates.hashpriceBtcId = event.params.confirmedHeight.toI64();
   rates.hashpriceBtcPrice = event.params.hashprice;
   rates.hashpriceBtcUpdatedAt = event.block.timestamp;
   rates.hashpriceBtcBlockNumber = event.block.number;
+
+  if (networkHashrate !== null) {
+    const hashrate = new NetworkHashrate(0);
+    hashrate.hashrate = networkHashrate;
+    hashrate.timestamp = event.block.timestamp.toI64();
+    hashrate.blockNumber = event.block.number;
+    hashrate.confirmedHeight = event.params.confirmedHeight;
+    hashrate.save();
+
+    rates.networkHashrateId = event.params.confirmedHeight.toI64();
+    rates.networkHashrate = networkHashrate;
+    rates.networkHashrateUpdatedAt = event.block.timestamp;
+    rates.networkHashrateBlockNumber = event.block.number;
+  }
+
   rates.save();
 
   const context = dataSource.context();
@@ -206,6 +239,38 @@ function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
   hashpriceUsd.save();
 
   log.info("HashpriceUsd derived: id={}, price={}", [id.toString(), hashpriceUsd.price.toString()]);
+}
+
+// Mirrors BTCUtils.getBlockSubsidy: 50 BTC, halving every 210,000 blocks.
+function blockSubsidy(height: BigInt): BigInt {
+  const halvings = height.div(HALVING_INTERVAL).toI32();
+  if (halvings >= MAX_HALVINGS) return BigInt.zero();
+  return INITIAL_SUBSIDY.div(TWO.pow(halvings as u8));
+}
+
+// Difficulty-implied network hashrate in hashes/second, inverted out of the hashprice.
+//
+// The contract computes
+//   hashprice = HASHES_PER_1PHS_PER_DAY * reward * 1e8 / (difficulty * 2^32)
+// and implied hashrate is difficulty * 2^32 / 600, so
+//   hashrate = 1.44e25 * reward / hashprice
+//
+// reward is reproduced exactly from the event: avgFees is the same 144-block SMA the
+// contract used, and subsidy is a pure function of confirmedHeight. So no eth_call is
+// needed and the result stays consistent with the hashprice it is derived from.
+//
+// Note the reward cancels algebraically, leaving a function of difficulty alone — the
+// value therefore only steps at a retarget (~every 2016 blocks).
+function deriveNetworkHashrate(height: BigInt, hashprice: BigInt, avgFees: BigInt): BigInt | null {
+  if (hashprice.le(BigInt.zero())) {
+    log.warning("Cannot derive hashrate at height {}: hashprice is {}", [
+      height.toString(),
+      hashprice.toString(),
+    ]);
+    return null;
+  }
+  const reward = blockSubsidy(height).plus(avgFees);
+  return HASHRATE_NUMERATOR.times(reward).div(hashprice);
 }
 
 function maxBigInt(a: BigInt, b: BigInt): BigInt {
