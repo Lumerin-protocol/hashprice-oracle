@@ -8,10 +8,15 @@ type LatestRates @entity(immutable: false) {
   hashpriceBtcUpdatedAt: BigInt
   hashpriceBtcBlockNumber: BigInt
 
-  networkHashrateId: Int8
-  networkHashrate: BigInt
-  networkHashrateUpdatedAt: BigInt
-  networkHashrateBlockNumber: BigInt
+  networkHashrate1dId: Int8
+  networkHashrate1d: BigInt
+  networkHashrate1dUpdatedAt: BigInt
+  networkHashrate1dBlockNumber: BigInt
+
+  networkHashrate7dId: Int8
+  networkHashrate7d: BigInt
+  networkHashrate7dUpdatedAt: BigInt
+  networkHashrate7dBlockNumber: BigInt
 
   btcUsdId: Int8
   btcUsdPrice: BigInt
@@ -48,21 +53,57 @@ type HashpriceBtc @entity(timeseries: true) {
   # Chainlink roundId. graph-node assigns `id` itself for timeseries entities, so
   # this has to be its own field to be queryable.
   confirmedHeight: BigInt!
-  # 144-block SMA of transaction fees in satoshis, as reported by the event. Together
-  # with confirmedHeight this makes the row self-describing: subsidy is a pure function
-  # of height, so hashrate is recomputable from the row alone.
+  # 144-block SMA of transaction fees in satoshis, as reported by the event.
   avgFees: BigInt!
 }
 
-# Difficulty-implied Bitcoin network hashrate in hashes/second, derived from the same
-# HashpriceUpdated event that feeds HashpriceBtc. Written once per confirmed block, but
-# the value is a function of difficulty alone, so it only steps at a retarget (~2016 blocks).
-type NetworkHashrate @entity(timeseries: true) {
+# Per-Bitcoin-block bookkeeping needed to estimate the actual network hashrate.
+# Not a timeseries: rows are keyed by Bitcoin height and rewritten when a reorg
+# replaces that height, which keeps `cumulativeWork` consistent with the canonical chain.
+type BtcBlock @entity(immutable: false) {
+  id: Int8! # Bitcoin block height
+  btcTimestamp: BigInt! # raw header timestamp (nTime)
+  # Median of the 11 timestamps h-10..h — Bitcoin Core's GetMedianTimePast, the
+  # `mediantime` field of `getblock`. Null until 11 consecutive blocks are known.
+  medianTime: BigInt
+  nBits: BigInt!
+  # Sum of expected hashes (2^256 / (target + 1)) over every block up to and including
+  # this one, counting from `chainBaseHeight`. Derived from the parent row, never from a
+  # global running total, so a reorg recomputes it correctly as fork blocks are re-indexed.
+  cumulativeWork: BigInt!
+  # Oldest height reachable from here by an unbroken chain of parent rows. A window of W
+  # blocks ending at h is only measurable when h - W >= chainBaseHeight.
+  chainBaseHeight: Int8!
+}
+
+# Actual Bitcoin network hashrate in hashes/second, estimated as the expected work of the
+# trailing `windowBlocks` blocks divided by the median-time-past elapsed over that window.
+# This is the same estimator blockchain.com charts; median time past is used instead of raw
+# header timestamps because miner clocks are only loosely constrained by consensus.
+#
+# 144 blocks ≈ 24 hours.
+type NetworkHashrate1d @entity(timeseries: true) {
   id: Int8!
   hashrate: BigInt!
   timestamp: Timestamp!
   blockNumber: BigInt!
   confirmedHeight: BigInt!
+  windowBlocks: Int8!
+  # medianTime(h) - medianTime(h - windowBlocks); the divisor, kept for auditability.
+  elapsedSeconds: BigInt!
+}
+
+# 1008 blocks ≈ 7 days. Same estimator as NetworkHashrate1d over a longer window, which
+# blockchain.com recommends reading instead of the daily series because block discovery is
+# a Poisson process and a 24h sample is dominated by luck.
+type NetworkHashrate7d @entity(timeseries: true) {
+  id: Int8!
+  hashrate: BigInt!
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+  confirmedHeight: BigInt!
+  windowBlocks: Int8!
+  elapsedSeconds: BigInt!
 }
 
 type BtcUsd @entity(timeseries: true) {
@@ -99,12 +140,19 @@ type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "Hashpr
 }
 
 # Network hashrate
-#
-# Kept for shape parity with the price feeds. Note the series is a step function that
-# changes only at a difficulty retarget, so within an epoch high, low and sum/count are
-# all the same number.
 
-type NetworkHashrateCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate") {
+type NetworkHashrate1dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate1d") {
+  id: Int8!
+
+  high: BigInt! @aggregate(fn: "max", arg: "hashrate")
+  low: BigInt! @aggregate(fn: "min", arg: "hashrate")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashrate")
+  count: BigInt! @aggregate(fn: "count", arg: "hashrate")
+
+  timestamp: Timestamp!
+}
+
+type NetworkHashrate7dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate7d") {
   id: Int8!
 
   high: BigInt! @aggregate(fn: "max", arg: "hashrate")

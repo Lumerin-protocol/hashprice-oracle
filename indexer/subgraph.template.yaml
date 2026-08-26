@@ -36,7 +36,9 @@ dataSources:
         - HashpriceUsd
         - HashpriceMeta
         - LatestRates
-        - NetworkHashrate
+        - BtcBlock
+        - NetworkHashrate1d
+        - NetworkHashrate7d
       abis:
         - name: HashpriceBTC
           file: ../contracts/abi/HashpriceBTC.json
@@ -51,6 +53,10 @@ dataSources:
           filter:
             kind: once
       eventHandlers:
+        # Emitted once per validated header, before HashpriceUpdated in the same tx, so
+        # BtcBlock rows are always in place by the time the hashprice handler reads them.
+        - handler: handleBlockSubmitted
+          event: "BlockSubmitted(indexed bytes32,indexed uint32,uint64)"
         - handler: handleHashpriceUpdated
           event: "HashpriceUpdated(indexed uint32,int256,uint256)"
           calls:
