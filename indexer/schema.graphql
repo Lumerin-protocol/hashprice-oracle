@@ -9,12 +9,12 @@ type LatestRates @entity(immutable: false) {
   hashpriceBtcBlockNumber: BigInt
 
   networkHashrate1dId: Int8
-  networkHashrate1d: BigInt
+  networkHashrate1dHpS: BigInt
   networkHashrate1dUpdatedAt: BigInt
   networkHashrate1dBlockNumber: BigInt
 
   networkHashrate7dId: Int8
-  networkHashrate7d: BigInt
+  networkHashrate7dHpS: BigInt
   networkHashrate7dUpdatedAt: BigInt
   networkHashrate7dBlockNumber: BigInt
 
@@ -76,20 +76,21 @@ type BtcBlock @entity(immutable: false) {
   chainBaseHeight: Int8!
 }
 
-# Actual Bitcoin network hashrate in hashes/second, estimated as the expected work of the
-# trailing `windowBlocks` blocks divided by the median-time-past elapsed over that window.
-# This is the same estimator blockchain.com charts; median time past is used instead of raw
-# header timestamps because miner clocks are only loosely constrained by consensus.
+# Actual Bitcoin network hashrate, estimated as the expected work of the trailing 144 blocks
+# divided by the median-time-past elapsed over that window. This is the same estimator
+# blockchain.com charts; median time past is used instead of raw header timestamps because
+# miner clocks are only loosely constrained by consensus.
 #
 # 144 blocks ≈ 24 hours.
 type NetworkHashrate1d @entity(timeseries: true) {
   id: Int8!
-  hashrate: BigInt!
+  # Hashes per second. Divide by 1e18 for EH/s, the unit hashrate is usually quoted in.
+  hashrateHpS: BigInt!
   timestamp: Timestamp!
   blockNumber: BigInt!
   confirmedHeight: BigInt!
-  windowBlocks: Int8!
-  # medianTime(h) - medianTime(h - windowBlocks); the divisor, kept for auditability.
+  # medianTime(h) - medianTime(h - 144); the divisor, kept so the number can be audited and
+  # so luck is readable directly — it sits near 86400 but drifts with block-interval variance.
   elapsedSeconds: BigInt!
 }
 
@@ -98,11 +99,12 @@ type NetworkHashrate1d @entity(timeseries: true) {
 # a Poisson process and a 24h sample is dominated by luck.
 type NetworkHashrate7d @entity(timeseries: true) {
   id: Int8!
-  hashrate: BigInt!
+  # Hashes per second, as on NetworkHashrate1d.
+  hashrateHpS: BigInt!
   timestamp: Timestamp!
   blockNumber: BigInt!
   confirmedHeight: BigInt!
-  windowBlocks: Int8!
+  # medianTime(h) - medianTime(h - 1008); sits near 604800.
   elapsedSeconds: BigInt!
 }
 
@@ -144,10 +146,10 @@ type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "Hashpr
 type NetworkHashrate1dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate1d") {
   id: Int8!
 
-  high: BigInt! @aggregate(fn: "max", arg: "hashrate")
-  low: BigInt! @aggregate(fn: "min", arg: "hashrate")
-  sum: BigInt! @aggregate(fn: "sum", arg: "hashrate")
-  count: BigInt! @aggregate(fn: "count", arg: "hashrate")
+  high: BigInt! @aggregate(fn: "max", arg: "hashrateHpS")
+  low: BigInt! @aggregate(fn: "min", arg: "hashrateHpS")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashrateHpS")
+  count: BigInt! @aggregate(fn: "count", arg: "hashrateHpS")
 
   timestamp: Timestamp!
 }
@@ -155,10 +157,10 @@ type NetworkHashrate1dCandle @aggregation(intervals: ["hour", "day"], source: "N
 type NetworkHashrate7dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate7d") {
   id: Int8!
 
-  high: BigInt! @aggregate(fn: "max", arg: "hashrate")
-  low: BigInt! @aggregate(fn: "min", arg: "hashrate")
-  sum: BigInt! @aggregate(fn: "sum", arg: "hashrate")
-  count: BigInt! @aggregate(fn: "count", arg: "hashrate")
+  high: BigInt! @aggregate(fn: "max", arg: "hashrateHpS")
+  low: BigInt! @aggregate(fn: "min", arg: "hashrateHpS")
+  sum: BigInt! @aggregate(fn: "sum", arg: "hashrateHpS")
+  count: BigInt! @aggregate(fn: "count", arg: "hashrateHpS")
 
   timestamp: Timestamp!
 }

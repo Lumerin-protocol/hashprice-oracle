@@ -178,16 +178,15 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
   );
   if (hashrate1d !== null) {
     const row = new NetworkHashrate1d(0);
-    row.hashrate = hashrate1d.hashrate;
+    row.hashrateHpS = hashrate1d.hashrateHpS;
     row.timestamp = event.block.timestamp.toI64();
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
-    row.windowBlocks = WINDOW_1D;
     row.elapsedSeconds = hashrate1d.elapsedSeconds;
     row.save();
 
     rates.networkHashrate1dId = event.params.confirmedHeight.toI64();
-    rates.networkHashrate1d = hashrate1d.hashrate;
+    rates.networkHashrate1dHpS = hashrate1d.hashrateHpS;
     rates.networkHashrate1dUpdatedAt = event.block.timestamp;
     rates.networkHashrate1dBlockNumber = event.block.number;
   }
@@ -198,16 +197,15 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
   );
   if (hashrate7d !== null) {
     const row = new NetworkHashrate7d(0);
-    row.hashrate = hashrate7d.hashrate;
+    row.hashrateHpS = hashrate7d.hashrateHpS;
     row.timestamp = event.block.timestamp.toI64();
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
-    row.windowBlocks = WINDOW_7D;
     row.elapsedSeconds = hashrate7d.elapsedSeconds;
     row.save();
 
     rates.networkHashrate7dId = event.params.confirmedHeight.toI64();
-    rates.networkHashrate7d = hashrate7d.hashrate;
+    rates.networkHashrate7dHpS = hashrate7d.hashrateHpS;
     rates.networkHashrate7dUpdatedAt = event.block.timestamp;
     rates.networkHashrate7dBlockNumber = event.block.number;
   }
@@ -318,11 +316,11 @@ function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
 }
 
 class WindowHashrate {
-  hashrate: BigInt;
+  hashrateHpS: BigInt;
   elapsedSeconds: BigInt;
 
-  constructor(hashrate: BigInt, elapsedSeconds: BigInt) {
-    this.hashrate = hashrate;
+  constructor(hashrateHpS: BigInt, elapsedSeconds: BigInt) {
+    this.hashrateHpS = hashrateHpS;
     this.elapsedSeconds = elapsedSeconds;
   }
 }
