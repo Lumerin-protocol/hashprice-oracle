@@ -182,7 +182,6 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     row.timestamp = event.block.timestamp.toI64();
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
-    row.windowBlocks = WINDOW_1D;
     row.elapsedSeconds = hashrate1d.elapsedSeconds;
     row.save();
 
@@ -202,7 +201,6 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     row.timestamp = event.block.timestamp.toI64();
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
-    row.windowBlocks = WINDOW_7D;
     row.elapsedSeconds = hashrate7d.elapsedSeconds;
     row.save();
 

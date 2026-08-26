@@ -88,8 +88,8 @@ type NetworkHashrate1d @entity(timeseries: true) {
   timestamp: Timestamp!
   blockNumber: BigInt!
   confirmedHeight: BigInt!
-  windowBlocks: Int8!
-  # medianTime(h) - medianTime(h - windowBlocks); the divisor, kept for auditability.
+  # medianTime(h) - medianTime(h - 144); the divisor, kept so the number can be audited and
+  # so luck is readable directly — it sits near 86400 but drifts with block-interval variance.
   elapsedSeconds: BigInt!
 }
 
@@ -102,7 +102,7 @@ type NetworkHashrate7d @entity(timeseries: true) {
   timestamp: Timestamp!
   blockNumber: BigInt!
   confirmedHeight: BigInt!
-  windowBlocks: Int8!
+  # medianTime(h) - medianTime(h - 1008); sits near 604800.
   elapsedSeconds: BigInt!
 }
 
