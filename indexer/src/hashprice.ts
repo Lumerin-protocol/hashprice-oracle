@@ -35,8 +35,7 @@ const LATEST_RATES_ID = 0;
 const ONE = BigInt.fromI32(1);
 const TWO = BigInt.fromI32(2);
 
-// 2^256. Expected hashes for a block at target T is 2^256 / (T + 1).
-const TWO_256 = TWO.pow(u8(256));
+const TWO_256 = TWO.pow(128).pow(2);
 
 // Bitcoin's maximum nBits exponent; anything above needs more than 256 bits.
 const MAX_NBITS_EXPONENT: u32 = 32;
