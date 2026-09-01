@@ -125,3 +125,107 @@ export function mineHeader(rawHeader: string, nBits = EASY_NBITS): string {
   }
   throw new Error("Failed to mine block");
 }
+
+// ─── Synthetic block builders ─────────────────────────────────────
+//
+// Shared by the reorg, event and buffer tests. Real mainnet headers live in
+// tests/fixtures/btc-blocks.json and are reached through fixtures.ts instead;
+// these are for chains that have to be shaped a particular way.
+
+/** Minimal coinbase tx with a single output paying `outputValue`. */
+export function buildCoinbaseTx(outputValue: bigint): string {
+  const valueBuf = Buffer.alloc(8);
+  valueBuf.writeBigUInt64LE(outputValue);
+  return [
+    "01000000",
+    "01",
+    "00".repeat(32),
+    "ffffffff",
+    "04",
+    "deadbeef",
+    "ffffffff",
+    "01",
+    valueBuf.toString("hex"),
+    "01",
+    "51",
+    "00000000",
+  ].join("");
+}
+
+export interface SyntheticBlock {
+  rawHeader: string;
+  coinbaseTx: string;
+  hash: string;
+  height: number;
+  timestamp: number;
+  nBits: number;
+  /** Total coinbase output — what `BlockSubmitted` reports. */
+  coinbaseValue: bigint;
+}
+
+/**
+ * Mine one synthetic block. The coinbase pays `subsidy(height) + fees` unless
+ * `coinbaseValue` overrides it — pass a value below the subsidy to model a miner burning
+ * part of its reward, the case where the contract's fee figure saturates to zero.
+ */
+export function mineSyntheticBlock(
+  prevHash: string,
+  height: number,
+  timestamp: number,
+  nBits: number,
+  fees: bigint,
+  coinbaseValue?: bigint,
+): SyntheticBlock {
+  const total = coinbaseValue ?? getBlockSubsidy(height) + fees;
+  const coinbaseTx = buildCoinbaseTx(total);
+  const rawHeader = buildHeader({
+    prevHash,
+    timestamp,
+    nBits,
+    merkleRoot: dsha256(coinbaseTx),
+  });
+  const minedHeader = mineHeader(rawHeader, nBits);
+  return {
+    rawHeader: minedHeader,
+    coinbaseTx,
+    hash: blockHash(minedHeader),
+    height,
+    timestamp,
+    nBits,
+    coinbaseValue: total,
+  };
+}
+
+/** Mine a chain of synthetic blocks. Different `baseFee` values produce distinct chains. */
+export function mineChain(
+  tipHash: string,
+  startHeight: number,
+  count: number,
+  baseTimestamp: number,
+  nBits: number,
+  baseFee: bigint,
+): SyntheticBlock[] {
+  const chain: SyntheticBlock[] = [];
+  let prev = tipHash;
+  for (let i = 0; i < count; i++) {
+    const b = mineSyntheticBlock(
+      prev,
+      startHeight + i,
+      baseTimestamp + (i + 1) * 600,
+      nBits,
+      baseFee + BigInt(i) * 100n,
+    );
+    chain.push(b);
+    prev = b.hash;
+  }
+  return chain;
+}
+
+/** Pack blocks into the (headers, coinbaseTxs, merkleProofs) triple `submitBlocks` takes. */
+export function formatBatch(blocks: SyntheticBlock[]) {
+  return {
+    headers: hex(blocks.map((b) => b.rawHeader).join("")),
+    coinbaseTxs: blocks.map((b) => hex(b.coinbaseTx)),
+    merkleProofs: blocks.map(() => [] as `0x${string}`[]),
+  };
+}

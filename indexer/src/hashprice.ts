@@ -9,19 +9,18 @@ import {
 import { AggregatorProxy } from "../generated/HashpriceBTC/AggregatorProxy";
 import { AggregatorV2V3Interface } from "../generated/HashpriceBTC/AggregatorV2V3Interface";
 import { AggregatorV3Interface } from "../generated/HashpriceBTC/AggregatorV3Interface";
-import {
-  HashpriceBTC,
-  HashpriceBTC__getBlockFromTipResultValue0Struct,
-} from "../generated/HashpriceBTC/HashpriceBTC";
+import { HashpriceBTC } from "../generated/HashpriceBTC/HashpriceBTC";
 import { AnswerUpdated } from "../generated/HashpriceBTC/AggregatorProxy";
 import {
   BlockSubmitted,
+  ChainReorg,
   HashpriceUpdated,
 } from "../generated/HashpriceBTC/HashpriceBTC";
 import {
   HashpriceUsd,
   BtcUsd,
   BtcBlock,
+  ChainReorgEvent,
   HashpriceBtc,
   HashpriceMeta,
   LatestRates,
@@ -40,9 +39,17 @@ const TWO_256 = TWO.pow(128).pow(2);
 // Bitcoin's maximum nBits exponent; anything above needs more than 256 bits.
 const MAX_NBITS_EXPONENT: u32 = 32;
 
-// Mirrors HashpriceBTC.BLOCK_BUFFER_SIZE. A height further than this behind the tip is no
-// longer readable through getBlockFromTip — its ring slot has been overwritten.
-const BLOCK_BUFFER_SIZE = 32;
+// Difficulty-1 target, 0xffff * 2^208. Mirrors BTCUtils.DIFF1_TARGET.
+const DIFF1_TARGET = BigInt.fromI32(0xffff).times(TWO.pow(208));
+
+// Bitcoin's target block interval in seconds, the divisor behind difficulty-implied hashrate.
+const TARGET_BLOCK_INTERVAL = BigInt.fromI32(600);
+
+// Subsidy schedule. Mirrors BTCUtils.getBlockSubsidy: 50 BTC halving every 210,000 blocks,
+// reaching zero after 64 halvings.
+const HALVING_INTERVAL: i64 = 210000;
+const MAX_HALVINGS: i64 = 64;
+const INITIAL_SUBSIDY = BigInt.fromI64(50 * 100000000);
 
 // Bitcoin Core's median-time-past window: the block itself plus its 10 ancestors.
 const MTP_WINDOW = 11;
@@ -114,15 +121,16 @@ export function initFeeds(block: ethereum.Block): void {
   }
 }
 
-// Records the header timestamp and difficulty target of one accepted Bitcoin block, which is
-// what the actual-hashrate estimate is built from. The event itself carries neither, so both
-// are read back out of the contract's ring buffer.
+// Records one accepted Bitcoin block. Everything comes from the event itself, so a batch of
+// any depth indexes correctly — an earlier version read the header back through
+// getBlockFromTip and had to give up on blocks whose ring slot had already been overwritten,
+// leaving a hole that broke `chainBaseHeight` continuity and disabled the hashrate windows.
 export function handleBlockSubmitted(event: BlockSubmitted): void {
   const height = event.params.height;
-  const entry = readBlockEntry(event.address, height);
-  if (entry === null) return;
+  const nBits = event.params.nBits;
+  const btcTimestamp = event.params.timestamp;
 
-  const target = nBitsToTarget(entry.nBits);
+  const target = nBitsToTarget(nBits);
   if (target === null) return;
   const work = TWO_256.div(target.plus(ONE));
 
@@ -137,17 +145,49 @@ export function handleBlockSubmitted(event: BlockSubmitted): void {
     chainBaseHeight = parent.chainBaseHeight;
   }
 
+  const coinbaseValue = event.params.coinbaseValue;
+  const subsidy = getBlockSubsidy(height.toI64());
+
   const block = new BtcBlock(height.toI64());
-  block.btcTimestamp = entry.timestamp;
-  block.nBits = entry.nBits;
+  block.blockHash = event.params.blockHash;
+  block.btcTimestamp = btcTimestamp;
+  block.nBits = nBits;
+  block.coinbaseValue = coinbaseValue;
+  // Saturating, matching the contract: a coinbase paying less than the subsidy would
+  // otherwise make this negative.
+  block.fees = coinbaseValue.gt(subsidy) ? coinbaseValue.minus(subsidy) : BigInt.zero();
+  block.target = target;
+  block.difficulty = DIFF1_TARGET.div(target);
+  block.impliedHashrateHpS = work.div(TARGET_BLOCK_INTERVAL);
   block.cumulativeWork = cumulativeWork;
   block.chainBaseHeight = chainBaseHeight;
-  block.medianTime = medianTimePast(
-    height.toI64(),
-    entry.timestamp,
-    chainBaseHeight,
-  );
+  block.medianTime = medianTimePast(height.toI64(), btcTimestamp, chainBaseHeight);
   block.save();
+}
+
+// Records an accepted reorg. The contract emits this before the winning fork's own
+// BlockSubmitted logs, so the replaced BtcBlock rows still hold the losing chain's data at
+// this point and are overwritten by the handlers that follow. Nothing is corrected here.
+export function handleChainReorg(event: ChainReorg): void {
+  const ancestorHeight = event.params.ancestorHeight;
+  const oldHeight = event.params.oldHeight;
+
+  log.warning("chain reorg at height {}: fork from {} replaces tip {}", [
+    event.params.newHeight.toString(),
+    ancestorHeight.toString(),
+    oldHeight.toString(),
+  ]);
+
+  const row = new ChainReorgEvent(0);
+  row.timestamp = event.block.timestamp.toI64();
+  row.blockNumber = event.block.number;
+  row.newTip = event.params.newTip;
+  row.newHeight = event.params.newHeight;
+  row.ancestorHeight = ancestorHeight;
+  row.oldTip = event.params.oldTip;
+  row.oldHeight = oldHeight;
+  row.depth = oldHeight.minus(ancestorHeight).toI64();
+  row.save();
 }
 
 // Handles hashprice updates — saves HashpriceBtc and derives HashpriceUsd from latest BtcUsd
@@ -387,59 +427,12 @@ function medianTimePast(
   return timestamps[MTP_WINDOW / 2];
 }
 
-// Reads the header timestamp and nBits for `height` back out of the contract's ring buffer.
-// getBlockFromTip indexes backwards from the tip, so the tip's own height has to be fetched
-// first; graph-node caches eth_call results per block, so the repeated tip lookup across
-// every BlockSubmitted log in one batch costs a single RPC round trip.
-function readBlockEntry(
-  contractAddress: Address,
-  height: BigInt,
-): HashpriceBTC__getBlockFromTipResultValue0Struct | null {
-  const contract = HashpriceBTC.bind(contractAddress);
-
-  const tipResult = contract.try_getBlockFromTip(0);
-  if (tipResult.reverted) {
-    log.error("getBlockFromTip(0) reverted while reading height {}", [
-      height.toString(),
-    ]);
-    return null;
-  }
-  const tip = tipResult.value;
-
-  const offset = tip.height.minus(height).toI64();
-  if (offset < 0 || offset >= BLOCK_BUFFER_SIZE) {
-    log.warning(
-      "Height {} is {} blocks behind tip {}, outside the {}-slot buffer",
-      [
-        height.toString(),
-        offset.toString(),
-        tip.height.toString(),
-        BLOCK_BUFFER_SIZE.toString(),
-      ],
-    );
-    return null;
-  }
-  if (offset === 0) return tip;
-
-  const entryResult = contract.try_getBlockFromTip(offset as i32);
-  if (entryResult.reverted) {
-    log.error("getBlockFromTip({}) reverted while reading height {}", [
-      offset.toString(),
-      height.toString(),
-    ]);
-    return null;
-  }
-
-  // A ring slot may still hold an entry from 32 blocks ago even when the offset looks sane.
-  const entry = entryResult.value;
-  if (entry.height.notEqual(height)) {
-    log.warning("Ring slot for height {} holds height {}", [
-      height.toString(),
-      entry.height.toString(),
-    ]);
-    return null;
-  }
-  return entry;
+// Block subsidy in satoshis at `height`. Mirrors BTCUtils.getBlockSubsidy so that
+// `fees` here matches the figure the contract feeds into its own fee average.
+function getBlockSubsidy(height: i64): BigInt {
+  const halvings = height / HALVING_INTERVAL;
+  if (halvings >= MAX_HALVINGS) return BigInt.zero();
+  return INITIAL_SUBSIDY.div(TWO.pow(halvings as u8));
 }
 
 // Expands a compact nBits target: coefficient * 2^(8 * (exponent - 3)).

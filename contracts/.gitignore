@@ -4,3 +4,5 @@ cache
 .cache
 .env
 coverage
+abi/HashpriceBTCTestHarness.json
+abi/HashpriceBTCTestHarness.ts

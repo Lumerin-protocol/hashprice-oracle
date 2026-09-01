@@ -97,8 +97,20 @@ export const HashpriceBTCDeployAbi = [
       {
         "indexed": false,
         "internalType": "uint64",
-        "name": "fees",
+        "name": "coinbaseValue",
         "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "timestamp",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "nBits",
+        "type": "uint32"
       }
     ],
     "name": "BlockSubmitted",
@@ -117,6 +129,24 @@ export const HashpriceBTCDeployAbi = [
         "indexed": true,
         "internalType": "uint32",
         "name": "newHeight",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "ancestorHeight",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "oldTip",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "oldHeight",
         "type": "uint32"
       }
     ],
@@ -175,7 +205,33 @@ export const HashpriceBTCDeployAbi = [
   },
   {
     "inputs": [],
+    "name": "BLOCK_BUFFER_SIZE",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "CONFIRMATION_DEPTH",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "FEE_WINDOW",
     "outputs": [
       {
         "internalType": "uint32",
@@ -295,6 +351,16 @@ export const HashpriceBTCDeployAbi = [
             "internalType": "uint32",
             "name": "height",
             "type": "uint32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "evictedFee",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint96",
+            "name": "feeRunningSum",
+            "type": "uint96"
           }
         ],
         "internalType": "struct HashpriceBTC.BlockEntry",

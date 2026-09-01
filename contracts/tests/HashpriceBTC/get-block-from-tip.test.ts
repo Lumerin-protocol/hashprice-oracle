@@ -5,7 +5,7 @@ import {
   blockHash,
   buildHeader,
   mineHeader,
-  getBlockSubsidy,
+  mineSyntheticBlock,
   EASY_NBITS,
 } from "./helpers.ts";
 import { deployOracleFixture } from "./fixtures.ts";
@@ -22,32 +22,6 @@ const {
 //
 // Uses synthetic blocks at height 10–13 so that the uint8 index
 // can exceed chainHeight (needed to exercise the InsufficientData guard).
-
-function buildCoinbaseTx(outputValue: bigint): string {
-  const valueBuf = Buffer.alloc(8);
-  valueBuf.writeBigUInt64LE(outputValue);
-  return [
-    "01000000",
-    "01",
-    "00".repeat(32),
-    "ffffffff",
-    "04",
-    "deadbeef",
-    "ffffffff",
-    "01",
-    valueBuf.toString("hex"),
-    "01",
-    "51",
-    "00000000",
-  ].join("");
-}
-
-function mineSyntheticBlock(prevHash: string, height: number, timestamp: number, nBits: number) {
-  const coinbaseTx = buildCoinbaseTx(getBlockSubsidy(height) + 1000n);
-  const rawHeader = buildHeader({ prevHash, timestamp, nBits, merkleRoot: dsha256(coinbaseTx) });
-  const minedHeader = mineHeader(rawHeader, nBits);
-  return { rawHeader: minedHeader, coinbaseTx, hash: blockHash(minedHeader), height };
-}
 
 async function deployLowHeightFixture(conn: NetworkConnection) {
   const { viem } = conn;
@@ -77,7 +51,7 @@ async function deployLowHeightFixture(conn: NetworkConnection) {
   const blocks = [];
   let prevHash = genesisHash;
   for (let i = 0; i < 3; i++) {
-    const b = mineSyntheticBlock(prevHash, genesisHeight + 1 + i, baseTs + (i + 1) * 600, nBits);
+    const b = mineSyntheticBlock(prevHash, genesisHeight + 1 + i, baseTs + (i + 1) * 600, nBits, 1000n);
     blocks.push(b);
     prevHash = b.hash;
   }

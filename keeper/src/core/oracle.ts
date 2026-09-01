@@ -67,6 +67,7 @@ export class OracleClient {
   private readonly address: `0x${string}`;
   private readonly log: Logger;
   private readonly confirmations: number;
+  private blockBufferSize?: number;
 
   constructor(config: Config, log: Logger) {
     const chain = getChain(config.chainId);
@@ -100,6 +101,22 @@ export class OracleClient {
       }),
     );
     return { blockHash: entry.blockHash, height: entry.height };
+  }
+
+  /**
+   * Ring buffer size, read from the contract and cached for the process lifetime.
+   * It is a compile-time constant on-chain, so one read is enough — and reading it
+   * beats hardcoding a copy that silently goes stale when the contract changes.
+   */
+  async getBlockBufferSize(): Promise<number> {
+    if (this.blockBufferSize === undefined) {
+      this.blockBufferSize = await this.pc.readContract({
+        address: this.address,
+        abi: HashpriceBTCAbi,
+        functionName: "BLOCK_BUFFER_SIZE",
+      });
+    }
+    return this.blockBufferSize;
   }
 
   /** See `getBlockFromTip` for `minBlock` semantics. */
