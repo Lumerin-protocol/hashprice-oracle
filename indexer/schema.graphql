@@ -120,8 +120,10 @@ type BtcUsd @entity(timeseries: true) {
 type HashpriceUsdCandle @aggregation(intervals: ["hour", "day"], source: "HashpriceUsd") {
   id: Int8!
 
+  open: BigInt! @aggregate(fn: "first", arg: "price")
   high: BigInt! @aggregate(fn: "max", arg: "price")
   low: BigInt! @aggregate(fn: "min", arg: "price")
+  close: BigInt! @aggregate(fn: "last", arg: "price")
   sum: BigInt! @aggregate(fn: "sum", arg: "price")
   count: BigInt! @aggregate(fn: "count", arg: "price")
 
@@ -133,8 +135,10 @@ type HashpriceUsdCandle @aggregation(intervals: ["hour", "day"], source: "Hashpr
 type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "HashpriceBtc") {
   id: Int8!
 
+  open: BigInt! @aggregate(fn: "first", arg: "price")
   high: BigInt! @aggregate(fn: "max", arg: "price")
   low: BigInt! @aggregate(fn: "min", arg: "price")
+  close: BigInt! @aggregate(fn: "last", arg: "price")
   sum: BigInt! @aggregate(fn: "sum", arg: "price")
   count: BigInt! @aggregate(fn: "count", arg: "price")
 
@@ -146,8 +150,10 @@ type HashpriceBtcCandle @aggregation(intervals: ["hour", "day"], source: "Hashpr
 type NetworkHashrate1dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate1d") {
   id: Int8!
 
+  open: BigInt! @aggregate(fn: "first", arg: "hashrateHpS")
   high: BigInt! @aggregate(fn: "max", arg: "hashrateHpS")
   low: BigInt! @aggregate(fn: "min", arg: "hashrateHpS")
+  close: BigInt! @aggregate(fn: "last", arg: "hashrateHpS")
   sum: BigInt! @aggregate(fn: "sum", arg: "hashrateHpS")
   count: BigInt! @aggregate(fn: "count", arg: "hashrateHpS")
 
@@ -157,8 +163,10 @@ type NetworkHashrate1dCandle @aggregation(intervals: ["hour", "day"], source: "N
 type NetworkHashrate7dCandle @aggregation(intervals: ["hour", "day"], source: "NetworkHashrate7d") {
   id: Int8!
 
+  open: BigInt! @aggregate(fn: "first", arg: "hashrateHpS")
   high: BigInt! @aggregate(fn: "max", arg: "hashrateHpS")
   low: BigInt! @aggregate(fn: "min", arg: "hashrateHpS")
+  close: BigInt! @aggregate(fn: "last", arg: "hashrateHpS")
   sum: BigInt! @aggregate(fn: "sum", arg: "hashrateHpS")
   count: BigInt! @aggregate(fn: "count", arg: "hashrateHpS")
 
@@ -170,8 +178,10 @@ type NetworkHashrate7dCandle @aggregation(intervals: ["hour", "day"], source: "N
 type BtcUsdCandle @aggregation(intervals: ["hour", "day"], source: "BtcUsd") {
   id: Int8!
 
+  open: BigInt! @aggregate(fn: "first", arg: "price")
   high: BigInt! @aggregate(fn: "max", arg: "price")
   low: BigInt! @aggregate(fn: "min", arg: "price")
+  close: BigInt! @aggregate(fn: "last", arg: "price")
   sum: BigInt! @aggregate(fn: "sum", arg: "price")
   count: BigInt! @aggregate(fn: "count", arg: "price")
 
