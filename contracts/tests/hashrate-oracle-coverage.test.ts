@@ -52,7 +52,7 @@ describe("HashrateOracle Coverage Tests", function () {
 
       const newValue = parseUnits("150", 12); // 150T difficulty
 
-      const hash = await hashrateOracle.write.setHashesForBTC([newValue], {
+      await hashrateOracle.write.setHashesForBTC([newValue], {
         account: owner.account,
       });
 
@@ -63,7 +63,7 @@ describe("HashrateOracle Coverage Tests", function () {
   });
 
   describe("Authorization Checks", function () {
-    it.only("should revert when non-owner tries to set difficulty", async function () {
+    it("should revert when non-owner tries to set difficulty", async function () {
       const { contracts, accounts } = await loadFixture(deployTokenOraclesAndMulticall3);
       const { hashrateOracle } = contracts;
       const { user } = accounts;

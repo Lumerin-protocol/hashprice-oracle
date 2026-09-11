@@ -405,6 +405,21 @@
         "internalType": "uint32",
         "name": "lastSubmittedAt",
         "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "epochStartHeight",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "prevEpochStartTimestamp",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "prevEpochStartNBits",
+        "type": "uint32"
       }
     ],
     "stateMutability": "view",

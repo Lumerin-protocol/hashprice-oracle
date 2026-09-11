@@ -14,11 +14,11 @@ describe("HashpriceUSD — AggregatorV3Interface", function () {
     assert.equal(await contracts.hashpriceUSD.read.decimals(), 8);
   });
 
-  it('description() should return "The price of 100 TH/s per day in USD"', async function () {
+  it('description() should return "The price of 1 PH/s per day in USD"', async function () {
     const { contracts } = await loadFixture(deployHashpriceUSDFixture);
     assert.equal(
       await contracts.hashpriceUSD.read.description(),
-      "The price of 100 TH/s per day in USD",
+      "The price of 1 PH/s per day in USD",
     );
   });
 

@@ -1,0 +1,39 @@
+{
+  "name": "@hashpower/oracle-abi",
+  "version": "0.1.0",
+  "description": "ABIs and deployment addresses for the Hashpower hashprice oracle contracts (HashpriceBTC, HashpriceUSD) on Base",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lumerin-protocol/hashprice-oracle.git",
+    "directory": "oracle-abi"
+  },
+  "keywords": ["hashpower", "hashprice", "oracle", "abi", "base", "chainlink", "viem"],
+  "files": ["dist", "json", "deployments.json", "README.md"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./deployments.json": "./deployments.json",
+    "./json/*.json": "./json/*.json"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs && tsc -p tsconfig.json",
+    "clean": "rm -rf src dist json",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "publishConfig": {
+    "access": "public"
+  }
+}
