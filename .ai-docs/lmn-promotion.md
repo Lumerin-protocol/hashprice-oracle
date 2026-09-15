@@ -1,5 +1,8 @@
 # LMN (Production) Promotion Checklist
 
+> **Living path:** [dev-main-promotion-runbook.md](./dev-main-promotion-runbook.md) (`dev` → `main`, no STG).
+> This file is the incident list from prior LMN attempts — still do every item.
+
 Lessons learned from DEV → Base Sepolia and STG → Base Mainnet migrations.
 Each item bit us at least once — don't skip any.
 
