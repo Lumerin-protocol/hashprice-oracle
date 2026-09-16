@@ -186,15 +186,16 @@ collateral-margin `04-lmn` currently: `perps_mm_service.create = true`, `futures
 ### 6. hashpower-io (agent discovery)
 
 - [ ] `.bedrock/04-lmn` is the production site stack (already used for hashpower.io).
-- [ ] PR `dev` → `main`. CI bakes `PUBLIC_MCP_URL=https://mcp.hashpower.io/mcp` into `llms.txt` and `/build`.
-- [ ] Verify `https://hashpower.io/llms.txt` lists the hosted MCP URL and `npx @hashpower/mcp` with `HASHPOWER_ENV=mainnet`.
+- [ ] PR `dev` → `main`. CI bakes `PUBLIC_MCP_URL=https://mcp.hashpower.io/mcp` into `llms.txt`, `/build`, and generated `/build/mcp.md` (client key `hashpower`, docs origin `https://hashpower.io`, GitHub source `blob/main`).
+- [ ] Verify `https://hashpower.io/llms.txt` lists `https://mcp.hashpower.io/mcp`, Cursor key `hashpower`, and `npx @hashpower/mcp` with `HASHPOWER_ENV=mainnet`.
+- [ ] Verify `https://hashpower.io/build/mcp.md` connect snippets use `hashpower` / `https://mcp.hashpower.io/mcp` (not `dev-hashpower` / mcp.dev).
 
 ### 7. hashpower-mcp (hosted MCP)
 
 - [ ] (YOU) `terragrunt apply` `.bedrock/04-lmn/` → `mcp.hashpower.io`, role `github-actions-hashpower-mcp-v1-lmn`.
 - [ ] Set `AWS_ROLE_ARN_LMN`. Trust policy already includes `environment:main`, `ref:refs/heads/main`, and immutable `org@id/repo@id`.
 - [ ] PR `dev` → `main`. CI: GHCR image + Fargate. npm publish runs from `main` (same `npm-publish` environment).
-- [ ] Verify `https://mcp.hashpower.io/health` → `env: mainnet`, `network: base`; `tools/list` works with **no** `Mcp-Session-Id`.
+- [ ] Verify `https://mcp.hashpower.io/health` → `"name":"hashpower"`, `env: mainnet`, `network: base`; `tools/list` works with **no** `Mcp-Session-Id`.
 
 ---
 
@@ -202,7 +203,8 @@ collateral-margin `04-lmn` currently: `perps_mm_service.create = true`, `futures
 
 - [ ] https://hashpower.exchange Futures + Perps render live mainnet data; Goldsky LMN subgraphs healthy.
 - [ ] Unified keeper + both MMs healthy; oracle Lambda fresh; no Route53 collisions.
-- [ ] https://hashpower.io/llms.txt and `/build` point at `https://mcp.hashpower.io/mcp` and current `@hashpower/*-abi` versions.
+- [ ] https://hashpower.io/llms.txt, `/build`, and `/build/mcp.md` point at `https://mcp.hashpower.io/mcp`, client key `hashpower`, and current `@hashpower/*-abi` versions.
+- [ ] `GET https://mcp.hashpower.io/health` reports `"name":"hashpower"` and `"env":"mainnet"`; initialize instructions point at `https://hashpower.io/build/mcp.md`.
 - [ ] https://mcp.hashpower.io/mcp is knowledge + simulate only (no keys, no session stickiness).
 - [ ] CloudWatch / subgraph `_meta` green.
 
