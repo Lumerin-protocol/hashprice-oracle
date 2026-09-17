@@ -1,21 +1,15 @@
-import { configVariable, defineConfig, overrideTask } from "hardhat/config";
+import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
-import { tryLoadEnvFile } from "./lib/env.ts";
-
-tryLoadEnvFile("./../.env");
-tryLoadEnvFile(".env");
-
-const codegenPlugin = {
-  id: "codegen-after-compile",
-  tasks: [
-    overrideTask(["compile"])
-      .setAction(() => import("./scripts/compile-action.ts"))
-      .build(),
-  ],
-};
+import hardhatViemAbi from "hardhat-viem-abi";
+import envLoader from "./plugins/env-loader/index.ts";
 
 export default defineConfig({
-  plugins: [hardhatToolboxViem, codegenPlugin],
+  plugins: [hardhatToolboxViem, hardhatViemAbi, envLoader],
+  envLoader: {
+    configDir: "../config",
+    // Machine/secret values; win over the named env file for overlapping keys.
+    overrideEnvFiles: ["../.env", ".env"],
+  },
   paths: {
     tests: "tests",
   },
@@ -56,6 +50,9 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2025-11-23",
+      // Cancun: avoid EIP-7825 (Osaka+) 16M tx gas cap so graph-node eth_call
+      // (default gas 50M) works against this node during local indexing.
+      hardfork: "cancun",
       blockGasLimit: 100_000_000n,
       loggingEnabled: true,
       gas: "auto",
@@ -71,6 +68,7 @@ export default defineConfig({
         auto: true,
       },
       initialDate: "2024-01-01",
+      hardfork: "cancun",
       blockGasLimit: 100_000_000n,
       loggingEnabled: true,
       gas: "auto",
@@ -80,12 +78,25 @@ export default defineConfig({
       type: "http",
       url: "http://127.0.0.1:8545",
     },
-    production: {
+    "base-sepolia": {
       type: "http",
-      url: configVariable("ETHEREUM_RPC_URL"),
-      accounts: [configVariable("DEPLOYER_PRIVATEKEY")],
-      gasPrice: "auto",
-      gas: "auto",
+      chainType: "l1",
+      chainId: 84532,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-sepolia.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    "base-mainnet": {
+      type: "http",
+      chainType: "l1",
+      chainId: 8453,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-mainnet.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
     },
   },
   verify: {

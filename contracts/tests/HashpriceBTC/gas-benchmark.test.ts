@@ -52,7 +52,7 @@ describe("HashpriceBTC — Gas benchmark", function () {
     const [, answer] = await oracle.read.latestRoundData();
     const satsPerBtc = 100_000_000n;
     console.log(
-      `  V3 hashprice: ${answer} sats (${Number(answer) / Number(satsPerBtc)} BTC) per 100 TH/s/day`,
+      `  V3 hashprice: ${answer} sats (${Number(answer) / Number(satsPerBtc)} BTC) per 1 PH/s/day`,
     );
 
     const latestRoundDataGas = await pc.estimateGas({
@@ -99,7 +99,7 @@ describe("HashpriceBTC — Gas benchmark", function () {
       ``,
       `| Value |`,
       `|-------|`,
-      `| ${answer} sats / ${hashpriceBtc} BTC per 100 TH/s/day |`,
+      `| ${answer} sats / ${hashpriceBtc} BTC per 1 PH/s/day |`,
     ];
 
     const outPath = resolve(process.cwd(), "./gas-benchmark.md");

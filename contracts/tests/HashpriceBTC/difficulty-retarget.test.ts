@@ -1,6 +1,17 @@
 import { catchError } from "../../lib/lib.ts";
 import { deployOracleFixture, prepareBlocks } from "./fixtures.ts";
-import { hex, mineHeader, blockHash, setPrevHash, buildHeader, EASY_NBITS } from "./helpers.ts";
+import {
+  hex,
+  mineHeader,
+  blockHash,
+  setPrevHash,
+  buildHeader,
+  dsha256,
+  getBlockSubsidy,
+  EASY_NBITS,
+  EPOCH_NBITS,
+  RETARGET_EXPECTED_TIMESPAN,
+} from "./helpers.ts";
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -10,6 +21,25 @@ const {
   viem,
   networkHelpers: { loadFixture },
 } = conn;
+
+function buildCoinbaseTx(outputValue: bigint): string {
+  const valueBuf = Buffer.alloc(8);
+  valueBuf.writeBigUInt64LE(outputValue);
+  return [
+    "01000000",
+    "01",
+    "00".repeat(32),
+    "ffffffff",
+    "04",
+    "deadbeef",
+    "ffffffff",
+    "01",
+    valueBuf.toString("hex"),
+    "01",
+    "51",
+    "00000000",
+  ].join("");
+}
 
 describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function () {
   it("should accept blocks that maintain same nBits within an epoch", async function () {
@@ -28,6 +58,133 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
       const receipt = await accounts.pc.waitForTransactionReceipt({ hash });
       assert.equal(receipt.status, "success");
     }
+  });
+
+  it("should set epochStartTimestamp to the retarget block time (not H-1)", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    const checkpointHeight = 2015;
+    const latestBlock = await pc.getBlock({});
+    const epochStartTs = Number(latestBlock.timestamp) + 1000;
+    const checkpointTs = epochStartTs + RETARGET_EXPECTED_TIMESPAN;
+    const retargetTs = checkpointTs + 600;
+    const fakeCheckpointHash = "bb".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(retargetTs + 1) });
+
+    const oracle = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      epochStartTs,
+      EPOCH_NBITS,
+    ]);
+
+    const coinbaseTx = buildCoinbaseTx(getBlockSubsidy(2016));
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: retargetTs,
+      nBits: EPOCH_NBITS,
+      merkleRoot: dsha256(coinbaseTx),
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    const tx = await oracle.write.submitBlocks([
+      checkpointHeight,
+      hex(minedRetarget),
+      [hex(coinbaseTx)],
+      [[]],
+    ]);
+    const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+    assert.equal(receipt.status, "success");
+
+    const [
+      ,
+      ,
+      epochStartTimestamp,
+      epochStartNBits,
+      ,
+      epochStartHeight,
+      prevEpochStartTimestamp,
+      prevEpochStartNBits,
+    ] = await oracle.read.state();
+    assert.equal(epochStartTimestamp, retargetTs);
+    assert.notEqual(epochStartTimestamp, checkpointTs, "must not store H-1 timestamp");
+    assert.equal(epochStartNBits, EPOCH_NBITS);
+    assert.equal(epochStartHeight, 2016);
+    assert.equal(prevEpochStartTimestamp, epochStartTs);
+    assert.equal(prevEpochStartNBits, EPOCH_NBITS);
+  });
+
+  // Mirrors mainnet failure at height 959616: after the previous retarget, storing time(H-1)
+  // instead of time(H) inflated actualTimespan by ~one inter-block gap and pushed the next
+  // retarget outside the 0.1% tolerance → InvalidRetarget.
+  it("should accept the next retarget when epoch start is H, and reject when it is H-1", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    // Previous retarget was at 2016; next is at 4032. Deploy at 4031 with epoch state
+    // as if 2016 had already been accepted.
+    const checkpointHeight = 4031;
+    const latestBlock = await pc.getBlock({});
+    // Gap between previous epoch's H-1 (2015) and H (2016): >0.1% of EXPECTED_TIMESPAN.
+    const hMinus1Gap = Math.floor(RETARGET_EXPECTED_TIMESPAN / 500); // 0.2%
+    const correctEpochStartTs = Number(latestBlock.timestamp) + 1000;
+    const wrongEpochStartTs = correctEpochStartTs - hMinus1Gap;
+    const checkpointTs = correctEpochStartTs + RETARGET_EXPECTED_TIMESPAN;
+    const retargetTs = checkpointTs + 600;
+    const fakeCheckpointHash = "cc".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(retargetTs + 1) });
+
+    const coinbaseTx = buildCoinbaseTx(getBlockSubsidy(4032));
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: retargetTs,
+      nBits: EPOCH_NBITS,
+      merkleRoot: dsha256(coinbaseTx),
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    // Correct: epoch start = time(2016) → actualTimespan = EXPECTED → same nBits passes.
+    const oracleOk = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      correctEpochStartTs,
+      EPOCH_NBITS,
+    ]);
+    const tx = await oracleOk.write.submitBlocks([
+      checkpointHeight,
+      hex(minedRetarget),
+      [hex(coinbaseTx)],
+      [[]],
+    ]);
+    const receipt = await pc.waitForTransactionReceipt({ hash: tx });
+    assert.equal(receipt.status, "success");
+    const [, , epochStartTimestamp] = await oracleOk.read.state();
+    assert.equal(epochStartTimestamp, retargetTs);
+
+    // Buggy: epoch start = time(2015) → actualTimespan too large → InvalidRetarget.
+    const oracleBad = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      wrongEpochStartTs,
+      EPOCH_NBITS,
+    ]);
+    await catchError(oracleBad.abi, "InvalidRetarget", async () => {
+      await oracleBad.write.submitBlocks([
+        checkpointHeight,
+        hex(minedRetarget),
+        [hex(coinbaseTx)],
+        [[]],
+      ]);
+    });
   });
 
   it("should reject a single mined block with wrong nBits (UnexpectedDifficultyChange)", async function () {
@@ -107,6 +264,77 @@ describe("HashpriceBTC — Layer 3: Difficulty retarget verification", function 
     const minedRetarget = mineHeader(retargetHeader);
 
     // Coinbase/proof are dummy — the contract reverts on difficulty before reaching them
+    await catchError(oracle.abi, "InvalidRetarget", async () => {
+      await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
+    });
+  });
+
+  it("should clamp a backwards epoch-end timestamp instead of panicking", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    const checkpointHeight = 2015;
+    const latestBlock = await pc.getBlock({});
+    // epochStart after H-1 timestamp → unsigned subtract would panic without the clamp guard.
+    const checkpointTs = Number(latestBlock.timestamp) + 1000;
+    const epochStartTs = checkpointTs + 10_000;
+    const fakeCheckpointHash = "dd".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(epochStartTs + 1) });
+
+    const oracle = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      epochStartTs,
+      EPOCH_NBITS,
+    ]);
+
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: checkpointTs + 600,
+      nBits: EPOCH_NBITS,
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    // Min timespan clamp ⇒ expectedTarget ≈ oldTarget/4; same nBits is far outside 0.1%.
+    await catchError(oracle.abi, "InvalidRetarget", async () => {
+      await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
+    });
+  });
+
+  it("should not panic when easy-target × 4× timespan saturates expectedTarget", async function () {
+    const pc = await viem.getPublicClient();
+    const tc = await viem.getTestClient();
+
+    const checkpointHeight = 2015;
+    const latestBlock = await pc.getBlock({});
+    const epochStartTs = Number(latestBlock.timestamp) + 1000;
+    // Force the max timespan clamp (4× expected).
+    const checkpointTs = epochStartTs + 4 * RETARGET_EXPECTED_TIMESPAN;
+    const retargetTs = checkpointTs + 600;
+    const fakeCheckpointHash = "ee".repeat(32);
+
+    await tc.setNextBlockTimestamp({ timestamp: BigInt(retargetTs + 1) });
+
+    const oracle = await viem.deployContract("HashpriceBTC", [
+      hex(fakeCheckpointHash),
+      checkpointHeight,
+      checkpointTs,
+      EPOCH_NBITS,
+      epochStartTs,
+      EPOCH_NBITS,
+    ]);
+
+    const retargetHeader = buildHeader({
+      prevHash: fakeCheckpointHash,
+      timestamp: retargetTs,
+      nBits: EPOCH_NBITS,
+    });
+    const minedRetarget = mineHeader(retargetHeader, EPOCH_NBITS);
+
+    // Quotient saturates to uint256.max for this easy target; must revert cleanly, not Panic(0x11).
     await catchError(oracle.abi, "InvalidRetarget", async () => {
       await oracle.write.submitBlocks([checkpointHeight, hex(minedRetarget), ["0x00"], [[]]]);
     });

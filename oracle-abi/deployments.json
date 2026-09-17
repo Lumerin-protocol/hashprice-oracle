@@ -1,0 +1,25 @@
+{
+  "package": "@hashpower/oracle-abi",
+  "environments": {
+    "testnet": {
+      "chainId": 84532,
+      "network": "base-sepolia",
+      "startBlock": 44704529,
+      "contracts": {
+        "HashpriceBTC": "0x7b7f9698cadca34f13d6091c4ee34045f97442e7",
+        "HashpriceUSD": "0x7df07e84e57890f429935946748757758f7964f1",
+        "BtcUsdAggregator": "0x37b5E07C59238ad3bB11AC27129387A67F3340B6",
+        "HashrateOracleLegacy": "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
+      },
+      "subgraphs": {
+        "oracles": "https://api.goldsky.com/api/public/project_cmmz59uoa7b5201wthnkxbuqy/subgraphs/hpow-oracles/dev-latest/gn"
+      }
+    },
+    "mainnet": {
+      "chainId": 8453,
+      "network": "base",
+      "contracts": {},
+      "subgraphs": {}
+    }
+  }
+}
