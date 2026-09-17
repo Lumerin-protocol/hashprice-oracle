@@ -18,6 +18,8 @@
     "dump-subgraph": "node scripts/dump-subgraph.ts",
     "read-hashprice": "hardhat --network localhost run scripts/read-hashprice.ts",
     "compile": "hardhat compile",
+    "run:dev": "hardhat run --env dev",
+    "run:prod": "hardhat run --env prd",
     "clean": "rm -rf abi artifacts cache abi",
     "aderyn": "aderyn"
   },

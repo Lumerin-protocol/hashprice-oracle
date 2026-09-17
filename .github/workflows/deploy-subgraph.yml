@@ -9,6 +9,7 @@ on:
       - "cicd/**"
     paths:
       - "indexer/**"
+      - "config/**"
       - ".github/workflows/deploy-subgraph.yml"
   pull_request:
     branches:
@@ -17,6 +18,7 @@ on:
       - main
     paths:
       - "indexer/**"
+      - "config/**"
       - ".github/workflows/deploy-subgraph.yml"
   workflow_dispatch:
     inputs:
@@ -80,6 +82,7 @@ jobs:
       goldsky_subgraph_name: ${{ steps.env.outputs.goldsky_subgraph_name }}
       goldsky_rolling_tag: ${{ steps.env.outputs.goldsky_rolling_tag }}
       goldsky_endpoint: ${{ steps.env.outputs.goldsky_endpoint }}
+      config_env: ${{ steps.env.outputs.config_env }}
       is_cicd_branch: ${{ needs.setup.outputs.is_cicd_branch }}
 
     steps:
@@ -112,19 +115,27 @@ jobs:
           fi
           echo "goldsky_subgraph_name=$GS_NAME" >> $GITHUB_OUTPUT
 
-          # Rolling tag and public endpoint per environment
+          # Rolling tag, public endpoint, and the config/<name>.env to load.
+          # GitHub environment `main` maps to prd.env. Goldsky tags stay
+          # orchestration values and are not copied into the config file.
           case $ENV in
             dev)
               echo "goldsky_rolling_tag=dev-latest" >> $GITHUB_OUTPUT
               echo "goldsky_endpoint=${{ vars.DEV_GS_ORACLES }}" >> $GITHUB_OUTPUT
-              ;;
-            stg)
-              echo "goldsky_rolling_tag=stg-latest" >> $GITHUB_OUTPUT
-              echo "goldsky_endpoint=${{ vars.STG_GS_ORACLES }}" >> $GITHUB_OUTPUT
+              echo "config_env=dev" >> $GITHUB_OUTPUT
               ;;
             main)
               echo "goldsky_rolling_tag=lmn-latest" >> $GITHUB_OUTPUT
               echo "goldsky_endpoint=${{ vars.LMN_GS_ORACLES }}" >> $GITHUB_OUTPUT
+              echo "config_env=prd" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+                echo "config_env=dev" >> $GITHUB_OUTPUT
+              else
+                echo "::error::Unknown environment '$ENV' (expected dev or main). There is no config/stg.env; stg deploys are not supported."
+                exit 1
+              fi
               ;;
           esac
 
@@ -137,21 +148,18 @@ jobs:
       - name: Prepare subgraph configuration
         working-directory: ./indexer
         env:
-          NETWORK: ${{ vars.NETWORK }}
-          HASHPRICE_BTC_ADDRESS: ${{ vars.HASHPRICE_BTC_ADDRESS }}
-          HASHPRICE_USD_ADDRESS: ${{ vars.HASHPRICE_USD_ADDRESS }}
-          BTC_USD_ADDRESS: ${{ vars.BTC_USD_ADDRESS }}
-          HASHPRICE_START_BLOCK: ${{ vars.HASHPRICE_START_BLOCK }}
+          CONFIG_ENV: ${{ steps.env.outputs.config_env }}
+          DEPLOY_ENV: ${{ needs.setup.outputs.environment }}
         run: |
+          set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             echo "ℹ️ PR build — using .env.example dummy values"
-            set -a && source .env.example && set +a
+            ENV_FILE=.env.example
+          else
+            ENV_FILE="../config/${CONFIG_ENV}.env"
           fi
-          echo "⚙️ Preparing subgraph for ${{ needs.setup.outputs.environment }}..."
-          echo "   Network: ${NETWORK}"
-          echo "   Hashrate Oracle BTC: ${HASHPRICE_BTC_ADDRESS} (block ${HASHPRICE_START_BLOCK})"
-          echo "   BTC/USD Feed:        ${BTC_USD_ADDRESS}"
-          pnpm prepare:env
+          echo "⚙️ Preparing subgraph for ${DEPLOY_ENV} from ${ENV_FILE}..."
+          ENV_FILE="$ENV_FILE" pnpm prepare:env
           echo "✅ Configuration ready"
           echo "--- subgraph.yaml ---"
           cat subgraph.yaml

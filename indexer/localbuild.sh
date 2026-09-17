@@ -7,7 +7,12 @@
 
 set -e
 
-set -a && source .env && set +a
+ENV_FILE="${ENV_FILE:-../config/dev.env}"
+case "$ENV_FILE" in */*) ;; *) ENV_FILE="./$ENV_FILE" ;; esac
+set -a
+. "$ENV_FILE"
+[ -f ../.env ] && . ../.env
+set +a
 
 GOLDSKY_SUBGRAPH_NAME="${GOLDSKY_SUBGRAPH_NAME:-hpow-oracles}"
 GOLDSKY_ROLLING_TAG="${GOLDSKY_ROLLING_TAG:-dev-latest}"
@@ -16,7 +21,7 @@ GRAFT_FROM="${GRAFT_FROM:-lumerin-oracles}"
 GRAFT_FROM_VERSION="${GRAFT_FROM_VERSION:-v3.1.27-dev}"
 
 yarn install
-yarn prepare-local
+ENV_FILE="$ENV_FILE" yarn prepare:env
 yarn codegen
 yarn build
 
