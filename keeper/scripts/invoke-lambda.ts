@@ -6,7 +6,7 @@
  * actual deploy artifact, use invoke-bundle.ts instead.
  *
  * Usage:
- *   node --env-file=../.env scripts/invoke-lambda.ts
+ *   node --env-file=../config/dev.env --env-file-if-exists=../.env scripts/invoke-lambda.ts
  */
 
 import { handler } from "../src/adapters/lambda.ts";

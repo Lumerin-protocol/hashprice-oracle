@@ -9,6 +9,7 @@ on:
       - "cicd/**"
     paths:
       - "keeper/**"
+      - "config/**"
       - ".github/workflows/deploy-keeper.yml"
   pull_request:
     branches:
@@ -17,6 +18,7 @@ on:
       - main
     paths:
       - "keeper/**"
+      - "config/**"
       - ".github/workflows/deploy-keeper.yml"
   workflow_dispatch:
     inputs:
@@ -46,6 +48,7 @@ jobs:
       environment: ${{ steps.gen_tag.outputs.environment }}
       lambda_function: ${{ steps.env_config.outputs.lambda_function }}
       aws_region: ${{ steps.env_config.outputs.aws_region }}
+      config_env: ${{ steps.env_config.outputs.config_env }}
       is_cicd_branch: ${{ steps.gen_tag.outputs.is_cicd_branch }}
 
     steps:
@@ -67,9 +70,29 @@ jobs:
       - name: Environment config
         id: env_config
         run: |
+          ENV="${{ steps.gen_tag.outputs.environment }}"
           # Lambda function name is the same across all environments (different AWS accounts)
           echo "aws_region=us-east-1" >> $GITHUB_OUTPUT
           echo "lambda_function=futures-oracle-update-v2" >> $GITHUB_OUTPUT
+
+          # CONFIG_ENV names the config/<name>.env holding this environment's
+          # public container config. GitHub environment `main` maps to prd.env.
+          case "$ENV" in
+            dev)
+              echo "config_env=dev" >> $GITHUB_OUTPUT
+              ;;
+            main)
+              echo "config_env=prd" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+                echo "config_env=dev" >> $GITHUB_OUTPUT
+              else
+                echo "::error::Unknown environment '$ENV' (expected dev or main). There is no config/stg.env; stg deploys are not supported."
+                exit 1
+              fi
+              ;;
+          esac
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -133,6 +156,11 @@ jobs:
       lambda_version: ${{ steps.publish.outputs.lambda_version }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Download Lambda package
         uses: actions/download-artifact@v4
         with:
@@ -178,20 +206,43 @@ jobs:
             | jq 'keys'
 
       - name: Update Lambda environment variables
+        env:
+          CONFIG: config/${{ needs.build.outputs.config_env }}.env
+          BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         run: |
+          set -euo pipefail
+
+          # The function environment is every key declared in config/<env>.env
+          # plus the secrets from the step env above. Sourcing cannot clobber a
+          # secret, because no secret is named in the config file. jq then
+          # reads values straight out of the environment, so each key is
+          # written exactly once: in the config file.
+          set -a && . "$CONFIG" && set +a
+
+          KEYS=$( { sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$CONFIG"; \
+                    printf '%s\n' BITCOIN_RPC_URL ETHEREUM_RPC_URL PRIVATE_KEY; } )
+
+          # Empty values are dropped so the keeper applies its own defaults
+          # instead of parsing an empty string.
+          jq -n --arg keys "$KEYS" '[
+            $keys
+            | split("\n")
+            | unique
+            | .[]
+            | select(. != "" and ($ENV[.] // "") != "")
+            | {name: ., value: $ENV[.]}
+          ]' > env-block.json
+
+          echo "   Function env keys: $(jq -r '[.[].name] | join(", ")' env-block.json)"
+
+          jq '{Variables: (map({(.name): .value}) | add)}' env-block.json > lambda-env.json
+
           aws lambda update-function-configuration \
             --function-name ${{ needs.build.outputs.lambda_function }} \
             --region ${{ needs.build.outputs.aws_region }} \
-            --environment "Variables={
-              BITCOIN_RPC_URL=${{ secrets.BITCOIN_RPC_URL }},
-              ETHEREUM_RPC_URL=${{ secrets.ETHEREUM_RPC_URL }},
-              CHAIN_ID=${{ vars.CHAIN_ID }},
-              HASHPRICE_BTC_ADDRESS=${{ vars.HASHPRICE_BTC_ADDRESS }},
-              PRIVATE_KEY=${{ secrets.PRIVATE_KEY }},
-              LOG_LEVEL=${{ vars.LOG_LEVEL }},
-              MAX_BATCH_SIZE=${{ vars.MAX_BATCH_SIZE }},
-              BTC_USD_ADDRESS=${{ vars.BTC_USD_ADDRESS }},
-            }"
+            --environment file://lambda-env.json
           echo "✅ Environment variables updated"
 
       - name: Wait for configuration update to complete

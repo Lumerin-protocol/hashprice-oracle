@@ -8,7 +8,7 @@
  * chains them together.
  *
  * Usage:
- *   node --env-file=../.env scripts/invoke-bundle.ts
+ *   node --env-file=../config/dev.env --env-file-if-exists=../.env scripts/invoke-bundle.ts
  */
 
 import { handler } from "../dist/index.mjs";

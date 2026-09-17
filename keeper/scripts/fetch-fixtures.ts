@@ -6,7 +6,7 @@
  * most recent blocks. Merges with any existing data and skips cached heights.
  *
  * Usage:
- *   node --env-file=../.env scripts/fetch-fixtures.ts [count=10] [--from HEIGHT]
+ *   node --env-file=../config/dev.env --env-file-if-exists=../.env scripts/fetch-fixtures.ts [count=10] [--from HEIGHT]
  *
  * Examples:
  *   pnpm fetch-fixtures              # 10 most recent blocks
