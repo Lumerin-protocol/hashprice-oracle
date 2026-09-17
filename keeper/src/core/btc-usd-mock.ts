@@ -38,7 +38,9 @@ async function fetchBTCUSDPrice(): Promise<number> {
 }
 
 export async function updateBTCUSDMock(config: Config, log: Logger): Promise<void> {
-  if (!config.btcUsdAddress) return;
+  if (!config.btcUsdAddress) {
+    throw new Error("UPDATE_BTC_USD is enabled but BTC_USD_ADDRESS is not set");
+  }
 
   const child = log.child({ component: "btc-usd-mock" });
 

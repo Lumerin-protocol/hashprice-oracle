@@ -1,13 +1,15 @@
 import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
 import hardhatViemAbi from "hardhat-viem-abi";
-import { tryLoadEnvFile } from "./lib/env.ts";
-
-tryLoadEnvFile("./../.env");
-tryLoadEnvFile(".env");
+import envLoader from "./plugins/env-loader/index.ts";
 
 export default defineConfig({
-  plugins: [hardhatToolboxViem, hardhatViemAbi],
+  plugins: [hardhatToolboxViem, hardhatViemAbi, envLoader],
+  envLoader: {
+    configDir: "../config",
+    // Machine/secret values; win over the named env file for overlapping keys.
+    overrideEnvFiles: ["../.env", ".env"],
+  },
   paths: {
     tests: "tests",
   },
@@ -76,12 +78,25 @@ export default defineConfig({
       type: "http",
       url: "http://127.0.0.1:8545",
     },
-    production: {
+    "base-sepolia": {
       type: "http",
-      url: configVariable("ETHEREUM_RPC_URL"),
-      accounts: [configVariable("DEPLOYER_PRIVATEKEY")],
-      gasPrice: "auto",
-      gas: "auto",
+      chainType: "l1",
+      chainId: 84532,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-sepolia.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    "base-mainnet": {
+      type: "http",
+      chainType: "l1",
+      chainId: 8453,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-mainnet.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
     },
   },
   verify: {

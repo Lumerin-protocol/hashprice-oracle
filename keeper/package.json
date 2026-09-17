@@ -7,7 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --env-file=../.env --watch src/adapters/node.ts",
+    "dev:dev": "node --env-file=../.env --env-file=../config/dev.env --watch src/adapters/node.ts",
+    "dev:prod": "node --env-file=../.env --env-file=../config/prd.env --watch src/adapters/node.ts",
     "dev-local": "node --env-file=../.env.local --watch src/adapters/node.ts",
     "start": "node --env-file=../.env src/adapters/node.ts",
     "invoke:lambda": "node --env-file=../.env scripts/invoke-lambda.ts",

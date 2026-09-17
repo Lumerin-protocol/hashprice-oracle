@@ -191,6 +191,7 @@ jobs:
               LOG_LEVEL=${{ vars.LOG_LEVEL }},
               MAX_BATCH_SIZE=${{ vars.MAX_BATCH_SIZE }},
               BTC_USD_ADDRESS=${{ vars.BTC_USD_ADDRESS }},
+              UPDATE_BTC_USD=${{ vars.UPDATE_BTC_USD }},
             }"
           echo "✅ Environment variables updated"
 
