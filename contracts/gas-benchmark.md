@@ -1,6 +1,6 @@
 # Gas Benchmark — HashpriceBTC
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-09-17_
 
 ## `submitBlock` — one-by-one over 155 real mainnet blocks
 
