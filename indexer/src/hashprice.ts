@@ -53,65 +53,84 @@ const DAY_IN_MINUTES = 24 * 60;
 const WINDOW_1D = DAY_IN_MINUTES / BLOCKS_PER_MINUTE; // 24 hours at 10 min/block
 const WINDOW_7D = (7 * DAY_IN_MINUTES) / BLOCKS_PER_MINUTE; // 7 days at 10 min/block
 
-// Once handler — bootstraps the BTC/USD aggregator dynamic data source and initializes HashpriceMeta
+// Once handler — starts the BTC/USD aggregator data source so its events are
+// indexed before the first HashpriceBTC update. HashpriceMeta is created later
+// on the first feed event after every source contract exists.
 export function initFeeds(block: ethereum.Block): void {
-  log.info("===============inside initFeeds", []);
+  const context = dataSource.context();
+  const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
+
+  const btcUsdProxy = AggregatorProxy.bind(btcUsdAddress);
+  const btcUsdAggResult = btcUsdProxy.try_aggregator();
+  if (btcUsdAggResult.reverted) {
+    log.warning(
+      "BTC/USD proxy is unavailable at block {}; aggregator discovery will retry on HashpriceBTC updates.",
+      [block.number.toString()],
+    );
+    return;
+  }
+
+  ChainlinkAggregator.create(btcUsdAggResult.value);
+  log.info("Created BtcUsd aggregator data source: {}", [btcUsdAggResult.value.toHexString()]);
+
+  let rates = LatestRates.load(LATEST_RATES_ID);
+  if (!rates) {
+    rates = new LatestRates(LATEST_RATES_ID);
+    rates.id = LATEST_RATES_ID;
+  }
+  rates.btcUsdAggregator = btcUsdAggResult.value;
+  rates.save();
+}
+
+function loadOrInitializeHashpriceMeta(block: ethereum.Block): HashpriceMeta | null {
+  let meta = HashpriceMeta.load(LATEST_RATES_ID);
+  if (meta !== null) return meta;
+
   const context = dataSource.context();
   const hashpriceBtcAddress = dataSource.address();
   const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
   const hashpriceUsdAddress = Address.fromString(context.mustGet("hashpriceUsdAddress").toString());
-  const hashpriceStartBlock = context.mustGet("hashpriceStartBlock").toBigInt();
 
-  const btcUsdProxy = AggregatorProxy.bind(btcUsdAddress);
-  const hashpriceBtcContract = HashpriceBTC.bind(hashpriceBtcAddress);
-  const hashpriceUsdContract = AggregatorV3Interface.bind(hashpriceUsdAddress);
-  const btcUsdAggResult = btcUsdProxy.try_aggregator();
-  if (btcUsdAggResult.reverted) {
-    log.error("Failed to get BtcUsd aggregator address", []);
-  } else {
-    ChainlinkAggregator.create(btcUsdAggResult.value);
-    log.info("Created BtcUsd aggregator data source: {}", [btcUsdAggResult.value.toHexString()]);
-
-    let rates = LatestRates.load(LATEST_RATES_ID);
-    if (!rates) {
-      rates = new LatestRates(LATEST_RATES_ID);
-      rates.id = LATEST_RATES_ID;
-    }
-    rates.btcUsdAggregator = btcUsdAggResult.value;
-    rates.save();
+  const hashpriceBtcDecimalsResult = HashpriceBTC.bind(hashpriceBtcAddress).try_decimals();
+  if (hashpriceBtcDecimalsResult.reverted) {
+    log.warning(
+      "HashpriceBTC is unavailable at block {}; metadata initialization will retry on feed updates.",
+      [block.number.toString()],
+    );
+    return null;
   }
 
-  let meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (!meta) {
-    meta = new HashpriceMeta(LATEST_RATES_ID);
-    meta.id = LATEST_RATES_ID;
-    meta.hashpriceBtcAddress = hashpriceBtcAddress;
-    meta.hashpriceUsdAddress = hashpriceUsdAddress;
-    meta.btcUsdAddress = btcUsdAddress;
-    meta.startBlock = hashpriceStartBlock;
-
-    const hashpriceBtcDecimalsResult = hashpriceBtcContract.try_decimals();
-    if (hashpriceBtcDecimalsResult.reverted) {
-      log.error("Failed to get HashpriceBTC decimals", []);
-      return;
-    }
-    meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
-
-    const btcUsdDecimalsResult = btcUsdProxy.try_decimals();
-    if (btcUsdDecimalsResult.reverted) {
-      log.error("Failed to get BTC/USD decimals", []);
-      return;
-    }
-    meta.btcUsdDecimals = btcUsdDecimalsResult.value;
-
-    const hashpriceUsdDecimalsResult = hashpriceUsdContract.try_decimals();
-    if (hashpriceUsdDecimalsResult.reverted) {
-      log.error("Failed to get HashpriceUSD decimals", []);
-      return;
-    }
-    meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
-    meta.save();
+  const btcUsdDecimalsResult = AggregatorProxy.bind(btcUsdAddress).try_decimals();
+  if (btcUsdDecimalsResult.reverted) {
+    log.warning(
+      "BTC/USD proxy is unavailable at block {}; metadata initialization will retry on feed updates.",
+      [block.number.toString()],
+    );
+    return null;
   }
+
+  const hashpriceUsdDecimalsResult = AggregatorV3Interface.bind(hashpriceUsdAddress).try_decimals();
+  if (hashpriceUsdDecimalsResult.reverted) {
+    log.warning(
+      "HashpriceUSD is unavailable at block {}; metadata initialization will retry on feed updates.",
+      [block.number.toString()],
+    );
+    return null;
+  }
+
+  meta = new HashpriceMeta(LATEST_RATES_ID);
+  meta.id = LATEST_RATES_ID;
+  meta.hashpriceBtcAddress = hashpriceBtcAddress;
+  meta.hashpriceUsdAddress = hashpriceUsdAddress;
+  meta.btcUsdAddress = btcUsdAddress;
+  meta.startBlock = context.mustGet("hashpriceStartBlock").toBigInt();
+  meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
+  meta.btcUsdDecimals = btcUsdDecimalsResult.value;
+  meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
+  meta.save();
+
+  log.info("HashpriceMeta initialized at block {}", [block.number.toString()]);
+  return meta;
 }
 
 // Records the header timestamp and difficulty target of one accepted Bitcoin block, which is
@@ -227,11 +246,8 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     }
   }
 
-  const meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (!meta) {
-    log.error("HashpriceMeta not found", []);
-    return;
-  }
+  const meta = loadOrInitializeHashpriceMeta(event.block);
+  if (meta === null) return;
 
   deriveHashpriceUsd(rates, meta);
 }
@@ -257,10 +273,7 @@ export function handleAnswerUpdated(event: AnswerUpdated): void {
   rates.save();
 
   const meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (!meta) {
-    log.error("HashpriceMeta not found", []);
-    return;
-  }
+  if (meta === null) return;
 
   deriveHashpriceUsd(rates, meta);
 }
