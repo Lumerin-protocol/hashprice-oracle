@@ -78,7 +78,7 @@ export async function runKeeper(config: Config, log: Logger): Promise<KeeperResu
   const btc = new BitcoinProvider(config.bitcoinRpcUrl, log);
   const oracle = new OracleClient(config, log);
 
-  if (config.btcUsdAddress) {
+  if (config.updateBtcUsd) {
     await updateBTCUSDMock(config, log);
   }
 

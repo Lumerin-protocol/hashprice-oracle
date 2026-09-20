@@ -15,7 +15,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadEnvFile } from "node:process";
 import { DockerComposeEnvironment, TestContainers, Wait } from "testcontainers";
 import {
   dumpSubgraph,
@@ -40,14 +39,6 @@ const SEED_DAYS = process.env.SEED_DAYS ?? "30";
 const UI_SEED_DIR =
   process.env.UI_SEED_DIR ??
   resolve(REPO_ROOT, "../futures-marketplace/ui/src/seed");
-
-function tryLoadEnv(path: string): void {
-  try {
-    loadEnvFile(path);
-  } catch {
-    // optional
-  }
-}
 
 /** Prefer an explicit Base mainnet RPC; otherwise rewrite Alchemy base-sepolia → base-mainnet. */
 function resolveBaseMainnetRpc(): string {
@@ -173,9 +164,6 @@ function killProcessTree(child: ChildProcess | undefined): void {
 }
 
 async function main(): Promise<void> {
-  tryLoadEnv(resolve(REPO_ROOT, ".env"));
-  tryLoadEnv(resolve(CONTRACTS_DIR, ".env"));
-
   for (const key of ["BITCOIN_RPC_URL"]) {
     if (!process.env[key]) {
       throw new Error(`Missing required env var: ${key} (load from repo-root .env)`);
