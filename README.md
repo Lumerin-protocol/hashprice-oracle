@@ -46,7 +46,7 @@ Key properties:
 - **Permissionless** — any address can submit headers and proofs; no owner, no admin key
 - **Trustless** — the contract rejects any submission that fails PoW or merkle verification; a malicious keeper cannot corrupt the feed
 - **Reorg-aware** — `submitBlocks()` handles chain reorganizations by accepting a new chain of headers that replaces the current tip
-- **Chainlink-compatible** — implements `AggregatorV3Interface`; output is 100 TH/s per day priced in BTC (8 decimals)
+- **Chainlink-compatible** — implements `AggregatorV3Interface`; output is 1 PH/s per day priced in BTC (16 decimals)
 
 **Why SPV?** SPV verification requires only 80-byte block headers and a merkle path — no full node, no trusted oracle, no multisig. The same primitive underpins Bitcoin light clients and cross-chain bridges like BTC Relay.
 
@@ -97,6 +97,15 @@ yarn install
 # Configure .env from .env.example
 yarn codegen
 yarn build
+```
+
+### Seed JSON (local history dump)
+
+Regenerate `contracts/seed/` with one command — see [`indexer/SEED.md`](indexer/SEED.md):
+
+```bash
+cd indexer
+SEED_DAYS=30 pnpm seed:generate
 ```
 
 ## Gas Costs

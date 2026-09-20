@@ -1,0 +1,11 @@
+# pnpm 11 reads build permissions from here; the package.json "pnpm" field is
+# ignored. hardhat-viem-abi is git-hosted and does not ship dist/, so it has to
+# run its prepare script, and the allowlist only matches the resolved tarball
+# URL rather than the tag package.json depends on.
+allowBuilds:
+  "@arbitrum/nitro-contracts": true
+  "@cyfrin/aderyn": true
+  esbuild: false
+  hardhat-viem-abi@https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9#path:packages/hardhat-viem-abi: true
+  keccak: true
+  secp256k1: true

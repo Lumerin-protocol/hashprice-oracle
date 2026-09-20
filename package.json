@@ -4,5 +4,6 @@
   "private": true,
   "exports": {
     "./contracts/contracts/*": "./contracts/contracts/*"
-  }
+  },
+  "packageManager": "pnpm@11.22.0"
 }

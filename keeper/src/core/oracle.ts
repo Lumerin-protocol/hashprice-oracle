@@ -61,6 +61,9 @@ function isStaleBlockError(err: unknown): boolean {
   return false;
 }
 
+/** Skip catch-up logs unless the RPC stayed behind at least this long. */
+const SUBSTANTIAL_LAG_MS = 2_000;
+
 export class OracleClient {
   private readonly pc: PublicClient;
   private readonly wc: WalletClient<Transport, Chain, Account>;
@@ -104,31 +107,30 @@ export class OracleClient {
 
   /** See `getBlockFromTip` for `minBlock` semantics. */
   async getState(minBlock?: bigint): Promise<OracleState> {
-    const [stateResult, chainTipHash] = await Promise.all([
-      this.readPinned(minBlock, (blockNumber) =>
+    return this.readPinned(minBlock, async (blockNumber) => {
+      const atBlock = blockNumber !== undefined ? { blockNumber } : {};
+      const [stateResult, chainTipHash] = await Promise.all([
         this.pc.readContract({
           address: this.address,
           abi: HashpriceBTCAbi,
           functionName: "state",
-          ...(blockNumber !== undefined ? { blockNumber } : {}),
+          ...atBlock,
         }),
-      ),
-      this.readPinned(minBlock, (blockNumber) =>
         this.pc.readContract({
           address: this.address,
           abi: HashpriceBTCAbi,
           functionName: "chainTipHash",
-          ...(blockNumber !== undefined ? { blockNumber } : {}),
+          ...atBlock,
         }),
-      ),
-    ]);
+      ]);
 
-    return {
-      chainHeight: stateResult[0],
-      blockCount: stateResult[1],
-      lastSubmittedAt: stateResult[4],
-      chainTipHash,
-    };
+      return {
+        chainHeight: stateResult[0],
+        blockCount: stateResult[1],
+        lastSubmittedAt: stateResult[4],
+        chainTipHash,
+      };
+    });
   }
 
   async submitBlock(block: PreparedBlock): Promise<TransactionReceipt> {
@@ -194,25 +196,29 @@ export class OracleClient {
     if (minBlock === undefined) return read(undefined);
 
     const startedAt = Date.now();
-    let delayMs = 100;
+    let delayMs = 500;
+    let attempts = 0;
+    let logged = false;
     while (true) {
       try {
         return await read(minBlock);
       } catch (err) {
         if (!isStaleBlockError(err)) throw err;
-        if (Date.now() - startedAt > timeoutMs) {
+        attempts++;
+        const lagMs = Date.now() - startedAt;
+        if (lagMs > timeoutMs) {
           this.log.error(
-            { minBlock: minBlock.toString(), timeoutMs, err },
-            "RPC node did not catch up to required block within timeout",
+            { node: "eth", lagMs, timeoutMs, attempts, err },
+            "eth RPC node did not catch up within timeout",
           );
           throw err;
         }
-        this.log.debug(
-          { minBlock: minBlock.toString(), delayMs },
-          "RPC node behind required block, retrying read",
-        );
+        if (!logged && lagMs >= SUBSTANTIAL_LAG_MS) {
+          logged = true;
+          this.log.debug({ node: "eth", lagMs, attempts }, "eth RPC node behind");
+        }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 2, 2000);
+        delayMs = Math.min(delayMs * 2, 4000);
       }
     }
   }

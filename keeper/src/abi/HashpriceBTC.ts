@@ -244,31 +244,6 @@ export const HashpriceBTCAbi = [
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint8",
-        "name": "index",
-        "type": "uint8"
-      }
-    ],
-    "name": "getBlockFromTip",
-    "outputs": [
-      {
-        "components": [
-          { "internalType": "bytes32", "name": "blockHash", "type": "bytes32" },
-          { "internalType": "uint32", "name": "timestamp", "type": "uint32" },
-          { "internalType": "uint32", "name": "nBits", "type": "uint32" },
-          { "internalType": "uint32", "name": "height", "type": "uint32" }
-        ],
-        "internalType": "struct HashpriceBTC.BlockEntry",
-        "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "confirmedHeight",
     "outputs": [
@@ -460,6 +435,21 @@ export const HashpriceBTCAbi = [
       {
         "internalType": "uint32",
         "name": "lastSubmittedAt",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "epochStartHeight",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "prevEpochStartTimestamp",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "prevEpochStartNBits",
         "type": "uint32"
       }
     ],

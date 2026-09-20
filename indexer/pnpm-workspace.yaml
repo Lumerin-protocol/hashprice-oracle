@@ -1,0 +1,8 @@
+# pnpm 11 reads build permissions from here; the package.json "pnpm" field is
+# ignored. The three testcontainers dependencies were already being skipped
+# under pnpm 10 and each has a pure-JS fallback, so keep them off.
+allowBuilds:
+  cpu-features: false
+  matchstick-as: true
+  protobufjs: false
+  ssh2: false

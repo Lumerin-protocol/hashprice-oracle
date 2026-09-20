@@ -7,13 +7,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --env-file=../.env --watch src/adapters/node.ts",
-    "dev-local": "node --env-file=../.env.local --watch src/adapters/node.ts",
-    "start": "node --env-file=../.env src/adapters/node.ts",
-    "invoke:lambda": "node --env-file=../.env scripts/invoke-lambda.ts",
-    "invoke:bundle": "pnpm build:lambda && node --env-file=../.env scripts/invoke-bundle.ts",
+    "dev": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env --watch src/adapters/node.ts",
+    "dev:prd": "node --env-file=../config/prd.env --env-file-if-exists=../.env --env-file-if-exists=.env --watch src/adapters/node.ts",
+    "dev-local": "node --env-file=../config/local.env --env-file-if-exists=../.env --env-file-if-exists=../.env.local --watch src/adapters/node.ts",
+    "start": "node --env-file-if-exists=../.env --env-file-if-exists=.env src/adapters/node.ts",
+    "invoke:lambda": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-lambda.ts",
+    "invoke:bundle": "pnpm build:lambda && node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-bundle.ts",
     "build:lambda": "node scripts/build-lambda.ts",
-    "fetch-fixtures": "node --env-file=../.env scripts/fetch-fixtures.ts",
+    "fetch-fixtures": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/fetch-fixtures.ts",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
@@ -26,10 +27,5 @@
     "esbuild": "^0.25.4",
     "pino-pretty": "^13.0.0"
   },
-  "packageManager": "pnpm@10.28.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  }
+  "packageManager": "pnpm@11.22.0"
 }

@@ -34,6 +34,20 @@ library BTCUtils {
     /// @dev Initial block subsidy: 50 BTC in satoshis.
     uint256 internal constant INITIAL_SUBSIDY = 50 * 10 ** BTC_DECIMALS;
 
+    /// @dev Number of blocks per difficulty epoch;
+    uint256 internal constant RETARGET_INTERVAL = 2016;
+
+    /// @dev Target seconds per difficulty epoch:
+    ///      2016 blocks × 10 min (Bitcoin retarget timespan).
+    uint256 internal constant EPOCH_TIMESPAN = RETARGET_INTERVAL * 10 * 60;
+
+    /// @dev Size of a raw Bitcoin block header
+    uint256 internal constant HEADER_SIZE = 80;
+
+    /// @dev Max seconds header time may be ahead of
+    ///      `block.timestamp` (Bitcoin's 2h rule)
+    uint32 internal constant MAX_FUTURE_BLOCK_TIME = 2 * 3600;
+
     /// @notice Parse an 80-byte Bitcoin block header
     /// @dev Bitcoin header layout (all little-endian):
     ///   [0..4)   version
@@ -173,6 +187,32 @@ library BTCUtils {
         }
     }
 
+    /// @dev Bitcoin: `floor(oldTarget * actualTimespan / EPOCH_TIMESPAN)` without overflowing
+    ///      uint256 (easy/test targets × 4× clamp can exceed 2^256). Saturates to max if the
+    ///      true quotient does not fit — mainnet targets never hit that path.
+    function expectedRetargetTarget(uint256 oldTarget, uint256 actualTimespan) internal pure returns (uint256) {
+        uint256 q = oldTarget / EPOCH_TIMESPAN;
+        uint256 r = oldTarget % EPOCH_TIMESPAN;
+        // r < EXPECTED and actualTimespan ≤ 4×EXPECTED ⇒ r * actualTimespan fits in uint256.
+        uint256 remainderTerm = r * actualTimespan / EPOCH_TIMESPAN;
+        if (q != 0 && q > (type(uint256).max - remainderTerm) / actualTimespan) {
+            return type(uint256).max;
+        }
+        return q * actualTimespan + remainderTerm;
+    }
+
+    /// @dev Bitcoin Core uses a signed timespan and clamps to `[EXPECTED/4, EXPECTED*4]`.
+    ///      We omit MTP, so a backwards H-1 timestamp must not panic on unsigned subtract —
+    ///      treat non-positive spans as 0, then apply the same bounds (negatives → EXPECTED/4).
+    function clampRetargetTimespan(uint256 epochStartTime, uint256 epochEndTime) internal pure returns (uint256) {
+        uint256 epochTimespan = _saturatingSub(epochEndTime, epochStartTime);
+        return _clamp(epochTimespan, EPOCH_TIMESPAN / 4, EPOCH_TIMESPAN * 4);
+    }
+
+    function sliceHeaders(bytes calldata headers, uint256 index) internal pure returns (bytes calldata) {
+        return headers[index * HEADER_SIZE:(index + 1) * HEADER_SIZE];
+    }
+
     /// @notice Reverse the byte order of a bytes32 value
     function reverseBytes32(bytes32 input) internal pure returns (bytes32) {
         uint256 v = uint256(input);
@@ -223,5 +263,23 @@ library BTCUtils {
             | (uint64(uint8(data[offset + 2])) << 16) | (uint64(uint8(data[offset + 3])) << 24)
             | (uint64(uint8(data[offset + 4])) << 32) | (uint64(uint8(data[offset + 5])) << 40)
             | (uint64(uint8(data[offset + 6])) << 48) | (uint64(uint8(data[offset + 7])) << 56);
+    }
+
+
+    function _saturatingSub(uint256 a, uint256 b) private pure returns (uint256){
+        if (a>b){
+            return a - b;
+        }
+        return 0;
+    }
+
+    function _clamp(uint256 x, uint256 min, uint256 max) private pure returns (uint256){
+        if (x < min){
+            return min;
+        }
+        if (x > max){
+            return max;
+        }
+        return x;
     }
 }
