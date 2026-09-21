@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - dev
-      - stg
       - main
       - "cicd/**"
     paths:
@@ -14,7 +13,6 @@ on:
   pull_request:
     branches:
       - dev
-      - stg
       - main
     paths:
       - "keeper/**"
@@ -23,12 +21,11 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment (dev=DEV, stg=STG, main=LMN/PROD)"
+        description: "Target environment (dev=DEV, main=LMN/PROD)"
         required: true
         type: choice
         options:
           - dev
-          - stg
           - main
 
 permissions:
@@ -169,9 +166,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ needs.build.outputs.environment == 'dev' &&
-            secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg'
-            && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN_LMN }}
           aws-region: ${{ needs.build.outputs.aws_region }}
           role-session-name: GitHubActions-FuturesOracleUpdate-${{ github.run_id }}
 
@@ -280,9 +275,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ needs.build.outputs.environment == 'dev' &&
-            secrets.AWS_ROLE_ARN_DEV || needs.build.outputs.environment == 'stg'
-            && secrets.AWS_ROLE_ARN_STG || secrets.AWS_ROLE_ARN_LMN }}
+          role-to-assume: ${{ needs.build.outputs.environment == 'dev' && secrets.AWS_ROLE_ARN_DEV || secrets.AWS_ROLE_ARN_LMN }}
           aws-region: ${{ needs.build.outputs.aws_region }}
           role-session-name: GitHubActions-FuturesOracleUpdate-Verify-${{ github.run_id }}
 

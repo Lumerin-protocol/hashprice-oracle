@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - dev
-      - stg
       - main
       - "cicd/**"
     paths:
@@ -14,7 +13,6 @@ on:
   pull_request:
     branches:
       - dev
-      - stg
       - main
     paths:
       - "indexer/**"
@@ -23,12 +21,11 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment (dev=DEV, stg=STG, main=LMN/PROD)"
+        description: "Target environment (dev=DEV, main=LMN/PROD)"
         required: true
         type: choice
         options:
           - dev
-          - stg
           - main
 
 concurrency:
@@ -223,7 +220,7 @@ jobs:
         id: goldsky_deploy
         working-directory: ./indexer
         env:
-          GOLDSKY_API_KEY: ${{ needs.build.outputs.environment == 'dev' && secrets.DEV_GOLDSKY_API_KEY || needs.build.outputs.environment == 'stg' && secrets.STG_GOLDSKY_API_KEY || secrets.LMN_GOLDSKY_API_KEY }}
+          GOLDSKY_API_KEY: ${{ needs.build.outputs.environment == 'dev' && secrets.DEV_GOLDSKY_API_KEY || secrets.LMN_GOLDSKY_API_KEY }}
           GOLDSKY_SUBGRAPH_NAME: ${{ needs.build.outputs.goldsky_subgraph_name }}
           SUBGRAPH_VERSION: ${{ needs.build.outputs.version }}
           GOLDSKY_ROLLING_TAG: ${{ needs.build.outputs.goldsky_rolling_tag }}
@@ -353,7 +350,7 @@ jobs:
 
           if [ -z "${GOLDSKY_ENDPOINT}" ]; then
             echo "⚠️ No Goldsky endpoint URL configured — skipping verification"
-            echo "   Set DEV_GS_ORACLES / STG_GS_ORACLES / LMN_GS_ORACLES org variable"
+            echo "   Set DEV_GS_ORACLES / LMN_GS_ORACLES org variable"
             exit 0
           fi
 

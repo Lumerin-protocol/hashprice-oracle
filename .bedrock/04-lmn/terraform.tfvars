@@ -3,19 +3,28 @@
 ########################################
 # Note: ethereum_rpc_url is defined in secret.auto.tfvars (contains API key)
 # Contract addresses for the environment
-# DEV uses Arbitrum Sepolia testnet, STG/LMN use Arbitrum mainnet
+# Base mainnet from config/prd.env (this repo + sibling futures/derivatives prd.env).
+# clone_factory has no prd.env counterpart — leave as the Base factory used in 03-stg / sibling 04-lmn.
 wallets = {
-  clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
-  hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
-  futures_address         = "0x8464dc5ab80e76e497fad318fe6d444408e5ccda"
-  multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
-  btcusd_oracle_address   = "0x07895fc9995850112e31e4853e63f1283be65f60" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
-  hashprice_btc_address   = ""                                           # TODO: populate when HashpriceBTC is deployed to LMN/PROD (until then, oracle staleness check returns 500)
+  clone_factory_address   = "0xb5838586b43b50f9a739d1256a067859fe5b3234"
+  hashrate_oracle_address = "0x614dCAfa33AF0705C7b4A37667eF511F400F36d0" # derivatives PRICE_ORACLE_ADDRESS (legacy HashrateOracle)
+  futures_address         = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f" # futures FUTURES_ADDRESS
+  multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11" # futures REACT_APP_MULTICALL_ADDRESS
+  btcusd_oracle_address   = "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" # HASHPRICE / collateral BTC_USD_ADDRESS
+  hashprice_btc_address   = "0x70027c6f1b40e7461172af1241330b499c8c2e22" # HASHPRICE_BTC_ADDRESS
 }
 
 spot_indexer_contracts = {
   clone_factory_address   = "0x6b690383c0391b0cf7d20b9eb7a783030b1f3f96"
   hashrate_oracle_address = "0x6599ef8e2b4a548a86eb82e2dfbc6ceadfceacbd"
+}
+
+# Goldsky project STG-Exchange renamed LMN-Exchange. ID does not change.
+# Tag lmn-latest onto the current live versions before the first main CI deploy.
+gs_subgraphs = {
+  oracles     = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-oracles/lmn-latest/gn"
+  futures     = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-futures/lmn-latest/gn"
+  derivatives = "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-derivatives/lmn-latest/gn"
 }
 
 core_resources = {
@@ -41,8 +50,8 @@ oracle_lambda = {
   create       = true
   protect      = false
   svc_name     = "oracle-lambda"
-  chain_id     = "42161" # arbitrum mainnet
-  log_level    = "info"
+  chain_id     = "8453" # prd.env CHAIN_ID
+  log_level    = "debug" # prd.env LOG_LEVEL
   job_interval = "5"
 }
 
