@@ -5,46 +5,53 @@
 locals {
   # Environment short name for resource naming
   env_short = substr(var.account_shortname, 8, 3)
-  
+
   # Monitoring namespace for custom metrics
   monitoring_namespace = "HashpriceOracle-${upper(local.env_short)}"
-  
+
+  # Determine if we should create the TheGraph subgraph monitor
+  # Controlled by monitoring.create_subgraph_health_monitor boolean
+  # Subgraph IDs and API key must be configured in secrets for Lambda to work
+  should_create_subgraph_monitor = (
+    var.monitoring.create &&
+    var.monitoring.create_subgraph_health_monitor
+  )
+
   # Log group names (must match actual log group names)
-  graph_indexer_log_group = "/ecs/graph-indexer-${local.env_short}"
   spot_indexer_log_group  = "bedrock-hpo-spot-indexer-${local.env_short}"
   oracle_lambda_log_group = "/aws/lambda/futures-oracle-update-v2"
-  
+
   # SNS Topic ARNs
   dev_alerts_sns_arn    = "arn:aws:sns:${var.default_region}:${var.account_number}:${var.monitoring.dev_alerts_topic_name}"
   devops_alerts_sns_arn = "arn:aws:sns:${var.default_region}:${var.account_number}:${var.monitoring.devops_alerts_topic_name}"
-  
+
   # For dev/stg, route all to Slack (dev-alerts)
   # For prod/lmn, critical goes to devops-alerts (cell), warning to dev-alerts (Slack)
   critical_sns_arn = var.account_lifecycle == "prd" ? local.devops_alerts_sns_arn : local.dev_alerts_sns_arn
   warning_sns_arn  = local.dev_alerts_sns_arn
-  
+
   # Alarm action strategy:
   # - Component alarms: NO notifications (just state tracking for composites)
   # - Composite alarms: YES notifications when notifications_enabled = true
   # This prevents double-alerting when a component triggers its parent composite
-  
+
   # Component alarms - never send notifications (empty actions)
   component_alarm_actions = []
-  
+
   # Composite alarms - send notifications only when enabled
   composite_alarm_actions = var.monitoring.notifications_enabled ? [local.critical_sns_arn] : []
-  
+
   # Alarm periods - match check rates (in seconds)
   oracle_staleness_check_period_seconds = var.monitoring_schedule.oracle_staleness_rate_minutes * 60
   subgraph_alarm_period_seconds         = var.monitoring_schedule.subgraph_health_rate_minutes * 60
-  
+
   # Evaluation periods - how many check periods before alarm triggers
   # Standard CloudWatch metrics (ECS, Lambda, RDS, ALB) use 300-second (5 min) periods
   # Custom Lambdas use their own check rate
-  standard_alarm_evaluation_periods     = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / 5)
-  oracle_alarm_evaluation_periods       = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.oracle_staleness_rate_minutes)
-  subgraph_alarm_evaluation_periods     = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.subgraph_health_rate_minutes)
-  
+  standard_alarm_evaluation_periods = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / 5)
+  oracle_alarm_evaluation_periods   = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.oracle_staleness_rate_minutes)
+  subgraph_alarm_evaluation_periods = ceil(var.monitoring_schedule.unhealthy_alarm_period_minutes / var.monitoring_schedule.subgraph_health_rate_minutes)
+
   # oracle_stale_threshold_minutes is in alarm_thresholds - independent business rule (not tied to check rate)
 }
 
@@ -59,20 +66,9 @@ data "aws_ecs_cluster" "hashprice_oracle" {
 }
 
 # Reference existing ALBs
-data "aws_lb" "graph_indexer" {
-  count = (var.monitoring.create && var.graph_indexer.create) ? 1 : 0
-  name  = "alb-graph-indexer-ext-${local.env_short}"
-}
-
 data "aws_lb" "spot_indexer" {
   count = (var.monitoring.create && var.spot_indexer.create) ? 1 : 0
   name  = "alb-spot-indexer-ext-${local.env_short}"
-}
-
-# Reference existing RDS instance
-data "aws_db_instance" "graph_indexer" {
-  count                  = (var.monitoring.create && var.graph_indexer.create) ? 1 : 0
-  db_instance_identifier = "graph-indexer-${local.env_short}-${var.region_shortname}-v2"
 }
 
 ################################################################################
@@ -115,7 +111,7 @@ resource "aws_iam_role_policy" "monitoring_lambda" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
@@ -144,7 +140,18 @@ resource "aws_iam_role_policy" "monitoring_lambda" {
         ]
         Resource = "*"
       }
-    ]
+      ],
+      # Conditionally add Secrets Manager access for TheGraph monitoring
+      local.should_create_subgraph_monitor ? [
+        {
+          Sid    = "SecretsManagerAccess"
+          Effect = "Allow"
+          Action = [
+            "secretsmanager:GetSecretValue"
+          ]
+          Resource = aws_secretsmanager_secret.thegraph_monitor[0].arn
+        }
+    ] : [])
   })
 }
 

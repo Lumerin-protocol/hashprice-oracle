@@ -26,11 +26,22 @@ data "aws_iam_openid_connect_provider" "github" {
 ################################################################################
 locals {
   github_org_repo = "Lumerin-protocol/hashprice-oracle"
+
+  # Branch-scoped OIDC subjects — used when the workflow runs WITHOUT an
+  # `environment:` declaration (e.g. cicd/** branches, ad-hoc pushes).
   github_branch_filter = var.account_lifecycle == "dev" ? [
     "ref:refs/heads/dev",
     "ref:refs/heads/cicd/*"
-  ] : (
+    ] : (
     var.account_lifecycle == "stg" ? ["ref:refs/heads/stg"] : ["ref:refs/heads/main"]
+  )
+
+  # Environment-scoped OIDC subjects — used when the workflow declares
+  # `environment: <name>` so per-env GH variables/secrets resolve correctly.
+  # Lifecycle "prd" maps to GitHub environment name "main" (gated on the
+  # main branch on the GitHub side).
+  github_environment_filter = var.account_lifecycle == "dev" ? ["environment:dev"] : (
+    var.account_lifecycle == "stg" ? ["environment:stg"] : ["environment:main"]
   )
 }
 
@@ -54,10 +65,15 @@ resource "aws_iam_role" "github_actions_hashprice_oracle" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            # Branch filters are auto-derived based on environment lifecycle
+            # Allow BOTH branch-scoped and environment-scoped OIDC subjects.
+            # Branch subs keep cicd/** + ad-hoc branch pushes working; env
+            # subs are required for the workflow's `environment:` declaration
+            # to resolve per-env GH vars/secrets (e.g. env-scoped PRIVATE_KEY).
+            # Filters are auto-derived from var.account_lifecycle.
             "token.actions.githubusercontent.com:sub" = concat(
-              [for branch_filter in local.github_branch_filter :
-              "repo:${local.github_org_repo}:${branch_filter}"],)              
+              [for f in local.github_branch_filter : "repo:${local.github_org_repo}:${f}"],
+              [for f in local.github_environment_filter : "repo:${local.github_org_repo}:${f}"],
+            )
           }
         }
       }

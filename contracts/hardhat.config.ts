@@ -1,77 +1,108 @@
-import type { HardhatUserConfig } from "hardhat/config";
+import { configVariable, defineConfig } from "hardhat/config";
+import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
+import hardhatViemAbi from "hardhat-viem-abi";
+import envLoader from "./plugins/env-loader/index.ts";
 
-import "solidity-coverage";
-import "@nomiclabs/hardhat-ethers";
-import "@nomicfoundation/hardhat-verify";
-import "@openzeppelin/hardhat-upgrades";
-import "hardhat-abi-exporter";
-import "dotenv/config";
-import "@nomicfoundation/hardhat-viem";
-import "hardhat-storage-layout";
-import "hardhat-gas-reporter";
-
-import chai from "chai";
-import chaiAsPromised from "chai-as-promised";
-
-chai.use(chaiAsPromised);
-
-// Base config is used for local deployment and/or contract build
-const config: HardhatUserConfig = {
+export default defineConfig({
+  plugins: [hardhatToolboxViem, hardhatViemAbi, envLoader],
+  envLoader: {
+    configDir: "../config",
+    // Machine/secret values; win over the named env file for overlapping keys.
+    overrideEnvFiles: ["../.env", ".env"],
+  },
+  paths: {
+    tests: "tests",
+  },
   solidity: {
     compilers: [
       {
         version: "0.8.28",
         settings: {
-          // viaIR: true,
           optimizer: {
             enabled: true,
             runs: 200,
-            // details: {
-            //   yulDetails: {
-            //     optimizerSteps: "u",
-            //   },
-            // },
+          },
+        },
+      },
+      // chainlink contracts v0.6
+      {
+        version: "0.6.6",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
           },
         },
       },
     ],
+    npmFilesToBuild: [
+      "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
+      "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
+      "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol",
+      "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV2V3Interface.sol",
+      "@chainlink/contracts-old/src/v0.6/AggregatorProxy.sol",
+    ],
   },
   networks: {
-    hardhat: {
+    default: {
+      type: "edr-simulated",
       mining: {
         auto: true,
       },
       initialDate: "2025-11-23",
+      // Cancun: avoid EIP-7825 (Osaka+) 16M tx gas cap so graph-node eth_call
+      // (default gas 50M) works against this node during local indexing.
+      hardfork: "cancun",
+      blockGasLimit: 100_000_000n,
+      loggingEnabled: true,
+      gas: "auto",
+      gasPrice: "auto",
+    },
+    // `hardhat node` defaults to the `node` network and requires it to be
+    // edr-simulated. We pin the genesis well in the past so seed-history.ts can
+    // mine deploy/replay blocks at historical Bitcoin/Chainlink timestamps via
+    // evm_setNextBlockTimestamp (which only moves forward).
+    node: {
+      type: "edr-simulated",
+      mining: {
+        auto: true,
+      },
+      initialDate: "2024-01-01",
+      hardfork: "cancun",
+      blockGasLimit: 100_000_000n,
+      loggingEnabled: true,
+      gas: "auto",
+      gasPrice: "auto",
     },
     localhost: {
+      type: "http",
       url: "http://127.0.0.1:8545",
-      accounts: [
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-        "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
-        "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
-        "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
-      ],
-      gasPrice: "auto",
-      gas: "auto",
+    },
+    "base-sepolia": {
+      type: "http",
+      chainType: "l1",
+      chainId: 84532,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-sepolia.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
+    },
+    "base-mainnet": {
+      type: "http",
+      chainType: "l1",
+      chainId: 8453,
+      url: configVariable(
+        "ALCHEMY_API_KEY",
+        "https://base-mainnet.g.alchemy.com/v2/{variable}",
+      ),
+      accounts: [configVariable("PRIVATE_KEY")],
     },
   },
-  abiExporter: {
-    path: "./abi",
-    runOnCompile: true,
-    clear: true,
-    flat: true,
-    spacing: 2,
-    only: ["AggregatorV3Interface", "HashrateOracle", "BTCPriceOracleMock"],
+  verify: {
+    etherscan: {
+      apiKey: configVariable("ETHERSCAN_API_KEY"),
+      enabled: true,
+    },
   },
-  mocha: {},
-  gasReporter: {
-    enabled: process.env.REPORT_GAS === "true",
-    currency: "USD",
-    gasPrice: 1,
-    outputFile: "gas-report.md",
-    reportPureAndViewMethods: true,
-    reportFormat: "markdown",
-  },
-};
-
-export default config;
+});

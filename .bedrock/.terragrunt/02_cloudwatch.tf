@@ -1,5 +1,5 @@
 locals {
-  log_group_name = "bedrock-hashprice-oracle-${substr(var.account_shortname, 8, 3)}"
+  log_group_name             = "bedrock-hashprice-oracle-${substr(var.account_shortname, 8, 3)}"
   cloudwatch_event_retention = 90
 }
 
@@ -49,10 +49,8 @@ data "aws_iam_policy_document" "hashprice_oracle_cloudwatch_log_stream" {
       "logs:PutLogEvents",
     ]
     resources = [
-     var.ecs_cluster.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-ecs-cluster-${substr(var.account_shortname, 8, 3)}:log-stream:*" : "",
-     var.graph_indexer.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-${local.graph_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}:log-stream:*" : "",
-     var.spot_indexer.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-${local.spot_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}:log-stream:*" : "",
-    #  var.oracle_lambda.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-${local.oracle_lambda.svc_name}-${substr(var.account_shortname, 8, 3)}:log-stream:*" : "",
+      var.ecs_cluster.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-ecs-cluster-${substr(var.account_shortname, 8, 3)}:log-stream:*" : "",
+      var.spot_indexer.create ? "arn:aws:logs:${var.default_region}:${var.account_number}:bedrock-hpo-${local.spot_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}:log-stream:*" : ""
     ]
   }
 }
@@ -63,20 +61,6 @@ resource "aws_cloudwatch_log_group" "hashprice_oracle" {
   count             = var.ecs_cluster.create ? 1 : 0
   provider          = aws.use1
   name              = "bedrock-hpo-${local.ecs_svc_name}-${substr(var.account_shortname, 8, 3)}"
-  retention_in_days = local.cloudwatch_event_retention
-  tags = merge(
-    var.default_tags,
-    var.foundation_tags,
-    {
-      Capability = "Bedrock Cloudwatch Log Group",
-    },
-  )
-}
-
-resource "aws_cloudwatch_log_group" "graph_indexer" {
-  count             = var.graph_indexer.create ? 1 : 0
-  provider          = aws.use1
-  name              = "bedrock-hpo-${local.graph_indexer.svc_name}-${substr(var.account_shortname, 8, 3)}"
   retention_in_days = local.cloudwatch_event_retention
   tags = merge(
     var.default_tags,

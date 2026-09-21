@@ -1,0 +1,31 @@
+{
+  "name": "hashprice-keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env --watch src/adapters/node.ts",
+    "dev:prd": "node --env-file=../config/prd.env --env-file-if-exists=../.env --env-file-if-exists=.env --watch src/adapters/node.ts",
+    "dev-local": "node --env-file=../config/local.env --env-file-if-exists=../.env --env-file-if-exists=../.env.local --watch src/adapters/node.ts",
+    "start": "node --env-file-if-exists=../.env --env-file-if-exists=.env src/adapters/node.ts",
+    "invoke:lambda": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-lambda.ts",
+    "invoke:bundle": "pnpm build:lambda && node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-bundle.ts",
+    "build:lambda": "node scripts/build-lambda.ts",
+    "fetch-fixtures": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/fetch-fixtures.ts",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "pino": "^9.6.0",
+    "viem": "^2.42.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@typescript/native-preview": "7.0.0-dev.20260410.1",
+    "esbuild": "^0.25.4",
+    "pino-pretty": "^13.0.0"
+  },
+  "packageManager": "pnpm@11.22.0"
+}

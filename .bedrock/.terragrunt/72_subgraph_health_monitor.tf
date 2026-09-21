@@ -1,14 +1,10 @@
 ################################################################################
-# SUBGRAPH HEALTH MONITOR - Lambda to query Graph Node indexing status
-# Queries the GraphQL API to check subgraph sync status and health
+# GOLDSKY SUBGRAPH HEALTH MONITOR
+# Lambda to query Goldsky public endpoints for health and data freshness
 ################################################################################
 
 locals {
   subgraph_health_monitor_name = "hpo-subgraph-health-${local.env_short}"
-  
-  # Graph Node status endpoint (GraphQL)
-  graph_node_status_url = "https://${aws_route53_record.graph_indexer[0].name}:8030/graphql"
-  # subgraph_alarm_period_seconds is defined in 70_monitoring_common.tf
 }
 
 ################################################################################
@@ -16,7 +12,7 @@ locals {
 ################################################################################
 
 data "archive_file" "subgraph_health_monitor" {
-  count       = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  count       = local.should_create_subgraph_monitor ? 1 : 0
   type        = "zip"
   source_file = "${path.module}/72_subgraph_health_monitor.py"
   output_path = "${path.module}/72_subgraph_health_monitor.zip"
@@ -27,24 +23,26 @@ data "archive_file" "subgraph_health_monitor" {
 ################################################################################
 
 resource "aws_lambda_function" "subgraph_health_monitor" {
-  count         = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  count         = local.should_create_subgraph_monitor ? 1 : 0
   provider      = aws.use1
   function_name = local.subgraph_health_monitor_name
-  description   = "Monitors Graph Node subgraph indexing health via GraphQL API"
+  description   = "Monitors Goldsky subgraph health via _meta queries"
   role          = aws_iam_role.monitoring_lambda[0].arn
   handler       = "72_subgraph_health_monitor.lambda_handler"
   runtime       = "python3.12"
   timeout       = 60
   memory_size   = 256
-  
+
   filename         = data.archive_file.subgraph_health_monitor[0].output_path
   source_code_hash = data.archive_file.subgraph_health_monitor[0].output_base64sha256
 
   environment {
     variables = {
-      GRAPH_NODE_URL = local.graph_node_status_url
-      CW_NAMESPACE   = local.monitoring_namespace
-      ENVIRONMENT    = local.env_short
+      GS_FUTURES_URL     = var.gs_subgraphs.futures
+      GS_ORACLES_URL     = var.gs_subgraphs.oracles
+      GS_DERIVATIVES_URL = var.gs_subgraphs.derivatives
+      CW_NAMESPACE       = local.monitoring_namespace
+      ENVIRONMENT        = local.env_short
     }
   }
 
@@ -52,7 +50,7 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
     var.default_tags,
     var.foundation_tags,
     {
-      Name       = "HPO Subgraph Health Monitor"
+      Name       = "HPO Goldsky Subgraph Health Monitor"
       Capability = "Monitoring"
     }
   )
@@ -65,24 +63,24 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
 ################################################################################
 
 resource "aws_cloudwatch_event_rule" "subgraph_health_monitor" {
-  count               = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  count               = local.should_create_subgraph_monitor ? 1 : 0
   provider            = aws.use1
   name                = "${local.subgraph_health_monitor_name}-schedule"
-  description         = "Trigger Subgraph Health Monitor every ${var.monitoring_schedule.subgraph_health_rate_minutes} minutes"
+  description         = "Trigger Goldsky Subgraph Health Monitor every ${var.monitoring_schedule.subgraph_health_rate_minutes} minutes"
   schedule_expression = "rate(${var.monitoring_schedule.subgraph_health_rate_minutes} minutes)"
 
   tags = merge(
     var.default_tags,
     var.foundation_tags,
     {
-      Name       = "HPO Subgraph Health Monitor Schedule"
+      Name       = "HPO Goldsky Subgraph Health Monitor Schedule"
       Capability = "Monitoring"
     }
   )
 }
 
 resource "aws_cloudwatch_event_target" "subgraph_health_monitor" {
-  count     = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  count     = local.should_create_subgraph_monitor ? 1 : 0
   provider  = aws.use1
   rule      = aws_cloudwatch_event_rule.subgraph_health_monitor[0].name
   target_id = "${local.subgraph_health_monitor_name}-target"
@@ -90,7 +88,7 @@ resource "aws_cloudwatch_event_target" "subgraph_health_monitor" {
 }
 
 resource "aws_lambda_permission" "subgraph_health_monitor" {
-  count         = (var.monitoring.create && var.monitoring.create_subgraph_health_monitor && var.graph_indexer.create) ? 1 : 0
+  count         = local.should_create_subgraph_monitor ? 1 : 0
   provider      = aws.use1
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
