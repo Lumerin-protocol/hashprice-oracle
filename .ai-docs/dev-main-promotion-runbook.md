@@ -5,7 +5,7 @@
 > | Surface | DEV (testnet / Base Sepolia) | MAIN now (advertise) | MAIN later (apex cutover) |
 > | --- | --- | --- | --- |
 > | Trading UI (futures + perps) | https://dev.hashpower.exchange | https://beta.hashpower.exchange | https://hashpower.exchange |
-> | Agent docs / `llms.txt` / `/build` | https://dev.hashpower.io | https://beta.hashpower.io | https://hashpower.io |
+> | Agent docs / `llms.txt` / `/build` | https://dev.hashpower.io | https://hashpower.io (live 2026-09-22) | unchanged |
 > | Hosted MCP (knowledge + simulate) | https://mcp.dev.hashpower.io/mcp | https://mcp.hashpower.io/mcp | unchanged |
 >
 > **Beta is frontend naming only.** Workload still runs in **titanio-lmn (`04-lmn`)** against **Base mainnet** contracts and the **LMN Goldsky** project. Do not stand up a new AWS account or a new chain. When we drop the `beta.` prefix later, that is DNS / CloudFront aliases + baked origin strings — not a second promotion.
@@ -16,7 +16,22 @@
 >
 > Status legend: `[ ]` todo · `[x]` done · `(YOU)` operator · `(ORG)` org admin · `(EXT)` waiting on contract addresses.
 >
-> Updated: 2026-09-21. This is the only promotion runbook.
+> Updated: 2026-09-22. This is the only promotion runbook.
+
+## Where we are (2026-09-22)
+
+`04-lmn` is applied for every repo in this runbook. `dev` → `main` is merged for hashprice-oracle, derivatives-marketplace, collateral-margin, futures-marketplace, and hashpower-io. All four `@hashpower/*-abi` packages are `3.0.0` on the npm `latest` tag (`1.0.0` and `2.0.0` are tombstoned, so the first mainnet cut is `3.0.0`). CI reads subgraph URLs from `config/prd.env`. It does not read the `LMN_GS_*` org vars.
+
+Production quoting is the portfolio market maker on `svc-col-mar-futures-mm-lmn`, image `v1.5.0`. The unused perps market-maker service is `create = false` and must stay that way. `https://hashpower.io` and `www` are the live site. `https://hashpower.exchange` stays the static page until `apex_site = "beta"`.
+
+Still open:
+
+1. **hashpower-mcp `main` does not exist.** `dev` still depends on `@hashpower/oracle-abi@^0.1.0`, `perps-abi@^0.3.0`, `collateral-abi@^0.2.0`, `futures-abi@^0.4.0`. A caret on `0.x` will not install `3.0.0`. Pin those four to `3.0.0`, then create `main` from that commit. The `04-lmn` shell is already applied and the service stays at desired count 0 until that deploy. GitHub environment `main` already has `HASHPOWER_ENV=mainnet` and `MCP_DESIRED_COUNT=1`. `AWS_ROLE_ARN_LMN` is set.
+2. **`HASHPOWER_MCP_DISPATCH_TOKEN` still cannot `repository_dispatch` hashpower-mcp** (the publish step exits 22 and continues). ABI publishes will not open the bump PR until that token can. The pin change in (1) is manual.
+3. **hashpower.io docs did not rebuild** after the futures `3.0.0` publish. The `abi-published` dispatch failed `sts:AssumeRoleWithWebIdentity` ([run 35772893402](https://github.com/Lumerin-protocol/hashpower-io/actions/runs/35772893402)). The live site is the earlier manual `main` deploy. Re-run Deploy Hashpower.io UI on `main` when the docs should show `3.0.0`.
+4. **`provision_holding_page` is `false` in titanio-lmn and `true` in git** on hashpower-io `dev`. The next `04-lmn` apply from git re-seeds COMING SOON on `https://hashpower.io`.
+5. **Collateral verify IAM** (`ecs:ListTasks` / `ecs:DescribeTasks`) is applied in both accounts and committed on collateral-margin `dev` (#84). It is not on `main`. A later apply from `main` drops it.
+6. **Exchange apex cutover** (`apex_site = "beta"`) is not done. Leave it until `https://hashpower.exchange` should serve the app.
 
 ## 0. Operating model
 
@@ -55,7 +70,7 @@ New GitHub repos default to **immutable OIDC subjects** (`org@id/repo@id`). IAM 
 | `collateral-margin` | CollateralVault subgraph, unified keeper, perps + futures MMs, `@hashpower/collateral-abi` |
 | `derivatives-marketplace` | Perps subgraph, `@hashpower/perps-abi` (legacy keeper/MM **off** in `04-lmn`) |
 | `futures-marketplace` | Trading UI (`dev` / `beta.hashpower.exchange`), futures subgraph, notifications, `@hashpower/futures-abi` |
-| `hashpower-io` | Commercial site (`dev` / `beta.hashpower.io`) — `llms.txt`, `/build`, `/deployments.json`, `/semantics` |
+| `hashpower-io` | Commercial site. `https://hashpower.io` and `www` are live. `beta.hashpower.io` is an alias on the same distribution. |
 | `hashpower-mcp` | Hosted Streamable HTTP MCP + npm `@hashpower/mcp` |
 
 **Keep running (do not decommission):** `spot-marketplace` (STG + LMN) and the **spot-indexer** ECS services in `hashprice-oracle` (`svc-spot-indexer-stg` and `svc-spot-indexer-lmn`). Spot still depends on that indexer.
@@ -87,7 +102,7 @@ STG was not a promotion target. The titanio-stg account conflicted with this cut
 1. **DNS.** `beta.hashpower.exchange` is a Route53 A-alias in the **hashpower.exchange root zone** (titanio-net) pointing at STG CloudFront `EKX6RQK5B0L8G` (`d3k7d4fq176p9s.cloudfront.net`). That name is what we want to advertise for LMN. Two CloudFront distributions cannot share it.
 2. **On-chain writers.** STG `.bedrock/03-stg` already targets **Base mainnet (`8453`)**. Live schedules/services will race LMN oracles and market makers if we bring mainnet writers up in titanio-lmn while STG is still ticking.
 
-`beta.hashpower.io` is **not** taken (no record in the hashpower.io root zone). hashpower-io has no `03-stg` stack. Hosted MCP has no STG stack; `mcp.hashpower.io` does not exist yet.
+`beta.hashpower.io` was free at teardown. hashpower-io has no `03-stg` stack. Hosted MCP had no STG stack. The LMN shell for `mcp.hashpower.io` now exists; the service stays at desired count 0 until the first `main` deploy.
 
 **Spot stays.** Do not `terragrunt destroy` `spot-marketplace` `03-stg` / `04-lmn`, and do not destroy `hashprice-oracle` `03-stg` (that state also owns `svc-spot-indexer-stg`). Turn the STG **oracle updater** off with `oracle_lambda.create = false` and apply.
 
@@ -219,8 +234,8 @@ Code/CI (landed or landing with the PRs next to this doc):
 Operator, before the first `main` push (not a code change):
 
 - [ ] **(YOU)** Expand `HASHPOWER_IO_DISPATCH_TOKEN` (or add `HASHPOWER_MCP_DISPATCH_TOKEN`) so the PAT can `repository_dispatch` + open PRs on **hashpower-mcp**. Same token already talks to hashpower-io. Without this, ABI publishes still succeed; MCP just will not auto-bump (`continue-on-error`).
-- [ ] **(YOU)** After `hashpower-mcp` `.bedrock/04-lmn` apply: set repo secret `AWS_ROLE_ARN_LMN` to `github-actions-hashpower-mcp-v1-lmn`.
-- [ ] **(YOU)** GitHub environment `main` on hashpower-mcp: optional `HASHPOWER_RPC_URL` (else public Base RPC); vars `HASHPOWER_ENV=mainnet`, `HASHPOWER_DOCS_URL=https://hashpower.io` (workflow has the same defaults).
+- [x] **(YOU)** After `hashpower-mcp` `.bedrock/04-lmn` apply: set repo secret `AWS_ROLE_ARN_LMN` to `github-actions-hashpower-mcp-v1-lmn`.
+- [x] **(YOU)** GitHub environment `main` on hashpower-mcp: `HASHPOWER_ENV=mainnet`, `MCP_DESIRED_COUNT=1`. `HASHPOWER_DOCS_URL` falls back to `https://hashpower.io`.
 - [x] **(ORG)** Rename Goldsky project **STG-Exchange → LMN-Exchange**. Project ID stays `project_cmmz5dm4l7ocp01xng61y5nwr` (DEV-Exchange `project_cmmz59uoa7b5201wthnkxbuqy` is untouched). Copy the existing project API key into org secret `LMN_GOLDSKY_API_KEY` (or mint a new key on the renamed project). Add `lmn-latest` tags on the current live versions (`hpow-oracles/v3.1.86-stg`, `hpow-futures/v3.2.373-stg`, `hpow-derivatives/v3.0.273-stg`) so URLs resolve before the first `main` CI. Set org vars:
 
   | Var | Value |
@@ -231,8 +246,8 @@ Operator, before the first `main` push (not a code change):
   | `LMN_GS_VAULT` | `https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/collateral-vault/lmn-latest/gn` (404 until first vault deploy) |
   | `LMN_GS_POINTS` | `https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-points/lmn-latest/gn` (404 until first points deploy) |
 
-  `04-lmn` `gs_subgraphs` on `bedrock/deploy_to_main` already use the three live URLs. A `main` subgraph workflow deploys a new semver (`vX.Y.Z`, no `-stg` suffix) and moves tag `lmn-latest`.
-- [ ] **(YOU)** Confirm each repo’s GitHub `main` environment has addresses, start blocks, RPC, and WalletConnect — see Part C. Missing `main` env secrets was a real LMN miss on derivatives.
+  Subgraph CI reads the URLs in `config/prd.env`, not these org vars. A `main` subgraph workflow deploys a new semver (`vX.Y.Z`, no `-stg` suffix) and moves tag `lmn-latest`.
+- [x] **(YOU)** GitHub `main` environments used by the merged repos have the secrets those workflows still read (oracle keeper key and RPCs; futures WalletConnect and read-only RPC). Public addresses stay in `config/prd.env`.
 
 ---
 
@@ -247,7 +262,7 @@ Secrets that stay in GitHub:
 - **hashprice-oracle `main`:** `PRIVATE_KEY`, `ETHEREUM_RPC_URL`, `BITCOIN_RPC_URL`. The keeper Lambda reads them from the function environment. Secrets Manager copies are unused at runtime.
 - **futures-marketplace `main`:** `REACT_APP_READ_ONLY_ETH_NODE_URL`, `REACT_APP_WALLET_CONNECT_ID`. They are baked into the UI bundle. `REACT_APP_SUBGRAPH_PERPS_URL` is public and can be deleted.
 - **derivatives-marketplace:** subgraph deploy uses the org Goldsky key only. The disabled contract workflow is the only thing that wanted `ETH_NODE_ADDRESS` / `ETHERSCAN_API_KEY`. Dev copies of those were deleted.
-- **collateral-margin:** Alchemy key and the three private keys are Secrets Manager, seeded from gitignored `secret.auto.tfvars`. Dev apply is done. LMN `secret.auto.tfvars` still needs `perps_mm_private_key` before the `04-lmn` plan. Do not put those keys back on the GitHub environment.
+- **collateral-margin:** Alchemy key and signer keys are Secrets Manager, seeded from gitignored `secret.auto.tfvars`. The perps market-maker service is not created. The portfolio maker on the futures service reads `private_key`, which must include the `0x` prefix. Dev and LMN are applied. Do not put those keys back on the GitHub environment.
 
 ---
 
@@ -257,25 +272,25 @@ Finish every `04-lmn` apply before merging anything to `main`. Then merge `bedro
 
 Flags already set on `bedrock/deploy_to_main`: oracle Lambda on and chain `8453`; derivatives keeper/MM off and **ECS cluster on** (collateral looks that cluster up); collateral keeper and both MM shells on; futures `beta_alias` on, `apex_site = "hold"`, MM lambda off; hashpower-io `beta.hashpower.io` alias in the LMN site list.
 
-### Applies
+### Applies (done 2026-09-22)
 
-1. **hashprice-oracle** `.bedrock/04-lmn/`. Spot indexer stays. Copy `github_actions_role_arn` to `AWS_ROLE_ARN_LMN` if the output changed. `main` already has `PRIVATE_KEY`, `ETHEREUM_RPC_URL`, `BITCOIN_RPC_URL`.
-2. **derivatives-marketplace** `.bedrock/04-lmn/`. This creates `ecs-derivatives-marketplace-lmn` and does not create a GitHub role (`create_core = false`). Keeper and MM stay off. Collateral's plan fails without this cluster (that was the `04-lmn` error).
-3. **collateral-margin** `.bedrock/04-lmn/`. Add `perps_mm_private_key` to `secret.auto.tfvars` first. Copy the role ARN to `AWS_ROLE_ARN_LMN`. Keys stay in Secrets Manager, not GitHub.
-4. **futures-marketplace** `.bedrock/04-lmn/`. `apex_site = "hold"`: `https://hashpower.exchange` stays the static page; `https://beta.hashpower.exchange` is the app. Notifications and UI shell. MM lambda stays off. Copy the role ARN. Keep `REACT_APP_READ_ONLY_ETH_NODE_URL` and `REACT_APP_WALLET_CONNECT_ID` on `main`. Apply this before the main UI workflow runs, so that workflow publishes to the beta distribution.
-5. **hashpower-io** `.bedrock/04-lmn/`. Adds `beta.hashpower.io` on the existing distribution.
-6. **hashpower-mcp** `.bedrock/04-lmn/`. Creates `mcp.hashpower.io`. Set `AWS_ROLE_ARN_LMN` from the output.
+1. [x] **hashprice-oracle** `.bedrock/04-lmn/`. Spot indexer stays. `main` has `PRIVATE_KEY`, `ETHEREUM_RPC_URL`, `BITCOIN_RPC_URL`.
+2. [x] **derivatives-marketplace** `.bedrock/04-lmn/`. `ecs-derivatives-marketplace-lmn` exists. No GitHub role (`create_core = false`). Keeper and perps MM stay off.
+3. [x] **collateral-margin** `.bedrock/04-lmn/`. Role ARN is `AWS_ROLE_ARN_LMN`. Keys stay in Secrets Manager.
+4. [x] **futures-marketplace** `.bedrock/04-lmn/`. `apex_site = "hold"`: `https://hashpower.exchange` stays the static page; `https://beta.hashpower.exchange` is the app.
+5. [x] **hashpower-io** `.bedrock/04-lmn/`. `https://hashpower.io` and `www` serve the site. Signup Lambda is live. Git still has `provision_holding_page = true`; AWS is `false`.
+6. [x] **hashpower-mcp** `.bedrock/04-lmn/`. `mcp.hashpower.io` shell exists. Service desired count stays 0 until `main` is deployed.
 
 ### Pull requests, after those applies
 
 Same order. Merge `bedrock/deploy_to_main` into `dev` for a repo, confirm dev still works, then PR that repo's `dev` into `main` before starting the next `main` merge.
 
-1. hashprice-oracle — Lambda env from `config/prd.env` plus the three GitHub secrets; Goldsky `hpow-oracles` moves to `lmn-latest`.
-2. derivatives-marketplace — Goldsky perps subgraph only. No AWS role.
-3. collateral-margin — keeper and portfolio market maker. Fund the MM wallet with USDC before the service starts. Keeper `DRY_RUN=true` first.
-4. futures-marketplace — UI at `beta.hashpower.exchange`, notifications, futures subgraph.
-5. hashpower-io — `beta.hashpower.io` docs.
-6. hashpower-mcp — hosted MCP.
+1. [x] hashprice-oracle — `@hashpower/oracle-abi@3.0.0` on `latest`. Keeper and `hpow-oracles` `lmn-latest` deployed.
+2. [x] derivatives-marketplace — `@hashpower/perps-abi@3.0.0` on `latest`. Perps subgraph on `lmn-latest`.
+3. [x] collateral-margin — `@hashpower/collateral-abi@3.0.0` on `latest`. Keeper, vault subgraph, and points subgraph deployed. Portfolio market maker is `v1.5.0` on `svc-col-mar-futures-mm-lmn`.
+4. [x] futures-marketplace — `#307` merged. `@hashpower/futures-abi@3.0.0` on `latest`. UI deploy and futures subgraph (`Update Futures Oracle`) succeeded. Notifications deploy was still running at the time of this note.
+5. [x] hashpower-io — `#26` merged. `https://hashpower.io` is the site. Signup works. The follow-up `abi-published` rebuild failed OIDC (see the status section).
+6. [ ] hashpower-mcp — no `main` branch. Pins are still `^0.x`. Do not create `main` from current `dev`.
 
 - [x] Legacy HashrateOracle `0x614dCAfa…` `updaterAddress` is already the STG lambda wallet `0x67C1A773…`. HashpriceBTC has no updater role.
 
@@ -286,8 +301,8 @@ Same order. Merge `bedrock/deploy_to_main` into `dev` for a repo, confirm dev st
 - [x] STG writers and `beta.hashpower.exchange` removed. `.bedrock/03-stg/` is gone from this branch. Spot-indexer state stays in S3.
 - [ ] Spot marketplace still up; `svc-spot-indexer-stg` and `svc-spot-indexer-lmn` healthy.
 - [ ] https://beta.hashpower.exchange Futures + Perps render live mainnet data; Goldsky LMN subgraphs healthy.
-- [ ] Unified keeper + both MMs healthy; oracle Lambda fresh; no Route53 collisions.
-- [ ] https://beta.hashpower.io/llms.txt, `/build`, and `/build/mcp.md` point at `https://mcp.hashpower.io/mcp`, client key `hashpower`, and current `@hashpower/*-abi` versions.
+- [x] Portfolio market maker `v1.5.0` is the running quoter. Perps MM is not created. Oracle keeper is deployed from `main` and is not in `DRY_RUN`.
+- [ ] https://hashpower.io/llms.txt, `/build`, and `/build/mcp.md` point at `https://mcp.hashpower.io/mcp`, client key `hashpower`, and `@hashpower/*-abi@3.0.0`. The automatic rebuild after the futures publish failed OIDC.
 - [ ] `GET https://mcp.hashpower.io/health` reports `"name":"hashpower"` and `"env":"mainnet"`; initialize instructions point at hashpower.io (or beta.hashpower.io) `/build/mcp.md`.
 - [ ] https://mcp.hashpower.io/mcp is knowledge + simulate only (no keys, no session stickiness).
 - [ ] CloudWatch / subgraph `_meta` green.
