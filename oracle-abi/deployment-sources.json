@@ -1,0 +1,14 @@
+{
+  "envs": {
+    "testnet": { "file": "../config/dev.env", "chainId": 84532, "network": "base-sepolia" },
+    "mainnet": { "file": "../config/prd.env", "chainId": 8453, "network": "base" }
+  },
+  "contracts": {
+    "HashpriceBTC": "HASHPRICE_BTC_ADDRESS",
+    "HashpriceUSD": "HASHPRICE_USD_ADDRESS",
+    "BtcUsdAggregator": "BTC_USD_ADDRESS"
+  },
+  "subgraphs": {
+    "oracles": "HASHPRICE_ORACLE_SUBGRAPH_URL"
+  }
+}
