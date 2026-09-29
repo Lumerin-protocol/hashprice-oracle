@@ -77,32 +77,17 @@ resource "aws_cloudwatch_log_metric_filter" "oracle_lambda_errors" {
   }
 }
 
-# 10. Oracle Job Completions (Positive Indicator) - Pattern: "Job completed"
+# Successful keeper runs log "keeper run completed", including runs that
+# submit nothing because the oracle is already at the Bitcoin tip.
 resource "aws_cloudwatch_log_metric_filter" "oracle_job_completions" {
   count          = (var.monitoring.create && var.monitoring.create_metric_filters && var.oracle_lambda.create) ? 1 : 0
   provider       = aws.use1
   name           = "hpo-oracle-job-completions"
-  pattern        = "\"Job completed\""
+  pattern        = "\"keeper run completed\""
   log_group_name = local.oracle_lambda_log_group
 
   metric_transformation {
     name      = "oracle_job_completions"
-    namespace = local.monitoring_namespace
-    value     = "1"
-    unit      = "Count"
-  }
-}
-
-# 11. Oracle TX Success (Positive Indicator) - Pattern: "Transaction hash:"
-resource "aws_cloudwatch_log_metric_filter" "oracle_tx_success" {
-  count          = (var.monitoring.create && var.monitoring.create_metric_filters && var.oracle_lambda.create) ? 1 : 0
-  provider       = aws.use1
-  name           = "hpo-oracle-tx-success"
-  pattern        = "\"Transaction hash:\""
-  log_group_name = local.oracle_lambda_log_group
-
-  metric_transformation {
-    name      = "oracle_tx_success"
     namespace = local.monitoring_namespace
     value     = "1"
     unit      = "Count"

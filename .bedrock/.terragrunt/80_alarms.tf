@@ -94,6 +94,84 @@ resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
   })
 }
 
+# Header index freshness. latestRoundData.updatedAt only moves when a round
+# is cached; state.lastSubmittedAt moves on every successful header submission.
+resource "aws_cloudwatch_metric_alarm" "oracle_index_stale" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-index-stale-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle header index lastSubmittedAt is older than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = local.oracle_alarm_evaluation_periods
+  metric_name         = "oracle_index_age_minutes"
+  namespace           = local.monitoring_namespace
+  period              = local.oracle_staleness_check_period_seconds
+  statistic           = "Maximum"
+  threshold           = var.alarm_thresholds.oracle_stale_threshold_minutes
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    Environment = local.env_short
+  }
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Index Stale Alarm"
+    Severity = "Critical"
+  })
+}
+
+# Application failures. The keeper returns HTTP 500 instead of throwing, so
+# AWS/Lambda Errors stays at zero while these pino level-50 logs are the signal.
+resource "aws_cloudwatch_metric_alarm" "oracle_lambda_log_errors" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-lambda-log-errors-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle keeper logged a failed run"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "oracle_lambda_errors"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Lambda Log Errors Alarm"
+    Severity = "Critical"
+  })
+}
+
+# Heartbeat. A caught-up keeper still logs "keeper run completed" every schedule.
+resource "aws_cloudwatch_metric_alarm" "oracle_lambda_silent" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-lambda-silent-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle keeper has not completed a run for 15 minutes"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "oracle_job_completions"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Lambda Silent Alarm"
+    Severity = "Critical"
+  })
+}
+
 ################################################################################
 # WARNING PRIORITY ALARMS - Performance / Capacity
 ################################################################################
@@ -271,7 +349,7 @@ resource "aws_cloudwatch_metric_alarm" "oracle_throttled" {
 
 locals {
   # Subgraph names for per-subgraph alarms
-  goldsky_subgraphs = ["futures", "oracles", "derivatives"]
+  goldsky_subgraphs = ["oracles"]
 
   # Data age threshold in seconds (convert from minutes threshold)
   subgraph_data_age_threshold_seconds = var.alarm_thresholds.oracle_stale_threshold_minutes * 60
@@ -288,7 +366,7 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_unavailable" {
   alarm_description   = "CRITICAL: Goldsky subgraphs unavailable for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = local.subgraph_alarm_evaluation_periods
-  threshold           = 3 # Expected: futures + oracles + derivatives available
+  threshold           = 1 # The oracles subgraph is the only one this repo monitors
   treat_missing_data  = "breaching"
 
   metric_query {

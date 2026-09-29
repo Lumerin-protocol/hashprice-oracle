@@ -38,9 +38,7 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
 
   environment {
     variables = {
-      GS_FUTURES_URL     = var.gs_subgraphs.futures
-      GS_ORACLES_URL     = var.gs_subgraphs.oracles
-      GS_DERIVATIVES_URL = var.gs_subgraphs.derivatives
+      GS_ORACLES_URL = var.gs_subgraphs.oracles
       CW_NAMESPACE       = local.monitoring_namespace
       ENVIRONMENT        = local.env_short
     }
