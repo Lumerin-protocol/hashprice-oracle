@@ -39,8 +39,9 @@ resource "aws_lambda_function" "subgraph_health_monitor" {
   environment {
     variables = {
       GS_ORACLES_URL = var.gs_subgraphs.oracles
-      CW_NAMESPACE       = local.monitoring_namespace
-      ENVIRONMENT        = local.env_short
+      CW_NAMESPACE   = local.monitoring_namespace
+      ENVIRONMENT    = local.env_short
+      CHAIN_ID       = var.account_lifecycle == "prd" ? "8453" : "84532"
     }
   }
 

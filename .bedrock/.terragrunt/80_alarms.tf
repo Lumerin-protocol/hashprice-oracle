@@ -354,6 +354,9 @@ locals {
   # Data age threshold in seconds (convert from minutes threshold)
   subgraph_data_age_threshold_seconds = var.alarm_thresholds.oracle_stale_threshold_minutes * 60
 
+  # Same window in Base blocks (2 seconds each).
+  subgraph_behind_blocks = var.alarm_thresholds.oracle_stale_threshold_minutes * 30
+
   # Response time threshold in milliseconds (5 seconds = concerning)
   subgraph_response_time_threshold_ms = 5000
 }
@@ -502,6 +505,44 @@ resource "aws_cloudwatch_metric_alarm" "subgraph_data_stale" {
 
   tags = merge(var.default_tags, var.foundation_tags, {
     Name     = "HPO ${title(each.key)} Subgraph Data Stale Alarm"
+    Severity = "Critical"
+  })
+}
+
+#------------------------------------------------------------------------------
+# Per-Subgraph block drift (chain head minus the block Goldsky is serving)
+#------------------------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "subgraph_blocks_behind" {
+  for_each = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? toset(local.goldsky_subgraphs) : toset([])
+  provider = aws.use1
+
+  alarm_name          = "hpo-subgraph-${each.key}-behind-${local.env_short}"
+  alarm_description   = "CRITICAL: ${each.key} subgraph is more than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes of blocks behind the chain head. The tag is still indexing or stalled."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = local.subgraph_alarm_evaluation_periods
+  threshold           = local.subgraph_behind_blocks
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "blocks_behind"
+    return_data = true
+    metric {
+      metric_name = "subgraph_blocks_behind"
+      namespace   = local.monitoring_namespace
+      period      = local.subgraph_alarm_period_seconds
+      stat        = "Maximum"
+      dimensions = {
+        Environment = local.env_short
+        Subgraph    = each.key
+      }
+    }
+  }
+
+  alarm_actions = []
+  ok_actions    = []
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO ${title(each.key)} Subgraph Behind Alarm"
     Severity = "Critical"
   })
 }

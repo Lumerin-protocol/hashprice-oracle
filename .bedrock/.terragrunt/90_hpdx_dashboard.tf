@@ -71,7 +71,7 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
         width  = 24
         height = 3
         properties = {
-          markdown = "# HPDX ${upper(local.env_short)}\nGas wallets, oracle, futures and perps indexers, futures market maker, vault, hashpower.io, the exchange, and the MCP. Seller, validator, spot, and the retired Arbitrum query metrics are not on this board."
+          markdown = "# HPDX ${upper(local.env_short)}\nGas wallets, oracle, futures and perps indexers, index drift, futures market maker, vault, hashpower.io, the exchange, and the MCP. Seller, validator, spot, and the retired Arbitrum query metrics are not on this board."
         }
       },
       {
@@ -499,6 +499,28 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
             ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", local.hpdx_mcp_lb, { label = "Requests", stat = "Sum", color = "#1f77b4" }],
             ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", local.hpdx_mcp_lb, { label = "Target 5xx", stat = "Sum", color = "#d62728" }],
             ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", local.hpdx_mcp_tg, "LoadBalancer", local.hpdx_mcp_lb, { label = "Healthy hosts", stat = "Minimum", color = "#2ca02c" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 67
+        width  = 24
+        height = 6
+        properties = {
+          title  = "Index drift (blocks behind the chain head)"
+          view   = "timeSeries"
+          region = var.default_region
+          period = var.monitoring.dashboard_period
+          stat   = "Maximum"
+          yAxis  = { left = { min = 0, label = "Blocks" } }
+          metrics = [
+            [local.hpdx_futures_ns, "subgraph_blocks_behind", "Subgraph", "futures", "Environment", local.env_short, { label = "Futures", color = "#d62728" }],
+            [local.hpdx_perps_ns, "subgraph_blocks_behind", "Subgraph", "perps", "Environment", local.env_short, { label = "Perps", color = "#1f77b4" }],
+            [local.monitoring_namespace, "subgraph_blocks_behind", "Subgraph", "oracles", "Environment", local.env_short, { label = "Oracles", color = "#9467bd" }],
+            ["ColMarVault", "SubgraphBlocksBehind", "Subgraph", "vault", { label = "Vault", color = "#ff7f0e" }],
+            ["ColMarVault", "SubgraphBlocksBehind", "Subgraph", "points", { label = "Points", color = "#2ca02c" }],
           ]
         }
       },
