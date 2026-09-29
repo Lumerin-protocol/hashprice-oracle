@@ -9,7 +9,7 @@ resource "aws_cloudwatch_composite_alarm" "subgraph_unhealthy" {
   count             = (var.monitoring.create && var.monitoring.create_alarms && local.should_create_subgraph_monitor) ? 1 : 0
   provider          = aws.use1
   alarm_name        = "hpo-subgraph-${local.env_short}"
-  alarm_description = "COMPOSITE: Goldsky subgraphs unhealthy - check component alarms"
+  alarm_description = "COMPOSITE: Oracle subgraph unhealthy - check component alarms"
 
   # Combine: unavailable OR any per-subgraph alarm (stale, errors, slow)
   alarm_rule = join(" OR ", concat(
@@ -69,7 +69,7 @@ resource "aws_cloudwatch_composite_alarm" "spot_indexer_unhealthy" {
 }
 
 # Oracle Overall Health
-# ALARM if: lambda errors OR stale data OR throttled
+# ALARM if the keeper is failing or silent, or the on-chain oracle is stale.
 resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
   count             = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
   provider          = aws.use1
@@ -78,7 +78,10 @@ resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
 
   alarm_rule = join(" OR ", compact([
     "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_errors[0].alarm_name})",
+    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_log_errors[0].alarm_name})",
+    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_silent[0].alarm_name})",
     var.monitoring.create_oracle_staleness_check ? "ALARM(${aws_cloudwatch_metric_alarm.oracle_stale[0].alarm_name})" : "",
+    var.monitoring.create_oracle_staleness_check ? "ALARM(${aws_cloudwatch_metric_alarm.oracle_index_stale[0].alarm_name})" : "",
     "ALARM(${aws_cloudwatch_metric_alarm.oracle_duration_high[0].alarm_name})",
     "ALARM(${aws_cloudwatch_metric_alarm.oracle_throttled[0].alarm_name})",
   ]))
@@ -93,7 +96,10 @@ resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
 
   depends_on = [
     aws_cloudwatch_metric_alarm.oracle_lambda_errors,
+    aws_cloudwatch_metric_alarm.oracle_lambda_log_errors,
+    aws_cloudwatch_metric_alarm.oracle_lambda_silent,
     aws_cloudwatch_metric_alarm.oracle_stale,
+    aws_cloudwatch_metric_alarm.oracle_index_stale,
     aws_cloudwatch_metric_alarm.oracle_duration_high,
     aws_cloudwatch_metric_alarm.oracle_throttled,
   ]

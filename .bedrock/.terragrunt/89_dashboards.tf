@@ -15,7 +15,7 @@ locals {
       width  = 8
       height = 4
       properties = {
-        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Spot Indexer**: Contract indexing API\n* **Oracle Lambda**: On-chain price updates\n* **Subgraphs**: Goldsky-hosted indexers\n\n## Thresholds\n* CPU/Memory: ${var.alarm_thresholds.ecs_cpu_threshold}%/${var.alarm_thresholds.ecs_memory_threshold}%\n* Oracle Max Age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
+        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Keeper Lambda**: Bitcoin header submissions\n* **On-chain index**: lastSubmittedAt age\n* **Oracle subgraph**: Goldsky hpow-oracles\n\n## Thresholds\n* Oracle max age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
       }
     },
     # Service Status - Task Counts
@@ -153,7 +153,8 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "Minutes" } }
         metrics = [
-          [local.monitoring_namespace, "oracle_data_age_minutes", "Environment", local.env_short, { "label" : "Data Age", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_data_age_minutes", "Environment", local.env_short, { "label" : "Answer Age", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_index_age_minutes", "Environment", local.env_short, { "label" : "Header Index Age", "color" : "#ff7f0e" }],
         ]
         annotations = {
           horizontal = [
@@ -204,9 +205,8 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0 } }
         metrics = [
-          [local.monitoring_namespace, "oracle_lambda_errors", { "label" : "Errors", "color" : "#d62728" }],
-          [local.monitoring_namespace, "oracle_job_completions", { "label" : "Jobs Completed", "color" : "#2ca02c" }],
-          [local.monitoring_namespace, "oracle_tx_success", { "label" : "TX Success", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_lambda_errors", { "label" : "Failed Runs", "color" : "#d62728" }],
+          [local.monitoring_namespace, "oracle_job_completions", { "label" : "Completed Runs", "color" : "#2ca02c" }],
         ]
       }
     },
@@ -220,7 +220,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title     = "Subgraphs - Status"
+        title     = "Oracle Subgraph - Status"
         view      = "singleValue"
         stacked   = false
         region    = var.default_region
@@ -241,7 +241,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "Subgraphs - Response Time"
+        title   = "Oracle Subgraph - Response Time"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -249,9 +249,7 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "ms" } }
         metrics = [
-          [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
           [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
-          [local.monitoring_namespace, "subgraph_response_time_ms", "Environment", local.env_short, "Subgraph", "derivatives", { "label" : "Derivatives", "color" : "#2ca02c" }],
         ]
         annotations = {
           horizontal = [
@@ -268,7 +266,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "Subgraphs - Data Age"
+        title   = "Oracle Subgraph - Data Age"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -276,9 +274,7 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0, label = "Seconds" } }
         metrics = [
-          [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "futures", { "label" : "Futures", "color" : "#1f77b4" }],
           [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "oracles", { "label" : "Oracles", "color" : "#ff7f0e" }],
-          [local.monitoring_namespace, "subgraph_data_age_seconds", "Environment", local.env_short, "Subgraph", "derivatives", { "label" : "Derivatives", "color" : "#2ca02c" }],
         ]
         annotations = {
           horizontal = [
@@ -288,7 +284,6 @@ locals {
       }
     },
 
-    # Row 5: Entity Counts (Futures subgraph business data)
     {
       type   = "metric"
       x      = 0
@@ -296,17 +291,15 @@ locals {
       width  = 24
       height = 5
       properties = {
-        title   = "Futures - Entity Counts"
+        title   = "Oracle - Header Index Height"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
-        stat    = "Average"
+        stat    = "Maximum"
         period  = var.monitoring.dashboard_period
-        yAxis   = { left = { min = 0, label = "Count" } }
+        yAxis   = { left = { min = 0, label = "Bitcoin height" } }
         metrics = [
-          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "futures", { "label" : "Futures Contracts", "color" : "#1f77b4" }],
-          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "participants", { "label" : "Participants", "color" : "#ff7f0e" }],
-          [local.monitoring_namespace, "subgraph_entity_count", "Environment", local.env_short, "Subgraph", "futures", "Entity", "positions", { "label" : "Positions", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "oracle_chain_height", "Environment", local.env_short, { "label" : "Chain Height", "color" : "#1f77b4" }],
         ]
       }
     },
