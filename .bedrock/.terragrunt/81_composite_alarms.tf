@@ -11,12 +11,14 @@ resource "aws_cloudwatch_composite_alarm" "subgraph_unhealthy" {
   alarm_name        = "hpo-subgraph-${local.env_short}"
   alarm_description = "COMPOSITE: Oracle subgraph unhealthy - check component alarms"
 
-  # Combine: unavailable OR any per-subgraph alarm (stale, errors, slow)
+  # Combine: unavailable OR any per-subgraph alarm (stale, behind, errors, slow)
   alarm_rule = join(" OR ", concat(
     # Aggregate unavailable alarm
     ["ALARM(${aws_cloudwatch_metric_alarm.subgraph_unavailable[0].alarm_name})"],
     # Per-subgraph data stale alarms
     [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_data_stale[name].alarm_name})"],
+    # Per-subgraph block drift alarms
+    [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_blocks_behind[name].alarm_name})"],
     # Per-subgraph indexing errors alarms
     [for name in local.goldsky_subgraphs : "ALARM(${aws_cloudwatch_metric_alarm.subgraph_indexing_errors[name].alarm_name})"],
     # Per-subgraph slow response alarms
@@ -34,6 +36,7 @@ resource "aws_cloudwatch_composite_alarm" "subgraph_unhealthy" {
   depends_on = [
     aws_cloudwatch_metric_alarm.subgraph_unavailable,
     aws_cloudwatch_metric_alarm.subgraph_data_stale,
+    aws_cloudwatch_metric_alarm.subgraph_blocks_behind,
     aws_cloudwatch_metric_alarm.subgraph_indexing_errors,
     aws_cloudwatch_metric_alarm.subgraph_response_time,
   ]
