@@ -55,6 +55,10 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     maxBatchSize: Number(env.KEEPER_MAX_BATCH_SIZE ?? "10"),
     btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
     updateBtcUsd: ["1", "true"].includes((env.UPDATE_BTC_USD ?? "").toLowerCase()),
+    // Base mainnet Chainlink BTC/USD. Dev's keeper chain is Sepolia, so the
+    // read uses a separate mainnet RPC built from the same Alchemy key.
+    chainlinkBtcUsdAddress: env.CHAINLINK_BTC_USD_ADDRESS as `0x${string}` | undefined,
+    chainlinkRpcUrl: alchemyApiKey ? alchemyRpcUrl("base-mainnet", alchemyApiKey) : undefined,
     confirmations: Number(env.KEEPER_CONFIRMATIONS) ?? 4,
   };
 }
