@@ -79,7 +79,11 @@ export async function runKeeper(config: Config, log: Logger): Promise<KeeperResu
   const oracle = new OracleClient(config, log);
 
   if (config.updateBtcUsd) {
-    await updateBTCUSDMock(config, log);
+    try {
+      await updateBTCUSDMock(config, log);
+    } catch (err) {
+      log.error({ err }, "BTC/USD mock update failed; continuing with block submission");
+    }
   }
 
   // Tracks the L2 block of our most recent write. Threaded into subsequent
