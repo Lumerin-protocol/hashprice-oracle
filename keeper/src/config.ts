@@ -22,6 +22,22 @@ function alchemyRpcUrl(network: string, apiKey: string) {
   return `https://${network}.g.alchemy.com/v2/${apiKey}`;
 }
 
+// The deployed keeper receives ETHEREUM_RPC_URL, not ALCHEMY_API_KEY. Dev's URL
+// is Base Sepolia, and the same key can read Base mainnet Chainlink.
+function alchemyKeyFromRpcUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (!parsed.hostname.endsWith(".g.alchemy.com")) return undefined;
+  const [version, apiKey] = parsed.pathname.split("/").filter(Boolean);
+  if (version !== "v2" || !apiKey) return undefined;
+  return apiKey;
+}
+
 export function getChain(chainId: number): Chain {
   const chain = chainMap[chainId];
   if (!chain) throw new Error(`Unsupported chain ID: ${chainId}`);
@@ -37,6 +53,7 @@ export function configFromEnv(env: Record<string, string | undefined>) {
 
   const chainId = Number(required("CHAIN_ID"));
   const alchemyApiKey = env.ALCHEMY_API_KEY;
+  const chainlinkAlchemyKey = alchemyApiKey ?? alchemyKeyFromRpcUrl(env.ETHEREUM_RPC_URL);
   const ethNetwork = alchemyEthNetwork[chainId];
 
   return {
@@ -56,9 +73,10 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
     updateBtcUsd: ["1", "true"].includes((env.UPDATE_BTC_USD ?? "").toLowerCase()),
     // Base mainnet Chainlink BTC/USD. Dev's keeper chain is Sepolia, so the
-    // read uses a separate mainnet RPC built from the same Alchemy key.
+    // read uses a mainnet RPC built from ALCHEMY_API_KEY or the key embedded
+    // in ETHEREUM_RPC_URL.
     chainlinkBtcUsdAddress: env.CHAINLINK_BTC_USD_ADDRESS as `0x${string}` | undefined,
-    chainlinkRpcUrl: alchemyApiKey ? alchemyRpcUrl("base-mainnet", alchemyApiKey) : undefined,
+    chainlinkRpcUrl: chainlinkAlchemyKey ? alchemyRpcUrl("base-mainnet", chainlinkAlchemyKey) : undefined,
     confirmations: Number(env.KEEPER_CONFIRMATIONS) ?? 4,
   };
 }

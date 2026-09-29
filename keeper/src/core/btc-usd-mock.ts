@@ -75,7 +75,7 @@ async function fetchChainlinkPrice(config: Config, mockDecimals: number): Promis
 
   const rpcUrl = config.chainId === base.id ? config.ethereumRpcUrl : config.chainlinkRpcUrl;
   if (!rpcUrl) {
-    throw new Error("No Base mainnet RPC for the Chainlink BTC/USD read (set ALCHEMY_API_KEY)");
+    throw new Error("No Base mainnet RPC for the Chainlink BTC/USD read");
   }
 
   const client = createPublicClient({ chain: base, transport: http(rpcUrl) });
