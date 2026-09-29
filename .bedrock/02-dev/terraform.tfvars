@@ -10,7 +10,7 @@ wallets = {
   futures_address         = "0x56d8d4a03a0f34b93b86e0b7941aff29178d0479"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
   btcusd_oracle_address   = "0x614dcafa33af0705c7b4a37667ef511f400f36d0" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
-  hashprice_btc_address   = "0x6f501d6ea22c910e657ad3650f45a76dc525e387" # Trustless oracle on Base Sepolia — matches GH dev env HASHPRICE_BTC_ADDRESS
+  hashprice_btc_address   = "0x7b7f9698cadca34f13d6091c4ee34045f97442e7" # config/dev.env HASHPRICE_BTC_ADDRESS
 }
 
 # Spot marketplace / proxy-indexer (Arbitrum Sepolia) — must match spot-marketplace .bedrock/02-dev

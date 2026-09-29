@@ -2,7 +2,7 @@
 Goldsky Subgraph Health Monitor Lambda
 Queries Goldsky public GraphQL endpoints for health and data freshness.
 
-Monitors subgraphs hosted on Goldsky:
+Monitors the hashprice oracle subgraph on Goldsky:
 - Availability: Did the endpoint respond?
 - Response time: How long did the query take?
 - hasIndexingErrors: Has the subgraph encountered errors?
@@ -19,10 +19,8 @@ import os
 import time
 from datetime import datetime
 
-# Subgraph URLs from environment (public Goldsky endpoints — no auth required)
-GS_FUTURES_URL = os.environ.get("GS_FUTURES_URL", "")
+# Oracle subgraph URL from the environment (public Goldsky endpoint).
 GS_ORACLES_URL = os.environ.get("GS_ORACLES_URL", "")
-GS_DERIVATIVES_URL = os.environ.get("GS_DERIVATIVES_URL", "")
 
 CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "HashpriceOracle")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
@@ -41,24 +39,6 @@ META_QUERY = """
   }
 }
 """
-
-# Entity count queries for futures subgraph
-FUTURES_ENTITY_QUERY_V1 = """
-{
-  futures_collection(first: 1000) { id }
-  participants(first: 1000) { id }
-  positions(first: 1000) { id }
-}
-"""
-
-FUTURES_ENTITY_QUERY_V2 = """
-{
-  futures(first: 1000) { id }
-  participants(first: 1000) { id }
-  positions(first: 1000) { id }
-}
-"""
-
 
 def shorten_deployment(deployment):
     """Create shortened deployment key: first4...last3"""
@@ -96,35 +76,6 @@ def query_subgraph(url, query):
         return None, response_time_ms
 
 
-def query_futures_entity_counts(url):
-    """Query entity counts from futures subgraph.
-
-    Tries both schema variants (futures_collection for prod, futures for dev).
-    Returns dict with entity counts or None on error.
-    """
-    result, _ = query_subgraph(url, FUTURES_ENTITY_QUERY_V1)
-    if result and "data" in result and result["data"]:
-        data = result["data"]
-        if "futures_collection" in data:
-            return {
-                "futures": len(data.get("futures_collection") or []),
-                "participants": len(data.get("participants") or []),
-                "positions": len(data.get("positions") or []),
-            }
-
-    result, _ = query_subgraph(url, FUTURES_ENTITY_QUERY_V2)
-    if result and "data" in result and result["data"]:
-        data = result["data"]
-        if "futures" in data:
-            return {
-                "futures": len(data.get("futures") or []),
-                "participants": len(data.get("participants") or []),
-                "positions": len(data.get("positions") or []),
-            }
-
-    return None
-
-
 def push_to_cloudwatch(metric_data):
     """Push metrics to CloudWatch in batches of 20."""
     if not metric_data:
@@ -146,7 +97,7 @@ def check_subgraph(name, url, metric_data):
     """Check a single subgraph and add metrics.
 
     Args:
-        name: Subgraph name (e.g., "futures", "oracles", "derivatives")
+        name: Subgraph name ("oracles")
         url: Full Goldsky public GraphQL URL
         metric_data: List to append metrics to
 
@@ -246,24 +197,6 @@ def check_subgraph(name, url, metric_data):
         "Dimensions": subgraph_dimensions
     })
 
-    # Entity counts (futures subgraph only)
-    entity_counts = None
-    if name == "futures":
-        entity_counts = query_futures_entity_counts(url)
-        if entity_counts:
-            print(f"    Entities: futures={entity_counts['futures']}, participants={entity_counts['participants']}, positions={entity_counts['positions']}")
-            for entity_name, count in entity_counts.items():
-                metric_data.append({
-                    "MetricName": "subgraph_entity_count",
-                    "Value": count,
-                    "Unit": "Count",
-                    "Dimensions": [
-                        {"Name": "Environment", "Value": ENVIRONMENT},
-                        {"Name": "Subgraph", "Value": name},
-                        {"Name": "Entity", "Value": entity_name},
-                    ]
-                })
-
     return {
         "name": name,
         "available": True,
@@ -272,7 +205,6 @@ def check_subgraph(name, url, metric_data):
         "response_time_ms": response_time_ms,
         "data_age_seconds": data_age_seconds,
         "has_indexing_errors": has_indexing_errors,
-        "entity_counts": entity_counts
     }
 
 
@@ -285,9 +217,7 @@ def lambda_handler(event, context):
     results = []
 
     subgraphs = [
-        ("futures", GS_FUTURES_URL),
         ("oracles", GS_ORACLES_URL),
-        ("derivatives", GS_DERIVATIVES_URL),
     ]
 
     for name, url in subgraphs:

@@ -9,9 +9,7 @@ locals {
   # Monitoring namespace for custom metrics
   monitoring_namespace = "HashpriceOracle-${upper(local.env_short)}"
 
-  # Determine if we should create the TheGraph subgraph monitor
-  # Controlled by monitoring.create_subgraph_health_monitor boolean
-  # Subgraph IDs and API key must be configured in secrets for Lambda to work
+  # Oracle subgraph health monitor. Controlled by monitoring.create_subgraph_health_monitor.
   should_create_subgraph_monitor = (
     var.monitoring.create &&
     var.monitoring.create_subgraph_health_monitor

@@ -35,6 +35,7 @@ cloudwatch = boto3.client("cloudwatch")
 # 4-byte function selectors (keccak256(signature)[:4])
 LATEST_ROUND_DATA_SELECTOR = "0xfeaf968c"  # latestRoundData()
 DECIMALS_SELECTOR = "0x313ce567"           # decimals()
+STATE_SELECTOR = "0xc19d93fb"              # state()
 
 # Lower 80 bits mask for uint80 fields returned by latestRoundData
 UINT80_MASK = (1 << 80) - 1
@@ -101,6 +102,31 @@ def get_latest_round():
         }
     except Exception as e:
         print(f"Error parsing latestRoundData: {e}")
+        return None
+
+
+def get_oracle_state():
+    """
+    Call state() on HashpriceBTC.
+    lastSubmittedAt is the EVM timestamp of the last header submission.
+    Returns { chain_height, last_submitted_at } or None.
+    """
+    raw = eth_call(HASHPRICE_BTC_ADDRESS, STATE_SELECTOR)
+    if not raw or raw == "0x":
+        print("Empty result from state()")
+        return None
+    body = raw[2:]
+    # Eight uint32 fields, each ABI-encoded into a 32-byte slot.
+    if len(body) < 8 * 64:
+        print(f"Unexpected state() length: {len(body)} (expected >= {8 * 64})")
+        return None
+    try:
+        return {
+            "chain_height": int(body[0:64], 16),
+            "last_submitted_at": int(body[256:320], 16),
+        }
+    except Exception as e:
+        print(f"Error parsing state(): {e}")
         return None
 
 
@@ -196,6 +222,23 @@ def lambda_handler(event, context):
         metric_data.append(
             {"MetricName": "oracle_latest_answer_sats", "Value": float(answer_sats), "Unit": "None", "Dimensions": dim}
         )
+
+    index_state = get_oracle_state()
+    if index_state and index_state["last_submitted_at"] > 0:
+        index_age_seconds = max(0, current_time - index_state["last_submitted_at"])
+        index_age_minutes = index_age_seconds / 60
+        print(
+            f"Header index: height={index_state['chain_height']} "
+            f"lastSubmittedAt age={index_age_minutes:.2f} minutes"
+        )
+        metric_data.extend([
+            {"MetricName": "oracle_index_age_minutes", "Value": index_age_minutes, "Unit": "Count", "Dimensions": dim},
+            {"MetricName": "oracle_index_age_seconds", "Value": index_age_seconds, "Unit": "Seconds", "Dimensions": dim},
+            {"MetricName": "oracle_chain_height", "Value": float(index_state["chain_height"]), "Unit": "Count", "Dimensions": dim},
+        ])
+    else:
+        print("WARNING: could not read oracle state().lastSubmittedAt")
+
     push_to_cloudwatch(metric_data)
 
     return {
