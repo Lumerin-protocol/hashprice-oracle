@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@graphprotocol/graph-ts':
-        specifier: 0.37.0
-        version: 0.37.0
+        specifier: 0.38.2
+        version: 0.38.2
       graphql:
         specifier: ^16.11.0
         version: 16.13.2
@@ -23,13 +23,13 @@ importers:
     devDependencies:
       '@graphprotocol/graph-cli':
         specifier: ^0.98.1
-        version: 0.98.1(@types/node@26.1.2)(typescript@5.9.3)(zod@3.25.76)
+        version: 0.98.1(@types/node@26.1.2)(supports-color@8.1.1)(typescript@5.9.3)(zod@3.25.76)
       matchstick-as:
         specifier: 0.6.0
         version: 0.6.0
       testcontainers:
         specifier: ^10.28.0
-        version: 10.28.0
+        version: 10.28.0(supports-color@8.1.1)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -76,8 +76,8 @@ packages:
     engines: {node: '>=20.18.1'}
     hasBin: true
 
-  '@graphprotocol/graph-ts@0.37.0':
-    resolution: {integrity: sha512-3xp/sO8zFDBkX44ydGB87ow5Cyrfr/SAm/cWzIRzUVL7ROw0KUyFBG1xj4KKlMnAod7/RL99zChYquC15H4Oqg==}
+  '@graphprotocol/graph-ts@0.38.2':
+    resolution: {integrity: sha512-87KIFSFs2+Te+mnmb7Y+M57oqzlLy20cIyPIRbn9qJfpZFSZHTKtBLT6KQmcsK0YkoWis9Ur3c3M2c9mmaaEHQ==}
 
   '@graphql-typed-document-node/core@3.2.0':
     resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
@@ -2051,6 +2051,7 @@ packages:
 
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   viem@2.47.17:
@@ -2232,13 +2233,13 @@ snapshots:
       graphql-import-node: 0.0.5(graphql@16.13.2)
       js-yaml: 4.1.0
 
-  '@graphprotocol/graph-cli@0.98.1(@types/node@26.1.2)(typescript@5.9.3)(zod@3.25.76)':
+  '@graphprotocol/graph-cli@0.98.1(@types/node@26.1.2)(supports-color@8.1.1)(typescript@5.9.3)(zod@3.25.76)':
     dependencies:
       '@float-capital/float-subgraph-uncrashable': 0.0.0-internal-testing.5
       '@oclif/core': 4.5.5
-      '@oclif/plugin-autocomplete': 3.2.45
+      '@oclif/plugin-autocomplete': 3.2.45(supports-color@8.1.1)
       '@oclif/plugin-not-found': 3.2.80(@types/node@26.1.2)
-      '@oclif/plugin-warn-if-update-available': 3.1.60
+      '@oclif/plugin-warn-if-update-available': 3.1.60(supports-color@8.1.1)
       '@pinax/graph-networks-registry': 0.7.1
       '@whatwg-node/fetch': 0.10.13
       assemblyscript: 0.19.23
@@ -2248,7 +2249,7 @@ snapshots:
       docker-compose: 1.3.0
       fs-extra: 11.3.2
       glob: 11.0.3
-      gluegun: 5.2.0(debug@4.4.3)
+      gluegun: 5.2.0(debug@4.4.3(supports-color@8.1.1))
       graphql: 16.11.0
       immutable: 5.1.4
       jayson: 4.2.0
@@ -2270,7 +2271,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@graphprotocol/graph-ts@0.37.0':
+  '@graphprotocol/graph-ts@0.38.2':
     dependencies:
       assemblyscript: 0.27.31
 
@@ -2600,7 +2601,7 @@ snapshots:
       wordwrap: 1.0.0
       wrap-ansi: 7.0.0
 
-  '@oclif/plugin-autocomplete@3.2.45':
+  '@oclif/plugin-autocomplete@3.2.45(supports-color@8.1.1)':
     dependencies:
       '@oclif/core': 4.5.5
       ansis: 3.17.0
@@ -2618,12 +2619,12 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@oclif/plugin-warn-if-update-available@3.1.60':
+  '@oclif/plugin-warn-if-update-available@3.1.60(supports-color@8.1.1)':
     dependencies:
       '@oclif/core': 4.5.5
       ansis: 3.17.0
       debug: 4.4.3(supports-color@8.1.1)
-      http-call: 5.3.0
+      http-call: 5.3.0(supports-color@8.1.1)
       lodash: 4.18.1
       registry-auth-token: 5.1.1
     transitivePeerDependencies:
@@ -2802,9 +2803,9 @@ snapshots:
 
   any-signal@4.2.0: {}
 
-  apisauce@2.1.6(debug@4.4.3):
+  apisauce@2.1.6(debug@4.4.3(supports-color@8.1.1)):
     dependencies:
-      axios: 0.21.4(debug@4.4.3)
+      axios: 0.21.4(debug@4.4.3(supports-color@8.1.1))
     transitivePeerDependencies:
       - debug
 
@@ -2859,9 +2860,9 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
-  axios@0.21.4(debug@4.4.3):
+  axios@0.21.4(debug@4.4.3(supports-color@8.1.1)):
     dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3)
+      follow-redirects: 1.16.0(debug@4.4.3(supports-color@8.1.1))
     transitivePeerDependencies:
       - debug
 
@@ -3186,7 +3187,7 @@ snapshots:
     dependencies:
       yaml: 2.8.1
 
-  docker-modem@5.0.7:
+  docker-modem@5.0.7(supports-color@8.1.1):
     dependencies:
       debug: 4.4.3(supports-color@8.1.1)
       readable-stream: 3.6.2
@@ -3195,12 +3196,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  dockerode@4.0.12:
+  dockerode@4.0.12(supports-color@8.1.1):
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.7.15
-      docker-modem: 5.0.7
+      docker-modem: 5.0.7(supports-color@8.1.1)
       protobufjs: 7.6.5
       tar-fs: 2.1.5
       uuid: 10.0.0
@@ -3346,7 +3347,7 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  follow-redirects@1.16.0(debug@4.4.3):
+  follow-redirects@1.16.0(debug@4.4.3(supports-color@8.1.1)):
     optionalDependencies:
       debug: 4.4.3(supports-color@8.1.1)
 
@@ -3442,9 +3443,9 @@ snapshots:
       once: 1.4.0
       path-is-absolute: 1.0.1
 
-  gluegun@5.2.0(debug@4.4.3):
+  gluegun@5.2.0(debug@4.4.3(supports-color@8.1.1)):
     dependencies:
-      apisauce: 2.1.6(debug@4.4.3)
+      apisauce: 2.1.6(debug@4.4.3(supports-color@8.1.1))
       app-module-path: 2.2.0
       cli-table3: 0.6.0
       colors: 1.4.0
@@ -3516,7 +3517,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  http-call@5.3.0:
+  http-call@5.3.0(supports-color@8.1.1):
     dependencies:
       content-type: 1.0.5
       debug: 4.4.3(supports-color@8.1.1)
@@ -4319,7 +4320,7 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  testcontainers@10.28.0:
+  testcontainers@10.28.0(supports-color@8.1.1):
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@types/dockerode': 3.3.47
@@ -4328,7 +4329,7 @@ snapshots:
       byline: 5.0.0
       debug: 4.4.3(supports-color@8.1.1)
       docker-compose: 0.24.8
-      dockerode: 4.0.12
+      dockerode: 4.0.12(supports-color@8.1.1)
       get-port: 7.2.0
       proper-lockfile: 4.1.2
       properties-reader: 2.3.0
