@@ -12,6 +12,11 @@ output "spot_indexer_url" {
   value       = (var.ecs_cluster.create && var.spot_indexer.create) ? "https://${aws_route53_record.spot_indexer[0].name}" : null
 }
 
+output "hpdx_dashboard_name" {
+  description = "Name of the cross-stack HPDX health dashboard"
+  value       = (var.monitoring.create && var.monitoring.create_dashboards) ? aws_cloudwatch_dashboard.hpdx[0].dashboard_name : null
+}
+
 output "oracle_lambda_name" {
   description = "Name of the oracle lambda"
   value       = (var.oracle_lambda.create) ? aws_lambda_function.oracle_update[0].function_name : null

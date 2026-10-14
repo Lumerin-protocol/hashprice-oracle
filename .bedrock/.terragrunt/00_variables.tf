@@ -138,6 +138,14 @@ variable "monitoring" {
   }
 }
 
+variable "hpdx_dashboard" {
+  description = "CloudFront distributions shown on the HPDX health dashboard. Those distributions are created in other repositories."
+  type = object({
+    exchange_distribution_id = string
+    site_distribution_id     = string
+  })
+}
+
 variable "monitoring_schedule" {
   description = "Schedule rates for monitoring Lambdas and alarm timing"
   type = object({

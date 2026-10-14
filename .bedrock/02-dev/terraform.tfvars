@@ -69,6 +69,12 @@ monitoring = {
   dashboard_period               = 300
 }
 
+# HPDX health dashboard. Exchange is dev.hashpower.exchange. Site is dev.hashpower.io.
+hpdx_dashboard = {
+  exchange_distribution_id = "E2RPZZWOE5X449"
+  site_distribution_id     = "E173TAEULM0X0K"
+}
+
 # DEV environment 
 monitoring_schedule = {
   subgraph_health_rate_minutes   = 5  # how often to run the lambda to check subgraph health

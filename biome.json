@@ -1,10 +1,20 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/generated",
+      "!**/build",
+      "!**/dist",
+      "!**/coverage",
+      "!**/artifacts",
+      "!**/cache"
+    ]
+  },
   "overrides": [
     {
-      "includes": [
-        "./indexer/src/**"
-      ],
+      "includes": ["./indexer/src/**"],
       "linter": {
         "enabled": true,
         "rules": {

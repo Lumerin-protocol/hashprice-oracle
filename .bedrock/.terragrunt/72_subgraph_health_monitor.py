@@ -7,6 +7,7 @@ Monitors the hashprice oracle subgraph on Goldsky:
 - Response time: How long did the query take?
 - hasIndexingErrors: Has the subgraph encountered errors?
 - Data freshness: How old is the latest indexed block (seconds)?
+- Drift: chain head minus the block Goldsky is serving. A null timestamp is filled from that block so a catch-up is not recorded as fresh.
 
 Uses deployment hash as tracking key (first4...last3) to detect subgraph updates.
 Subgraph URLs are passed as environment variables from Terraform (var.gs_subgraphs).
@@ -24,6 +25,19 @@ GS_ORACLES_URL = os.environ.get("GS_ORACLES_URL", "")
 
 CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "HashpriceOracle")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
+CHAIN_ID = int(os.environ.get("CHAIN_ID", "0") or "0")
+
+# Public endpoints. The monitor must not carry an Alchemy key.
+PUBLIC_RPC = {
+    8453: (
+        "https://mainnet.base.org",
+        "https://base-rpc.publicnode.com",
+    ),
+    84532: (
+        "https://sepolia.base.org",
+        "https://base-sepolia-rpc.publicnode.com",
+    ),
+}
 
 cloudwatch = boto3.client("cloudwatch")
 
@@ -74,6 +88,62 @@ def query_subgraph(url, query):
         response_time_ms = int((time.time() - start_time) * 1000)
         print(f"Error querying subgraph: {e}")
         return None, response_time_ms
+
+
+def rpc(method, params):
+    """JSON-RPC against a public Base endpoint. Returns the result or None."""
+    urls = PUBLIC_RPC.get(CHAIN_ID, ())
+    if not urls:
+        print(f"    no public RPC for chain {CHAIN_ID}")
+        return None
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
+    last = None
+    for url in urls:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "HPO-SubgraphMonitor/2.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            if body.get("error"):
+                last = body["error"]
+                continue
+            return body.get("result")
+        except Exception as exc:
+            last = exc
+            print(f"    rpc {method} failed: {exc}")
+    print(f"    rpc {method} unavailable: {last}")
+    return None
+
+
+def chain_head():
+    result = rpc("eth_blockNumber", [])
+    if not result:
+        return 0
+    try:
+        return int(result, 16)
+    except (TypeError, ValueError):
+        return 0
+
+
+def block_timestamp(number):
+    result = rpc("eth_getBlockByNumber", [hex(number), False])
+    if not isinstance(result, dict):
+        return 0
+    raw = result.get("timestamp")
+    if not raw:
+        return 0
+    try:
+        return int(raw, 16)
+    except (TypeError, ValueError):
+        return 0
 
 
 def push_to_cloudwatch(metric_data):
@@ -151,23 +221,34 @@ def check_subgraph(name, url, metric_data):
 
     meta = result.get("data", {}).get("_meta", {})
     block = meta.get("block") or {}
-    # Goldsky may return JSON null for block.timestamp; .get("timestamp", 0) still yields None
+    try:
+        indexed_block = int(block.get("number")) if block.get("number") is not None else 0
+    except (TypeError, ValueError):
+        indexed_block = 0
+    # Goldsky may return JSON null for block.timestamp while a deployment is catching up.
     raw_ts = block.get("timestamp")
     try:
-        block_timestamp = int(raw_ts) if raw_ts is not None else 0
+        indexed_timestamp = int(raw_ts) if raw_ts is not None else 0
     except (TypeError, ValueError):
-        block_timestamp = 0
+        indexed_timestamp = 0
     deployment = meta.get("deployment", "unknown")
     has_indexing_errors = meta.get("hasIndexingErrors", False)
 
     deployment_key = shorten_deployment(deployment)
 
-    current_timestamp = int(time.time())
+    head = chain_head()
+    blocks_behind = max(0, head - indexed_block) if head > 0 and indexed_block > 0 else None
+    if indexed_timestamp <= 0 and indexed_block > 0:
+        indexed_timestamp = block_timestamp(indexed_block)
     data_age_seconds = (
-        (current_timestamp - block_timestamp) if block_timestamp > 0 else 0
+        max(0, int(time.time()) - indexed_timestamp) if indexed_timestamp > 0 else None
     )
 
-    print(f"    OK: deployment={deployment_key}, age={data_age_seconds}s, errors={has_indexing_errors}, took {response_time_ms}ms")
+    print(
+        f"    OK: deployment={deployment_key}, indexed={indexed_block}, head={head}, "
+        f"behind={blocks_behind}, age={data_age_seconds}s, errors={has_indexing_errors}, "
+        f"took {response_time_ms}ms"
+    )
 
     metric_data.append({
         "MetricName": "subgraph_available",
@@ -190,12 +271,21 @@ def check_subgraph(name, url, metric_data):
         "Dimensions": subgraph_dimensions
     })
 
-    metric_data.append({
-        "MetricName": "subgraph_data_age_seconds",
-        "Value": data_age_seconds,
-        "Unit": "Seconds",
-        "Dimensions": subgraph_dimensions
-    })
+    if data_age_seconds is not None:
+        metric_data.append({
+            "MetricName": "subgraph_data_age_seconds",
+            "Value": data_age_seconds,
+            "Unit": "Seconds",
+            "Dimensions": subgraph_dimensions
+        })
+
+    if blocks_behind is not None:
+        metric_data.append({
+            "MetricName": "subgraph_blocks_behind",
+            "Value": blocks_behind,
+            "Unit": "Count",
+            "Dimensions": subgraph_dimensions
+        })
 
     return {
         "name": name,
@@ -204,6 +294,7 @@ def check_subgraph(name, url, metric_data):
         "deployment_full": deployment,
         "response_time_ms": response_time_ms,
         "data_age_seconds": data_age_seconds,
+        "blocks_behind": blocks_behind,
         "has_indexing_errors": has_indexing_errors,
     }
 
@@ -233,7 +324,10 @@ def lambda_handler(event, context):
         available_count = sum(1 for r in results if r.get("available"))
         error_count = sum(1 for r in results if r.get("has_indexing_errors"))
         avg_response_time = sum(r.get("response_time_ms", 0) for r in results) / total_checked
-        max_data_age = max((r.get("data_age_seconds", 0) for r in results if r.get("available")), default=0)
+        max_data_age = max(
+            (r["data_age_seconds"] for r in results if r.get("available") and r.get("data_age_seconds") is not None),
+            default=0,
+        )
 
         metric_data.append({
             "MetricName": "subgraphs_available",
