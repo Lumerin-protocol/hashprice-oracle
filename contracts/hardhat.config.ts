@@ -24,8 +24,21 @@ export default defineConfig({
           },
         },
       },
-      // chainlink contracts v0.6
-      {
+    ],
+    // ERC-1967 proxy stays on the 0.8.28 settings. Chainlink's aggregator
+    // proxy is pragma 0.6.6 and must not follow the oracle compiler.
+    overrides: {
+      "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol": {
+        version: "0.8.28",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+          evmVersion: "cancun",
+        },
+      },
+      "@chainlink/contracts-old/src/v0.6/AggregatorProxy.sol": {
         version: "0.6.6",
         settings: {
           optimizer: {
@@ -34,7 +47,7 @@ export default defineConfig({
           },
         },
       },
-    ],
+    },
     npmFilesToBuild: [
       "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol",
