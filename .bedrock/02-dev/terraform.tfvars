@@ -64,8 +64,8 @@ monitoring = {
   create_subgraph_health_monitor = true
   create_oracle_staleness_check  = true
   notifications_enabled          = true # Set true to enable SNS alerts (disabled to reduce noise in dev)
-  dev_alerts_topic_name          = "titanio-dev-dev-alerts"
-  devops_alerts_topic_name       = "titanio-dev-dev-alerts" # Same as dev-alerts in non-prod (all to Slack)
+  dev_alerts_topic_name          = "titanio-dev-hpdx-alerts"
+  devops_alerts_topic_name       = "titanio-dev-hpdx-alerts" # Same as dev-alerts in non-prod (all to Slack)
   dashboard_period               = 300
 }
 

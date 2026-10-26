@@ -120,6 +120,8 @@ variable "monitoring" {
     create_subgraph_health_monitor = bool
     create_oracle_staleness_check  = bool
     notifications_enabled          = bool # Set false to disable SNS notifications (alarms still visible in console)
+    # Topic *names* looked up with data.aws_sns_topic (foundation-core).
+    # Convention: titanio-{env}-hpdx-alerts (Slack), titanio-{env}-hpdx-page (SMS/email, LMN).
     dev_alerts_topic_name          = string
     devops_alerts_topic_name       = string
     dashboard_period               = number

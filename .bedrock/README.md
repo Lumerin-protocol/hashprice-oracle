@@ -357,8 +357,9 @@ monitoring = {
   create_subgraph_health_monitor = true
   create_oracle_staleness_check  = true
   notifications_enabled          = false  # true for production
-  dev_alerts_topic_name          = "titanio-dev-dev-alerts"
-  devops_alerts_topic_name       = "titanio-dev-dev-alerts"
+  # Looked up via data.aws_sns_topic (foundation-core operational-alerting).
+  dev_alerts_topic_name          = "titanio-dev-hpdx-alerts"  # Slack #hpdx-alerts
+  devops_alerts_topic_name       = "titanio-dev-hpdx-alerts"  # non-prod: same as Slack; LMN uses hpdx-page
   dashboard_period               = 300
 }
 

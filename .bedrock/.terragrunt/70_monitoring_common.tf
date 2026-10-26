@@ -2,6 +2,17 @@
 # MONITORING COMMON - IAM Roles, Data Sources, Locals
 ################################################################################
 
+# foundation-core: titanio-{env}-hpdx-alerts (Slack) / titanio-{env}-hpdx-page (SMS)
+data "aws_sns_topic" "hpdx_alerts" {
+  count = var.monitoring.create && var.monitoring.dev_alerts_topic_name != "" ? 1 : 0
+  name  = var.monitoring.dev_alerts_topic_name
+}
+
+data "aws_sns_topic" "hpdx_page" {
+  count = var.monitoring.create && var.monitoring.devops_alerts_topic_name != "" ? 1 : 0
+  name  = var.monitoring.devops_alerts_topic_name
+}
+
 locals {
   # Environment short name for resource naming
   env_short = substr(var.account_shortname, 8, 3)
@@ -19,14 +30,14 @@ locals {
   spot_indexer_log_group  = "bedrock-hpo-spot-indexer-${local.env_short}"
   oracle_lambda_log_group = "/aws/lambda/futures-oracle-update-v2"
 
-  # SNS Topic ARNs
-  dev_alerts_sns_arn    = "arn:aws:sns:${var.default_region}:${var.account_number}:${var.monitoring.dev_alerts_topic_name}"
-  devops_alerts_sns_arn = "arn:aws:sns:${var.default_region}:${var.account_number}:${var.monitoring.devops_alerts_topic_name}"
-
-  # For dev/stg, route all to Slack (dev-alerts)
-  # For prod/lmn, critical goes to devops-alerts (cell), warning to dev-alerts (Slack)
-  critical_sns_arn = var.account_lifecycle == "prd" ? local.devops_alerts_sns_arn : local.dev_alerts_sns_arn
-  warning_sns_arn  = local.dev_alerts_sns_arn
+  # Look up foundation-core topics by name (no ARN hardcoding / remote state).
+  # For prod/lmn, critical → page (SMS); warning → alerts (Slack). Non-prod: both Slack.
+  critical_sns_arn = var.account_lifecycle == "prd" ? (
+    length(data.aws_sns_topic.hpdx_page) > 0 ? data.aws_sns_topic.hpdx_page[0].arn : ""
+  ) : (
+    length(data.aws_sns_topic.hpdx_alerts) > 0 ? data.aws_sns_topic.hpdx_alerts[0].arn : ""
+  )
+  warning_sns_arn = length(data.aws_sns_topic.hpdx_alerts) > 0 ? data.aws_sns_topic.hpdx_alerts[0].arn : ""
 
   # Alarm action strategy:
   # - Component alarms: NO notifications (just state tracking for composites)
@@ -37,7 +48,7 @@ locals {
   component_alarm_actions = []
 
   # Composite alarms - send notifications only when enabled
-  composite_alarm_actions = var.monitoring.notifications_enabled ? [local.critical_sns_arn] : []
+  composite_alarm_actions = var.monitoring.notifications_enabled && local.critical_sns_arn != "" ? [local.critical_sns_arn] : []
 
   # Alarm periods - match check rates (in seconds)
   oracle_staleness_check_period_seconds = var.monitoring_schedule.oracle_staleness_rate_minutes * 60
