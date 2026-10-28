@@ -10,6 +10,9 @@ const {
   networkHelpers: { loadFixture },
 } = await network.connect();
 
+/** Batch sizes to sweep independently from the keeper's single-block submitBlock fast path. */
+const BATCH_SIZES = [1, 5, 10, 25, 50];
+
 describe("HashpriceBTC — Gas benchmark", function () {
   it("average gas per block (submit one-by-one)", async function () {
     const { contracts, accounts, config } = await loadFixture(deployV3Fixture);
@@ -71,6 +74,41 @@ describe("HashpriceBTC — Gas benchmark", function () {
     const avgWarm = warmCount > 0 ? Math.round(Number(warmGas) / warmCount) : null;
     const hashpriceBtc = (Number(answer) / Number(satsPerBtc)).toFixed(8);
 
+    // ─── submitBlocks, swept over batch size ────────────────────────
+    //
+    // Same blocks, same total work, only the number of transactions differs. The
+    // per-block figure falls with batch size because the 21,000 intrinsic fee and the
+    // hashprice cache write are paid once per call rather than once per block.
+    const batchRows: { size: number; perBlock: number; total: bigint; calls: number }[] = [];
+
+    for (const size of BATCH_SIZES) {
+      const fresh = await loadFixture(deployV3Fixture);
+      let batchTotal = 0n;
+      let calls = 0;
+      let ancestorHeight = fresh.config.checkpoint.height;
+
+      for (let i = 0; i < toSubmit.length; i += size) {
+        const chunk = toSubmit.slice(i, i + size);
+        const formatted = chunk.map(formatBlock);
+        const hash = await fresh.contracts.oracle.write.submitBlocks([
+          ancestorHeight,
+          `0x${formatted.map((b) => b.header.slice(2)).join("")}`,
+          formatted.map((b) => b.coinbaseTx),
+          formatted.map((b) => b.merkleProof),
+        ]);
+        const receipt = await fresh.accounts.pc.waitForTransactionReceipt({ hash });
+        batchTotal += receipt.gasUsed;
+        calls++;
+        ancestorHeight = chunk[chunk.length - 1].height;
+      }
+
+      const perBlock = Math.round(Number(batchTotal) / toSubmit.length);
+      batchRows.push({ size, perBlock, total: batchTotal, calls });
+      console.log(
+        `  V3 submitBlocks batch=${String(size).padStart(2)}: ${perBlock.toLocaleString()} gas/block over ${calls} txs`,
+      );
+    }
+
     const date = new Date().toISOString().slice(0, 10);
     const lines = [
       `# Gas Benchmark — HashpriceBTC`,
@@ -88,6 +126,19 @@ describe("HashpriceBTC — Gas benchmark", function () {
             `| Average warm (last ${warmCount} blocks, steady state) | ${avgWarm.toLocaleString()} |`,
           ]
         : []),
+      ``,
+      `## \`submitBlocks\` — same ${toSubmit.length} blocks, swept over batch size`,
+      ``,
+      `The keeper uses \`submitBlock\` for a single plain extension and \`submitBlocks\` for`,
+      `backlogs and reorgs. The \`size = 1\` row isolates the batch path's floor; larger batches`,
+      `amortise the 21,000 intrinsic fee and the single hashprice cache write across more blocks.`,
+      ``,
+      `| Batch size | Transactions | Total gas | Gas per block |`,
+      `|-----------:|-------------:|----------:|--------------:|`,
+      ...batchRows.map(
+        (r) =>
+          `| ${r.size} | ${r.calls} | ${Number(r.total).toLocaleString()} | ${r.perBlock.toLocaleString()} |`,
+      ),
       ``,
       `## \`latestRoundData\` — read-only call`,
       ``,
