@@ -24,9 +24,10 @@ export default defineConfig({
           },
         },
       },
-      // chainlink contracts v0.6
+      // chainlink contracts v0.6. solc 0.6.6 ships no arm64 macOS binary; wasm runs without Rosetta.
       {
         version: "0.6.6",
+        preferWasm: true,
         settings: {
           optimizer: {
             enabled: true,

@@ -333,7 +333,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 1;
+        return 2;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {
