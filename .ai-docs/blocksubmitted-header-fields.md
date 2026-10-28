@@ -1,6 +1,15 @@
 # Emit header timestamp and nBits in `BlockSubmitted`
 
-Reminder / not scheduled. Bundle into the next `HashpriceBTC` redeploy — see [Why this is not standalone](#why-this-is-not-standalone).
+Done in `HashpriceBTC` version 2, shipped with the CF-005 redeploy. The event carries the raw
+`coinbaseValue` instead of `fees`, so a subsidy-burning block stays readable off-chain:
+
+```solidity
+event BlockSubmitted(
+    bytes32 indexed blockHash, uint32 indexed height, uint64 coinbaseValue, uint32 timestamp, uint32 nBits
+);
+```
+
+The rest of this note is the original reasoning.
 
 ## Problem
 
@@ -73,10 +82,10 @@ anyway.
 
 ## Checklist for when that happens
 
-- [ ] Add the two fields to the event and update `_processHeader`
-- [ ] Update `contracts/abi/` and `keeper/src/abi/` (generated)
-- [ ] Assert the new fields in the `BlockSubmitted` contract tests
-- [ ] Regenerate the gas benchmark
-- [ ] Subgraph: bump the `BlockSubmitted` signature in `subgraph.template.yaml`, delete
+- [x] Add the two fields to the event and update `_processHeader`
+- [x] Update `contracts/abi/` and `keeper/src/abi/` (generated)
+- [x] Assert the new fields in the `BlockSubmitted` contract tests
+- [x] Regenerate the gas benchmark
+- [x] Subgraph: bump the `BlockSubmitted` signature in `subgraph.template.yaml`, delete
       `readBlockEntry` and read `event.params.timestamp` / `event.params.nBits` directly
-- [ ] Drop the 32-block buffer guard and its warning path from the mapping
+- [x] Drop the 32-block buffer guard and its warning path from the mapping
