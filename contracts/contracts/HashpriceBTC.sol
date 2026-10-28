@@ -143,9 +143,10 @@ contract HashpriceBTC is AggregatorV3Interface {
     );
 
     /// @notice Emitted whenever an incoming fork replaces one or more blocks on the canonical chain.
-    /// @dev Fires whenever the fork diverges below the current tip (`ancestorHeight < chainHeight`),
-    ///      whether it ends higher or at the same height with strictly greater cumulative work.
-    ///      A plain chain extension (`ancestorHeight == chainHeight`) never emits this event.
+    /// @dev Fires whenever the incoming headers diverge below the current tip, whether the fork
+    ///      ends higher or at the same height with strictly greater cumulative work. Headers that
+    ///      resubmit canonical blocks unchanged are not a fork: a batch that only replays them and
+    ///      then extends the tip, like a plain extension, never emits this event.
     ///
     ///      Emitted BEFORE any `BlockSubmitted` of the incoming chain. That ordering is load
     ///      bearing: it lets an indexer snapshot the blocks it is about to lose while its rows
@@ -153,7 +154,8 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      the indexer had already overwritten.
     /// @param newTip         Block hash of the incoming chain's tip
     /// @param newHeight      Bitcoin height of the new tip
-    /// @param ancestorHeight Height of the common ancestor — the fork point
+    /// @param ancestorHeight Height of the last block both chains share — the fork point, which is
+    ///                       above the submitted `ancestorHeight` when the batch replays canonical blocks
     /// @param oldTip         Block hash of the tip being replaced
     /// @param oldHeight      Bitcoin height of the tip being replaced; depth is `oldHeight - ancestorHeight`
     event ChainReorg(
@@ -354,10 +356,21 @@ contract HashpriceBTC is AggregatorV3Interface {
         (uint256 oldWork, uint256 newWork) = _snapshotForkWork(headers, ancestorHeight, count, oldHeight);
         if (newWork <= oldWork) revert NotHeaviestChain();
 
+        // Replayed canonical headers replace nothing; the fork starts at the first one that differs.
+        uint32 forkHeight = ancestorHeight;
+        while (
+            forkHeight < oldHeight
+                && _blockAt(forkHeight + 1).blockHash
+                    == BTCUtils.hash256View(BTCUtils.sliceHeaders(headers, forkHeight - ancestorHeight))
+        ) {
+            forkHeight++;
+        }
+        if (forkHeight == oldHeight) return;
+
         emit ChainReorg(
             BTCUtils.hash256View(BTCUtils.sliceHeaders(headers, count - 1)),
             newHeight,
-            ancestorHeight,
+            forkHeight,
             chainTipHash,
             oldHeight
         );
@@ -408,7 +421,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 2;
+        return 3;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {
