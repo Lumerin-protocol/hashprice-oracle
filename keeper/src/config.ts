@@ -77,7 +77,7 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     // in ETHEREUM_RPC_URL.
     chainlinkBtcUsdAddress: env.CHAINLINK_BTC_USD_ADDRESS as `0x${string}` | undefined,
     chainlinkRpcUrl: chainlinkAlchemyKey ? alchemyRpcUrl("base-mainnet", chainlinkAlchemyKey) : undefined,
-    confirmations: Number(env.KEEPER_CONFIRMATIONS) ?? 4,
+    confirmations: Number(env.KEEPER_CONFIRMATIONS ?? "4"),
   };
 }
 

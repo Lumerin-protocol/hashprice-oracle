@@ -2,6 +2,17 @@
 
 This subgraph indexes the Futures contract and HashrateOracle contract to track positions, orders, and hashrate data.
 
+## Hashprice chart reorg limitation
+
+`HashpriceBtc` is append-only. After a Bitcoin reorg, corrected values are added alongside
+the values originally published for the displaced chain. The native `hashpriceBtcCandles`
+aggregation counts both, so its sum/count average is publication history rather than a strictly
+canonical Bitcoin-chain average. Catch-up batches also place multiple updates at the same EVM
+timestamp, giving those transactions proportionally more weight in a candle.
+
+A future canonical chart implementation should deduplicate raw `hashpriceBtcs` by
+`confirmedHeight` before constructing candles. This is intentionally not implemented yet.
+
 ## Entities
 
 ### Futures Contract Entities

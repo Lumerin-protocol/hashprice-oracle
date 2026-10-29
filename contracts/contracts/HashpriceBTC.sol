@@ -16,21 +16,35 @@ import { BTCUtils } from "./libraries/BTCUtils.sol";
 contract HashpriceBTC is AggregatorV3Interface {
     // ─── Constants ────────────────────────────────────────────────────
 
-    /// @dev How many recent block headers we keep
-    ///      in storage to handle reorgs.
-    uint32 private constant BLOCK_BUFFER_SIZE = 32;
+    /// @dev How many recent block headers we keep in storage to handle reorgs. Also the
+    ///      deepest reorg the chain can recover from: past this the buffer holds nothing on
+    ///      the canonical chain, so no ancestor can be found and the oracle is stuck for good.
+    ///      Public so the keeper and indexer read it instead of hardcoding a copy.
+    ///      MUST be a power of two — `_blockAt` derives the ring slot with a bitwise AND.
+    uint32 public constant BLOCK_BUFFER_SIZE = 64;
+
+    /// @dev Ring slot mask. Valid only while BLOCK_BUFFER_SIZE is a power of two.
+    uint32 private constant BLOCK_BUFFER_MASK = BLOCK_BUFFER_SIZE - 1;
 
     /// @dev Number of blocks in the fee SMA,
     ///      matches Luxor index window.
-    uint32 private constant FEE_WINDOW = 144;
+    uint32 public constant FEE_WINDOW = 144;
 
-    /// @dev Blocks behind tip reported by `latestRoundData`.
-    ///      Depth=1 protects against the rare natural 1-block orphan without
-    ///      adding meaningful lag. Mid-epoch shallow reorgs do not change nBits;
-    ///      a heavier fork that re-crosses a retarget boundary can, but fees are
-    ///      smoothed over a 144-block SMA so even a 2-block reorg moves the
-    ///      reported hashprice by at most ~1.4%.
-    uint32 public constant CONFIRMATION_DEPTH = 1;
+    /// @dev A block's fee enters the window capped at this multiple of the window's current
+    ///      average. The oracle cannot see a block's other transactions, so it cannot tell a real
+    ///      fee from a consensus-invalid coinbase or a recycled self-paid one; the cap bounds what
+    ///      either can add. Luxor's index instead relies on its full node and trims p5/p95.
+    uint256 public constant FEE_CAP_MULTIPLIER = 4;
+
+    /// @dev Floor of that cap in satoshis (0.1 BTC), so an empty or near-zero window does not pin
+    ///      every later fee to zero.
+    uint256 public constant MIN_FEE_CAP = 10_000_000;
+
+    /// @dev Blocks behind tip reported by `latestRoundData`. Zero, like Luxor's index: subsidy depends
+    ///      only on height, and blocks competing for a height share their parent's required nBits,
+    ///      so a natural orphan cannot change either; a confirmation would only report the previous
+    ///      difficulty for one block after each retarget.
+    uint32 public constant CONFIRMATION_DEPTH = 0;
 
     /// @dev Hashes in 1 PH/s over one day
     uint256 private constant HASHES_PER_1PHS_PER_DAY = 1e15 * 24 * 3600;
@@ -43,6 +57,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 timestamp;
         uint32 nBits;
         uint32 height;
+        /// @dev Fee that left the 144-block window when this block was appended. A reorg uses
+        ///      it to advance the restored ancestor window along the replacement fork.
+        uint64 evictedFee;
+        /// @dev Running fee sum immediately after this block. The maximum is
+        ///      FEE_WINDOW * type(uint64).max < 2^72, so uint96 is ample.
+        uint96 feeRunningSum;
     }
 
     /// @dev Exactly 8×uint32 = 32 bytes (one storage slot). Do not add fields without
@@ -59,7 +79,8 @@ contract HashpriceBTC is AggregatorV3Interface {
         ///      reorg forks below `epochStartHeight`. Until the first on-chain retarget these
         ///      equal the constructor's current-epoch values — safe because the ring buffer
         ///      never holds heights below the checkpoint, so restore cannot fire earlier.
-        ///      One prior snapshot is enough: BLOCK_BUFFER_SIZE (32) is far below RETARGET_INTERVAL.
+        ///      One prior snapshot is enough: BLOCK_BUFFER_SIZE is far below RETARGET_INTERVAL,
+        ///      so a fork can rewind across at most one retarget boundary.
         uint32 prevEpochStartTimestamp;
         uint32 prevEpochStartNBits;
     }
@@ -113,26 +134,48 @@ contract HashpriceBTC is AggregatorV3Interface {
     // ─── Events ───────────────────────────────────────────────────────
 
     /// @notice Emitted for each Bitcoin block header successfully validated and written to the ring buffer.
-    /// @dev Fires once per header inside `_processHeader`, so a batch of N headers produces N events.
-    ///      Useful for off-chain indexers that need per-block fee data; `HashpriceUpdated` only
-    ///      exposes the 144-block SMA and does not carry individual block fees.
-    /// @param blockHash dSHA-256 of the 80-byte header in internal byte order
-    /// @param height    Bitcoin block height
-    /// @param fees      Total coinbase output value minus block subsidy, in satoshis
-    event BlockSubmitted(bytes32 indexed blockHash, uint32 indexed height, uint64 fees);
+    /// @dev Fires once per header inside `_processHeader`, so a batch of N headers produces N events
+    ///      in ascending height order. Carries every per-block field an indexer needs, so the
+    ///      mapping never has to read the ring buffer back through `getBlockFromTip` — which would
+    ///      cap it at BLOCK_BUFFER_SIZE blocks behind the tip and tie it to an archive node.
+    /// @param blockHash     dSHA-256 of the 80-byte header in internal byte order
+    /// @param height        Bitcoin block height
+    /// @param coinbaseValue Total coinbase output value in satoshis. Fees are
+    ///        `coinbaseValue - getBlockSubsidy(height)` saturated at zero; the total is emitted
+    ///        rather than the difference so a block that burns part of its subsidy — where the
+    ///        fee figure saturates and loses information — stays fully readable off-chain.
+    /// @param timestamp     Header nTime, for median time past and elapsed-time estimates
+    /// @param nBits         Compact difficulty target, for difficulty and per-block work
+    event BlockSubmitted(
+        bytes32 indexed blockHash, uint32 indexed height, uint64 coinbaseValue, uint32 timestamp, uint32 nBits
+    );
 
     /// @notice Emitted whenever an incoming fork replaces one or more blocks on the canonical chain.
-    /// @dev Fires in two cases:
-    ///      1. Longer fork: the fork diverges below the current tip (`ancestorHeight < chainHeight`)
-    ///         and ends higher — replaced blocks are implicitly discarded from the ring buffer.
-    ///      2. Same-height fork: the fork ends at the same height but carries strictly greater
-    ///         cumulative proof-of-work.
-    ///      A plain chain extension (`ancestorHeight == chainHeight`) never emits this event.
-    /// @param newTip    Block hash of the incoming chain's tip
-    /// @param newHeight Bitcoin height of the new tip
-    event ChainReorg(bytes32 indexed newTip, uint32 indexed newHeight);
+    /// @dev Fires whenever the incoming headers diverge below the current tip, whether the fork
+    ///      ends higher or at the same height with strictly greater cumulative work. Headers that
+    ///      resubmit canonical blocks unchanged are not a fork: a batch that only replays them and
+    ///      then extends the tip, like a plain extension, never emits this event.
+    ///
+    ///      Emitted BEFORE any `BlockSubmitted` of the incoming chain. That ordering is load
+    ///      bearing: it lets an indexer snapshot the blocks it is about to lose while its rows
+    ///      for them are still intact. Emitted after the loop it would name blocks whose data
+    ///      the indexer had already overwritten.
+    /// @param newTip         Block hash of the incoming chain's tip
+    /// @param newHeight      Bitcoin height of the new tip
+    /// @param ancestorHeight Height of the last block both chains share — the fork point, which is
+    ///                       above the submitted `ancestorHeight` when the batch replays canonical blocks
+    /// @param oldTip         Block hash of the tip being replaced
+    /// @param oldHeight      Bitcoin height of the tip being replaced; depth is `oldHeight - ancestorHeight`
+    event ChainReorg(
+        bytes32 indexed newTip, uint32 indexed newHeight, uint32 ancestorHeight, bytes32 oldTip, uint32 oldHeight
+    );
 
-    /// @notice Emitted whenever the confirmed hashprice is recomputed (once per block submission).
+    /// @notice Emitted whenever the confirmed hashprice is recomputed — once per accepted block.
+    /// @dev A batch of N headers emits N of these, interleaved with `BlockSubmitted`, so its log
+    ///      stream matches N sequential `submitBlock` calls. Reorg batches restore the ancestor's
+    ///      fee-window snapshot before processing, so every replacement also emits a canonical
+    ///      correction. Every event in a batch shares the transaction's `block.timestamp`, and
+    ///      therefore the same `updatedAt`.
     /// @param confirmedHeight Bitcoin block height the hashprice is derived from
     /// @param hashprice       Price of 1 PH/s per day in satoshis (8 decimals = BTC)
     /// @param avgFees         144-block SMA of transaction fees in satoshis
@@ -166,7 +209,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint32 _epochStartNBits
     ) {
         BTCUtils.requireSha256Precompile();
-        _setBlockAt(height, blockHash, timestamp, nBits);
+        _setBlockAt(height, blockHash, timestamp, nBits, 0);
         chainTipHash = blockHash;
         uint32 epochStartHeight = height - (height % uint32(BTCUtils.RETARGET_INTERVAL));
         state = PackedState({
@@ -186,8 +229,14 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      the last confirmed block that matches chain.
     /// @param index Offset from the tip (0 = tip, 1 = tip-1, etc.)
     function getBlockFromTip(uint8 index) external view returns (BlockEntry memory) {
-        if (index >= state.chainHeight) revert InsufficientData();
-        return _blockAt(state.chainHeight - index);
+        uint32 chainHeight = state.chainHeight;
+        if (index >= BLOCK_BUFFER_SIZE || index >= chainHeight) revert InsufficientData();
+        uint32 height = chainHeight - index;
+        BlockEntry storage entry = _blockAt(height);
+        // The index bound above is necessary but not sufficient: a slot within range can still
+        // hold a stale entry if that height was never written. Fail loudly rather than return it.
+        if (entry.height != height) revert AncestorNotInBuffer();
+        return entry;
     }
 
     // ─── Block submission ─────────────────────────────────────────────
@@ -204,18 +253,21 @@ contract HashpriceBTC is AggregatorV3Interface {
             blockHash: chainTipHash,
             timestamp: 0,
             nBits: _blockAt(s.chainHeight).nBits,
-            height: s.chainHeight
+            height: s.chainHeight,
+            evictedFee: 0,
+            feeRunningSum: 0
         });
 
-        _processHeader(header, coinbaseTx, merkleProof, tip, s);
-        chainTipHash = tip.blockHash;
-
-        s.chainHeight = tip.height;
-        s.blockCount++;
         s.lastSubmittedAt = uint32(block.timestamp);
+        _processHeader(header, coinbaseTx, merkleProof, tip, s, false);
+        s.blockCount++;
+        s.chainHeight = tip.height;
+
+        chainTipHash = tip.blockHash;
         state = s;
 
-        _updateLatestRoundData(s);
+        CachedRoundData memory round = _computeAndEmitHashprice(s);
+        if (round.roundId != 0) latestRoundDataCache = round;
     }
 
     /// @notice Submit multiple blocks from an ancestor. Used for bootstrap and reorgs.
@@ -234,60 +286,109 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (coinbaseTxs.length != count || merkleProofs.length != count) {
             revert ArrayLengthMismatch();
         }
-        BlockEntry storage ancestor = _blockAt(ancestorHeight);
-        if (ancestor.height != ancestorHeight) revert AncestorNotInBuffer();
+        BlockEntry memory tip = _blockAt(ancestorHeight);
+        if (tip.height != ancestorHeight) revert AncestorNotInBuffer();
 
         PackedState memory s = state;
-        BlockEntry memory tip = ancestor;
+        uint32 oldHeight = s.chainHeight;
+
+        // Headers up to the fork point repeat canonical blocks unchanged; start after them, so
+        // they are neither re-verified nor re-announced.
+        uint32 forkHeight = _authorizeFork(headers, ancestorHeight, count, oldHeight);
+        if (forkHeight != ancestorHeight) tip = _blockAt(forkHeight);
+
+        if (forkHeight < oldHeight) {
+            // Restore the exact canonical fee window at the fork point. blockCount tracks the
+            // number of post-checkpoint canonical blocks, so rewinding it by the displaced depth
+            // makes every replacement advance the denominator exactly like a normal append.
+            feeRunningSum = uint256(tip.feeRunningSum);
+            s.blockCount -= oldHeight - forkHeight;
+        }
 
         // A reorg that forks below the last retarget must re-verify that retarget against
         // the previous epoch's start clock, not the tip's already-updated values.
         // epochStartHeight is always ≥ RETARGET_INTERVAL once a retarget has occurred (or 0
         // from the constructor, in which case this branch is unreachable).
-        if (ancestorHeight < s.epochStartHeight) {
+        if (forkHeight < s.epochStartHeight) {
             s.epochStartTimestamp = s.prevEpochStartTimestamp;
             s.epochStartNBits = s.prevEpochStartNBits;
             s.epochStartHeight -= uint32(BTCUtils.RETARGET_INTERVAL);
         }
 
-        // Snapshot cumulative work of both chains BEFORE the processing loop.
-        // _processHeader calls _setBlockAt which overwrites the ring buffer slot for each
-        // height. Reading _blockAt(ancestorHeight + 1 + i) after the loop returns the new
-        // fork's own nBits, making oldWork == newWork and the heavier-chain check always
-        // false (H-1). Snapshotting here captures the existing canonical chain's nBits.
-        (uint256 snapshotOldWork, uint256 snapshotNewWork) =
-            _snapshotForkWork(headers, ancestorHeight, count, s.chainHeight);
+        s.lastSubmittedAt = uint32(block.timestamp);
 
-        for (uint256 i = 0; i < count; i++) {
-            _processHeader(BTCUtils.sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], tip, s);
-        }
-
-        if (tip.height < s.chainHeight) {
-            revert NotHeaviestChain();
-        }
-
-        if (tip.height > s.chainHeight) {
-            // Emit ChainReorg when the fork diverges below the current tip (some canonical
-            // blocks are being replaced). A plain extension (ancestorHeight == chainHeight)
-            // is not a reorg and does not emit the event.
-            if (ancestorHeight < s.chainHeight) {
-                emit ChainReorg(tip.blockHash, tip.height);
-            }
+        // Advance blockCount and hashprice per header. Only the cache write is hoisted out —
+        // intermediate rounds are emitted, not stored.
+        CachedRoundData memory round;
+        for (uint256 i = forkHeight - ancestorHeight; i < count; i++) {
+            bool replacing = tip.height < oldHeight;
+            _processHeader(BTCUtils.sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], tip, s, replacing);
+            s.blockCount++;
             s.chainHeight = tip.height;
-            s.blockCount += uint32(count);
-        } else if (snapshotNewWork > snapshotOldWork) {
-            emit ChainReorg(tip.blockHash, tip.height);
-        } else {
-            revert NotHeaviestChain();
+
+            CachedRoundData memory c = _computeAndEmitHashprice(s);
+            if (c.roundId != 0) round = c;
         }
 
         chainTipHash = tip.blockHash;
-        s.lastSubmittedAt = uint32(block.timestamp);
         state = s;
 
-        if (s.chainHeight >= CONFIRMATION_DEPTH) {
-            _updateLatestRoundData(s);
+        if (round.roundId != 0) latestRoundDataCache = round;
+    }
+
+    /// @dev Decide whether an incoming chain may replace the canonical one, and announce it.
+    ///      Runs BEFORE any header is validated: every input is known up front — the final
+    ///      height is `ancestorHeight + count`, and fork work comes from the headers' own nBits
+    ///      — so a fork that cannot win reverts without paying for PoW, retarget and merkle
+    ///      verification of `count` headers.
+    ///
+    ///      A plain extension replaces nothing and returns immediately; a slot only ever holds
+    ///      a height that was accepted onto the chain, so the caller's buffer check guarantees
+    ///      `ancestorHeight <= oldHeight` and the remainder of this function is exactly the
+    ///      reorg path.
+    ///
+    ///      Comparing work rather than length is Bitcoin's actual rule. Length alone is
+    ///      equivalent within an epoch, where nBits is constant, but two forks crossing the same
+    ///      retarget height are each validated against their own time(H-1) and can legitimately
+    ///      carry different targets — so a longer fork can be lighter. Trusting unvalidated
+    ///      calldata nBits here is safe: a header claiming the wrong difficulty is rejected by
+    ///      _validateDifficulty and one that does not meet its claimed target by _validateWork,
+    ///      so any header that survives the loop earned the weight counted for it. If the loop
+    ///      does revert, the ChainReorg log is discarded with it.
+    /// @return forkHeight The last height the incoming headers share with the canonical chain:
+    ///         `ancestorHeight`, or above it when the batch starts by repeating canonical blocks.
+    function _authorizeFork(bytes calldata headers, uint32 ancestorHeight, uint256 count, uint32 oldHeight)
+        internal
+        returns (uint32 forkHeight)
+    {
+        if (ancestorHeight == oldHeight) return ancestorHeight;
+
+        uint32 newHeight = ancestorHeight + uint32(count);
+        if (newHeight < oldHeight) revert NotHeaviestChain();
+
+        // Must read the ring buffer before _processHeader overwrites it: reading afterwards
+        // returns the incoming fork's own nBits and makes oldWork == newWork (the H-1 regression).
+        (uint256 oldWork, uint256 newWork) = _snapshotForkWork(headers, ancestorHeight, count, oldHeight);
+        if (newWork <= oldWork) revert NotHeaviestChain();
+
+        // Replayed canonical headers replace nothing; the fork starts at the first one that differs.
+        forkHeight = ancestorHeight;
+        while (
+            forkHeight < oldHeight
+                && _blockAt(forkHeight + 1).blockHash
+                    == BTCUtils.hash256View(BTCUtils.sliceHeaders(headers, forkHeight - ancestorHeight))
+        ) {
+            forkHeight++;
         }
+        if (forkHeight == oldHeight) return forkHeight;
+
+        emit ChainReorg(
+            BTCUtils.hash256View(BTCUtils.sliceHeaders(headers, count - 1)),
+            newHeight,
+            forkHeight,
+            chainTipHash,
+            oldHeight
+        );
     }
 
     /// @dev Validate and append one header onto `tip`. Mutates `tip` to the accepted block.
@@ -296,7 +397,8 @@ contract HashpriceBTC is AggregatorV3Interface {
         bytes calldata coinbaseTx,
         bytes32[] calldata merkleProof,
         BlockEntry memory tip,
-        PackedState memory s
+        PackedState memory s,
+        bool replacing
     ) internal {
         BTCUtils.HeaderInfo memory incoming = BTCUtils.parseHeader(header);
         _validateChainLinkage(incoming.prevBlockHash, tip.blockHash);
@@ -309,17 +411,22 @@ contract HashpriceBTC is AggregatorV3Interface {
         _validateTimestamp(incoming.timestamp);
         _validateDifficulty(tip, incoming, newHeight, s);
 
-        uint64 fees = _verifyCoinbaseAndExtractFees(newHeight, incoming.merkleRoot, coinbaseTx, merkleProof);
+        (uint64 fees, uint64 coinbaseValue) =
+            _verifyCoinbaseAndExtractFees(newHeight, incoming.merkleRoot, coinbaseTx, merkleProof);
 
-        _updateFees(fees, newHeight);
-        _setBlockAt(newHeight, blockHash, incoming.timestamp, incoming.nBits);
+        uint256 cap = FEE_CAP_MULTIPLIER * _averageFees(s);
+        if (cap < MIN_FEE_CAP) cap = MIN_FEE_CAP;
+        if (fees > cap) fees = uint64(cap);
+
+        uint64 evictedFee = _updateFees(fees, newHeight, s.blockCount, replacing);
+        _setBlockAt(newHeight, blockHash, incoming.timestamp, incoming.nBits, evictedFee);
 
         tip.blockHash = blockHash;
         tip.nBits = incoming.nBits;
         tip.height = newHeight;
         tip.timestamp = incoming.timestamp;
 
-        emit BlockSubmitted(blockHash, newHeight, fees);
+        emit BlockSubmitted(blockHash, newHeight, coinbaseValue, incoming.timestamp, incoming.nBits);
     }
 
     // ─── AggregatorV3Interface ────────────────────────────────────────
@@ -333,7 +440,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 1;
+        return 6;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {
@@ -368,7 +475,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     function avgFees() external view returns (uint256) {
         PackedState memory s = state;
         if (s.blockCount == 0) revert InsufficientData();
-        return s.blockCount >= FEE_WINDOW ? feeRunningSum / FEE_WINDOW : feeRunningSum / s.blockCount;
+        return _averageFees(s);
     }
 
     /// @notice Returns the network difficulty at the current confirmed block
@@ -386,33 +493,33 @@ contract HashpriceBTC is AggregatorV3Interface {
 
     // ─── Internal helpers ─────────────────────────────────────────────
 
-    /// @dev Recompute the hashprice for `confirmed` and write the result to `latestRoundDataCache`.
-    ///      Skips silently if the confirmed block is not yet in the ring buffer.
-    ///      Must be called after state, _blocks, and feeRunningSum have been written to storage.
-    function _updateLatestRoundData(PackedState memory s) internal {
-        if (s.chainHeight < CONFIRMATION_DEPTH) return;
+    /// @dev Recompute the hashprice for the height confirmed by `s`, emit `HashpriceUpdated`,
+    ///      and return the round data WITHOUT writing it. Callers persist the last round once,
+    ///      so a batch pays a single cache SSTORE while still emitting one event per block.
+    ///      Must be called after _blocks and feeRunningSum have been written to storage, and
+    ///      after `s.chainHeight`, `s.blockCount` and `s.lastSubmittedAt` reflect this block.
+    /// @return c Round data, or a zeroed struct when there is nothing to report. `roundId == 0`
+    ///         is the same "no data" sentinel `latestRoundData` already uses; a real Bitcoin
+    ///         height is never zero.
+    function _computeAndEmitHashprice(PackedState memory s) internal virtual returns (CachedRoundData memory c) {
+        if (s.chainHeight < CONFIRMATION_DEPTH) return c;
 
         uint32 confirmed = s.chainHeight - CONFIRMATION_DEPTH;
         BlockEntry storage entry = _blockAt(confirmed);
-        if (entry.height != confirmed) return;
+        if (entry.height != confirmed) return c;
+
+        uint256 diff = BTCUtils.nBitsToDifficulty(entry.nBits);
+        if (diff == 0) return c;
 
         uint64 sub = BTCUtils.getBlockSubsidy(confirmed);
 
-        uint256 fees;
-        if (s.blockCount >= FEE_WINDOW) {
-            fees = feeRunningSum / FEE_WINDOW;
-        } else if (s.blockCount > 0) {
-            fees = feeRunningSum / s.blockCount;
-        }
-
-        uint256 diff = BTCUtils.nBitsToDifficulty(entry.nBits);
-        if (diff == 0) return;
+        uint256 fees = _averageFees(s);
 
         uint256 rewardPerBlock = uint256(sub) + fees;
         uint256 hashpriceSats =
             (HASHES_PER_1PHS_PER_DAY * rewardPerBlock * (10 ** (DECIMALS - 8))) / (diff * (1 << 32));
 
-        latestRoundDataCache = CachedRoundData({
+        c = CachedRoundData({
             roundId: uint80(confirmed),
             startedAt: entry.timestamp,
             updatedAt: s.lastSubmittedAt,
@@ -422,37 +529,61 @@ contract HashpriceBTC is AggregatorV3Interface {
         emit HashpriceUpdated(confirmed, int256(hashpriceSats), fees);
     }
 
-    /// @dev Read a block entry by height. The ring buffer holds BLOCK_BUFFER_SIZE (32) entries;
-    ///      the slot for a given height is `height % 32`, derived cheaply via bitwise AND since
-    ///      the buffer size is a power of two. Callers must check `entry.height == height` before
-    ///      trusting the result — a slot may contain a stale entry from 32 blocks ago.
+    /// @dev Read a block entry by height. The slot for a given height is
+    ///      `height % BLOCK_BUFFER_SIZE`, derived cheaply via bitwise AND since the buffer size
+    ///      is a power of two. Callers must check `entry.height == height` before trusting the
+    ///      result — a slot may contain a stale entry from BLOCK_BUFFER_SIZE blocks ago.
     function _blockAt(uint32 height) internal view returns (BlockEntry storage) {
-        return _blocks[height & 31];
+        return _blocks[height & BLOCK_BUFFER_MASK];
     }
 
     /// @dev Write a block entry at the slot for `height`, evicting whatever was there before.
-    ///      Because the buffer wraps every 32 blocks, entries older than BLOCK_BUFFER_SIZE blocks
-    ///      are silently overwritten — this is intentional and bounds storage to a fixed 32 slots.
-    function _setBlockAt(uint32 height, bytes32 blockHash, uint32 timestamp, uint32 nBits) internal {
-        _blocks[height & 31] = BlockEntry({ blockHash: blockHash, timestamp: timestamp, nBits: nBits, height: height });
+    ///      Because the buffer wraps, entries older than BLOCK_BUFFER_SIZE blocks are silently
+    ///      overwritten — intentional, and what bounds storage to a fixed number of slots.
+    function _setBlockAt(uint32 height, bytes32 blockHash, uint32 timestamp, uint32 nBits, uint64 evictedFee)
+        internal
+    {
+        _blocks[height & BLOCK_BUFFER_MASK] = BlockEntry({
+            blockHash: blockHash,
+            timestamp: timestamp,
+            nBits: nBits,
+            height: height,
+            evictedFee: evictedFee,
+            feeRunningSum: uint96(feeRunningSum)
+        });
     }
 
-    function _updateFees(uint64 fees, uint32 height) internal {
+    /// @dev Append one fee to the restored/current canonical window and return the fee evicted
+    ///      from its 144-block tail. For a replacement, the fee ring's destination still holds
+    ///      the losing fork's fee, so the displaced block's snapshot supplies the true outgoing
+    ///      canonical fee instead.
+    function _updateFees(uint64 fees, uint32 height, uint32 blockCount, bool replacing)
+        internal
+        returns (uint64 evictedFee)
+    {
         uint256 idx = height % FEE_WINDOW;
-        uint64 oldFee = _fees[idx];
+        if (blockCount >= FEE_WINDOW) {
+            evictedFee = replacing ? _blockAt(height).evictedFee : _fees[idx];
+        }
         _fees[idx] = fees;
-        // Uninitialized slots contain 0, so this is a no-op on first write.
-        // Always subtracting eliminates the blockCount >= FEE_WINDOW guard that
-        // caused reorgs to inflate feeRunningSum when the window wasn't yet full.
-        feeRunningSum = feeRunningSum + uint256(fees) - uint256(oldFee);
+        feeRunningSum = feeRunningSum + uint256(fees) - uint256(evictedFee);
     }
 
+    function _averageFees(PackedState memory s) internal view returns (uint256) {
+        if (s.blockCount >= FEE_WINDOW) return feeRunningSum / FEE_WINDOW;
+        if (s.blockCount > 0) return feeRunningSum / s.blockCount;
+        return 0;
+    }
+
+    /// @return fees Coinbase total minus subsidy, saturated at zero — what feeds the SMA.
+    /// @return coinbaseValue The unsaturated total, which `BlockSubmitted` carries so the
+    ///         subsidy-burn case stays recoverable off-chain.
     function _verifyCoinbaseAndExtractFees(
         uint32 height,
         bytes32 expectedRoot,
         bytes calldata coinbaseTx,
         bytes32[] calldata merkleProof
-    ) internal view returns (uint64) {
+    ) internal view returns (uint64 fees, uint64 coinbaseValue) {
         bytes32 current = BTCUtils.hash256View(coinbaseTx);
 
         // Coinbase is always at index 0, so it is the left node at every level of the tree.
@@ -461,11 +592,11 @@ contract HashpriceBTC is AggregatorV3Interface {
         }
         if (current != expectedRoot) revert InvalidMerkleProof();
 
-        uint64 totalOutput = BTCUtils.parseCoinbaseOutputValue(coinbaseTx);
+        coinbaseValue = BTCUtils.parseCoinbaseOutputValue(coinbaseTx);
         uint64 sub = BTCUtils.getBlockSubsidy(height);
         // Saturating: a miner may burn part of the subsidy (valid per Bitcoin consensus).
         // In that case fees are unknowable from the coinbase alone; treat as 0 rather than reverting.
-        return totalOutput > sub ? totalOutput - sub : 0;
+        fees = coinbaseValue > sub ? coinbaseValue - sub : 0;
     }
 
     /// @dev Compute cumulative work for the incoming headers and the existing canonical chain
@@ -473,6 +604,13 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      Only reads existing nBits for heights within the current canonical chain; slots
     ///      beyond chainHeight are uninitialized (nBits=0) and targetToWork(0)=type(uint256).max,
     ///      which would overflow the accumulator.
+    ///
+    ///      Called only on the reorg path. A plain extension replaces nothing, so `existingCount`
+    ///      would be 0 and the whole `newWork` accumulation discarded — pure waste on the only
+    ///      path the keeper takes in steady state.
+    ///
+    ///      The stored reads are safe: `ancestorHeight` is known to be in the buffer, which
+    ///      bounds `existingCount` to BLOCK_BUFFER_SIZE - 1, all of them valid recent slots.
     function _snapshotForkWork(bytes calldata headers, uint32 ancestorHeight, uint256 count, uint32 chainHeight)
         internal
         view

@@ -37,6 +37,7 @@ dataSources:
         - HashpriceMeta
         - LatestRates
         - BtcBlock
+        - ChainReorgEvent
         - NetworkHashrate1d
         - NetworkHashrate7d
       abis:
@@ -53,10 +54,14 @@ dataSources:
           filter:
             kind: once
       eventHandlers:
-        # Emitted once per validated header, before HashpriceUpdated in the same tx, so
+        # Emitted once per reorg, ahead of every BlockSubmitted of the winning fork.
+        - handler: handleChainReorg
+          event: "ChainReorg(indexed bytes32,indexed uint32,uint32,bytes32,uint32)"
+        # Emitted once per validated header, before that block's HashpriceUpdated, so
         # BtcBlock rows are always in place by the time the hashprice handler reads them.
+        # A batched submission interleaves the two, one pair per block.
         - handler: handleBlockSubmitted
-          event: "BlockSubmitted(indexed bytes32,indexed uint32,uint64)"
+          event: "BlockSubmitted(indexed bytes32,indexed uint32,uint64,uint32,uint32)"
         - handler: handleHashpriceUpdated
           event: "HashpriceUpdated(indexed uint32,int256,uint256)"
           calls:

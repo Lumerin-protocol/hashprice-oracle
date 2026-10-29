@@ -4,7 +4,7 @@ How the oracle ensures every submitted Bitcoin block is authentic, and what chec
 
 ## Confirmation depth
 
-`latestRoundData()` does not report the tip block — it reports the block at `chainHeight - CONFIRMATION_DEPTH` (currently 6). This means hashprice is always derived from a block with at least 6 confirmations, reducing exposure to shallow reorgs affecting the reported value.
+`latestRoundData()` reports the block at `chainHeight - CONFIRMATION_DEPTH`, which is 0: the tip, as in Luxor's index. Waiting for confirmations would not protect the value. Subsidy depends only on height, and blocks competing for the same height share their parent's required difficulty, so a natural one-block orphan changes neither; only the fee average can differ, by one capped block out of 144. A reorg recomputes the price for every replaced height.
 
 ## Validation layers
 
@@ -82,6 +82,8 @@ The oracle does not validate any transactions beyond the coinbase.
 **Excluded because:**
 
 - The oracle's purpose is to extract fee and difficulty data for hashprice computation. It has no use for non-coinbase transaction data.
+
+**Consequence:** a block with valid proof-of-work but a coinbase that overpays (consensus-invalid, rejected by Bitcoin nodes) is accepted, and so is a fee a miner pays to itself. The oracle cannot tell either from a real fee, so each block's fee enters the 144-block average capped at `FEE_CAP_MULTIPLIER` × the current average (floor `MIN_FEE_CAP`). See "Differences from the Luxor hashprice index" in the README.
 
 ### 10. Block size / weight limits — N/A — EXCLUDED
 
