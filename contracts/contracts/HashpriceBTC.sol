@@ -291,23 +291,25 @@ contract HashpriceBTC is AggregatorV3Interface {
 
         PackedState memory s = state;
         uint32 oldHeight = s.chainHeight;
-        bool isReorg = ancestorHeight < oldHeight;
 
-        _authorizeFork(headers, ancestorHeight, count, oldHeight);
+        // Headers up to the fork point repeat canonical blocks unchanged; start after them, so
+        // they are neither re-verified nor re-announced.
+        uint32 forkHeight = _authorizeFork(headers, ancestorHeight, count, oldHeight);
+        if (forkHeight != ancestorHeight) tip = _blockAt(forkHeight);
 
-        if (isReorg) {
+        if (forkHeight < oldHeight) {
             // Restore the exact canonical fee window at the fork point. blockCount tracks the
             // number of post-checkpoint canonical blocks, so rewinding it by the displaced depth
             // makes every replacement advance the denominator exactly like a normal append.
             feeRunningSum = uint256(tip.feeRunningSum);
-            s.blockCount -= oldHeight - ancestorHeight;
+            s.blockCount -= oldHeight - forkHeight;
         }
 
         // A reorg that forks below the last retarget must re-verify that retarget against
         // the previous epoch's start clock, not the tip's already-updated values.
         // epochStartHeight is always ≥ RETARGET_INTERVAL once a retarget has occurred (or 0
         // from the constructor, in which case this branch is unreachable).
-        if (ancestorHeight < s.epochStartHeight) {
+        if (forkHeight < s.epochStartHeight) {
             s.epochStartTimestamp = s.prevEpochStartTimestamp;
             s.epochStartNBits = s.prevEpochStartNBits;
             s.epochStartHeight -= uint32(BTCUtils.RETARGET_INTERVAL);
@@ -318,7 +320,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         // Advance blockCount and hashprice per header. Only the cache write is hoisted out —
         // intermediate rounds are emitted, not stored.
         CachedRoundData memory round;
-        for (uint256 i = 0; i < count; i++) {
+        for (uint256 i = forkHeight - ancestorHeight; i < count; i++) {
             bool replacing = tip.height < oldHeight;
             _processHeader(BTCUtils.sliceHeaders(headers, i), coinbaseTxs[i], merkleProofs[i], tip, s, replacing);
             s.blockCount++;
@@ -353,8 +355,13 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      _validateDifficulty and one that does not meet its claimed target by _validateWork,
     ///      so any header that survives the loop earned the weight counted for it. If the loop
     ///      does revert, the ChainReorg log is discarded with it.
-    function _authorizeFork(bytes calldata headers, uint32 ancestorHeight, uint256 count, uint32 oldHeight) internal {
-        if (ancestorHeight == oldHeight) return;
+    /// @return forkHeight The last height the incoming headers share with the canonical chain:
+    ///         `ancestorHeight`, or above it when the batch starts by repeating canonical blocks.
+    function _authorizeFork(bytes calldata headers, uint32 ancestorHeight, uint256 count, uint32 oldHeight)
+        internal
+        returns (uint32 forkHeight)
+    {
+        if (ancestorHeight == oldHeight) return ancestorHeight;
 
         uint32 newHeight = ancestorHeight + uint32(count);
         if (newHeight < oldHeight) revert NotHeaviestChain();
@@ -365,7 +372,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         if (newWork <= oldWork) revert NotHeaviestChain();
 
         // Replayed canonical headers replace nothing; the fork starts at the first one that differs.
-        uint32 forkHeight = ancestorHeight;
+        forkHeight = ancestorHeight;
         while (
             forkHeight < oldHeight
                 && _blockAt(forkHeight + 1).blockHash
@@ -373,7 +380,7 @@ contract HashpriceBTC is AggregatorV3Interface {
         ) {
             forkHeight++;
         }
-        if (forkHeight == oldHeight) return;
+        if (forkHeight == oldHeight) return forkHeight;
 
         emit ChainReorg(
             BTCUtils.hash256View(BTCUtils.sliceHeaders(headers, count - 1)),
@@ -433,7 +440,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 5;
+        return 6;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {
