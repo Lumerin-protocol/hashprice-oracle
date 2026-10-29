@@ -30,6 +30,16 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      matches Luxor index window.
     uint32 public constant FEE_WINDOW = 144;
 
+    /// @dev A block's fee enters the window capped at this multiple of the window's current
+    ///      average. The oracle cannot see a block's other transactions, so it cannot tell a real
+    ///      fee from a consensus-invalid coinbase or a recycled self-paid one; the cap bounds what
+    ///      either can add. Luxor's index instead relies on its full node and trims p5/p95.
+    uint256 public constant FEE_CAP_MULTIPLIER = 4;
+
+    /// @dev Floor of that cap in satoshis (0.1 BTC), so an empty or near-zero window does not pin
+    ///      every later fee to zero.
+    uint256 public constant MIN_FEE_CAP = 10_000_000;
+
     /// @dev Blocks behind tip reported by `latestRoundData`.
     ///      Depth=1 protects against the rare natural 1-block orphan without
     ///      adding meaningful lag. Mid-epoch shallow reorgs do not change nBits;
@@ -399,6 +409,10 @@ contract HashpriceBTC is AggregatorV3Interface {
         (uint64 fees, uint64 coinbaseValue) =
             _verifyCoinbaseAndExtractFees(newHeight, incoming.merkleRoot, coinbaseTx, merkleProof);
 
+        uint256 cap = FEE_CAP_MULTIPLIER * _averageFees(s);
+        if (cap < MIN_FEE_CAP) cap = MIN_FEE_CAP;
+        if (fees > cap) fees = uint64(cap);
+
         uint64 evictedFee = _updateFees(fees, newHeight, s.blockCount, replacing);
         _setBlockAt(newHeight, blockHash, incoming.timestamp, incoming.nBits, evictedFee);
 
@@ -421,7 +435,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 3;
+        return 4;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {

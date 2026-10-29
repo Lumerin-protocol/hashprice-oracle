@@ -39,7 +39,15 @@ Each submitted block provides:
 - An **80-byte block header**, from which the contract extracts difficulty target, timestamp, and previous block hash, and verifies proof-of-work
 - A **coinbase merkle proof**, which proves the coinbase transaction is the first transaction in that block
 
-From the verified coinbase (block subsidy + fees) and the on-chain difficulty, the contract computes the hashprice — the expected revenue per petahash per day — using a 144-block Simple Moving Average over fees, matching the [Luxor hashprice index](https://luxor.tech/hashprice).
+From the verified coinbase (block subsidy + fees) and the on-chain difficulty, the contract computes the hashprice — the expected revenue per petahash per day — using a 144-block Simple Moving Average over fees, like the [Luxor hashprice index](https://luxor.tech/hashprice). Each block's fee enters that average capped at 4× the current average (see below).
+
+#### Differences from the Luxor hashprice index
+
+Luxor computes its index from a full Bitcoin node and averages the 144-block fees after dropping those at or below the 5th and at or above the 95th percentile. `HashpriceBTC` differs in how it keeps outliers out:
+
+- **Fee cap instead of a trimmed mean.** The contract only sees the header and the coinbase, so it cannot tell a real fee from a consensus-invalid coinbase (one Bitcoin nodes reject, which Luxor never sees) or a fee a miner pays to itself. Each block's fee therefore counts at most `FEE_CAP_MULTIPLIER` (4) × the window's current average, with a floor of `MIN_FEE_CAP` (0.1 BTC). This keeps the average a constant-cost running sum; a trimmed mean would need the window re-sorted on every block.
+- **Effect on the value.** In normal conditions the two agree closely: on April 2026 mainnet blocks the cap clips nothing, while the trim lowers hashprice by about 0.04%. A single 1,000 BTC fake fee moves the capped value by about 0.02%. A sudden, sustained fee surge enters the capped average more slowly: a 20× jump that stays is under-counted by up to about 2.2% of hashprice and catches up within about 200 blocks.
+- **Repeated outliers.** The trim drops only 8 blocks per window, so a miner with more than that many blocks a day counts in full. The cap bounds every block: a miner with 10% of the blocks paying itself 50 BTC in each lifts hashprice by about 0.26%. It can only ratchet the average up without limit with more than a quarter of the blocks.
 
 Key properties:
 

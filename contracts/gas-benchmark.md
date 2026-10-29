@@ -1,14 +1,14 @@
 # Gas Benchmark — HashpriceBTC
 
-_Last updated: 2026-10-28_
+_Last updated: 2026-10-29_
 
 ## `submitBlock` — one-by-one over 155 real mainnet blocks
 
 | Metric | Gas |
 |--------|----:|
-| Average (all 155 blocks) | 130,967 |
-| Average cold (first 144 blocks, writing fee window) | 132,450 |
-| Average warm (last 11 blocks, steady state) | 111,562 |
+| Average (all 155 blocks) | 131,449 |
+| Average cold (first 144 blocks, writing fee window) | 132,935 |
+| Average warm (last 11 blocks, steady state) | 111,999 |
 
 ## `submitBlocks` — same 155 blocks, swept over batch size
 
@@ -18,11 +18,11 @@ amortise the 21,000 intrinsic fee and the single hashprice cache write across mo
 
 | Batch size | Transactions | Total gas | Gas per block |
 |-----------:|-------------:|----------:|--------------:|
-| 1 | 155 | 21,000,294 | 135,486 |
-| 5 | 31 | 13,797,594 | 89,017 |
-| 10 | 16 | 12,943,209 | 83,505 |
-| 25 | 7 | 12,413,578 | 80,088 |
-| 50 | 4 | 12,254,065 | 79,058 |
+| 1 | 155 | 21,082,022 | 136,013 |
+| 5 | 31 | 13,879,322 | 89,544 |
+| 10 | 16 | 13,024,937 | 84,032 |
+| 25 | 7 | 12,495,306 | 80,615 |
+| 50 | 4 | 12,335,793 | 79,586 |
 
 ## `latestRoundData` — read-only call
 

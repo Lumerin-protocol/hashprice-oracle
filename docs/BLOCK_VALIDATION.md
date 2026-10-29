@@ -83,6 +83,8 @@ The oracle does not validate any transactions beyond the coinbase.
 
 - The oracle's purpose is to extract fee and difficulty data for hashprice computation. It has no use for non-coinbase transaction data.
 
+**Consequence:** a block with valid proof-of-work but a coinbase that overpays (consensus-invalid, rejected by Bitcoin nodes) is accepted, and so is a fee a miner pays to itself. The oracle cannot tell either from a real fee, so each block's fee enters the 144-block average capped at `FEE_CAP_MULTIPLIER` × the current average (floor `MIN_FEE_CAP`). See "Differences from the Luxor hashprice index" in the README.
+
 ### 10. Block size / weight limits — N/A — EXCLUDED
 
 Not checked.
