@@ -207,10 +207,9 @@ describe("HashpriceBTC — BlockSubmitted", function () {
     });
 
     assert.equal(events.length, count, "one hashprice per block, not one per batch");
-    // CONFIRMATION_DEPTH is 1, so the first event confirms the checkpoint and each
-    // subsequent one confirms the block accepted on the previous iteration.
+    // CONFIRMATION_DEPTH is 0, so each event prices the block accepted on that iteration.
     for (let i = 0; i < count; i++) {
-      assert.equal(events[i].args.confirmedHeight, config.checkpoint.height + i);
+      assert.equal(events[i].args.confirmedHeight, config.checkpoint.height + 1 + i);
     }
   });
 

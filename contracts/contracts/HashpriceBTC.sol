@@ -40,13 +40,11 @@ contract HashpriceBTC is AggregatorV3Interface {
     ///      every later fee to zero.
     uint256 public constant MIN_FEE_CAP = 10_000_000;
 
-    /// @dev Blocks behind tip reported by `latestRoundData`.
-    ///      Depth=1 protects against the rare natural 1-block orphan without
-    ///      adding meaningful lag. Mid-epoch shallow reorgs do not change nBits;
-    ///      a heavier fork that re-crosses a retarget boundary can, but fees are
-    ///      smoothed over a 144-block SMA so even a 2-block reorg moves the
-    ///      reported hashprice by at most ~1.4%.
-    uint32 public constant CONFIRMATION_DEPTH = 1;
+    /// @dev Blocks behind tip reported by `latestRoundData`. Zero, like Luxor's index: subsidy depends
+    ///      only on height, and blocks competing for a height share their parent's required nBits,
+    ///      so a natural orphan cannot change either; a confirmation would only report the previous
+    ///      difficulty for one block after each retarget.
+    uint32 public constant CONFIRMATION_DEPTH = 0;
 
     /// @dev Hashes in 1 PH/s over one day
     uint256 private constant HASHES_PER_1PHS_PER_DAY = 1e15 * 24 * 3600;
@@ -435,7 +433,7 @@ contract HashpriceBTC is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 4;
+        return 5;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {

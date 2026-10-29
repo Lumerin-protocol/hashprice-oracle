@@ -4,7 +4,7 @@ How the oracle ensures every submitted Bitcoin block is authentic, and what chec
 
 ## Confirmation depth
 
-`latestRoundData()` does not report the tip block — it reports the block at `chainHeight - CONFIRMATION_DEPTH` (currently 6). This means hashprice is always derived from a block with at least 6 confirmations, reducing exposure to shallow reorgs affecting the reported value.
+`latestRoundData()` reports the block at `chainHeight - CONFIRMATION_DEPTH`, which is 0: the tip, as in Luxor's index. Waiting for confirmations would not protect the value. Subsidy depends only on height, and blocks competing for the same height share their parent's required difficulty, so a natural one-block orphan changes neither; only the fee average can differ, by one capped block out of 144. A reorg recomputes the price for every replaced height.
 
 ## Validation layers
 

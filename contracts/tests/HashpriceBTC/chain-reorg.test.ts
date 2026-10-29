@@ -696,7 +696,7 @@ describe("HashpriceBTC — Chain reorg", function () {
         0n,
       );
       return {
-        confirmedHeight: block.height - 1,
+        confirmedHeight: block.height,
         avgFees: sum / BigInt(window.length),
       };
     });

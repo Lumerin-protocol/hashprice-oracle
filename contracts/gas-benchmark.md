@@ -6,9 +6,9 @@ _Last updated: 2026-10-29_
 
 | Metric | Gas |
 |--------|----:|
-| Average (all 155 blocks) | 131,449 |
-| Average cold (first 144 blocks, writing fee window) | 132,935 |
-| Average warm (last 11 blocks, steady state) | 111,999 |
+| Average (all 155 blocks) | 131,408 |
+| Average cold (first 144 blocks, writing fee window) | 132,894 |
+| Average warm (last 11 blocks, steady state) | 111,958 |
 
 ## `submitBlocks` — same 155 blocks, swept over batch size
 
@@ -18,11 +18,11 @@ amortise the 21,000 intrinsic fee and the single hashprice cache write across mo
 
 | Batch size | Transactions | Total gas | Gas per block |
 |-----------:|-------------:|----------:|--------------:|
-| 1 | 155 | 21,082,022 | 136,013 |
-| 5 | 31 | 13,879,322 | 89,544 |
-| 10 | 16 | 13,024,937 | 84,032 |
-| 25 | 7 | 12,495,306 | 80,615 |
-| 50 | 4 | 12,335,793 | 79,586 |
+| 1 | 155 | 21,075,667 | 135,972 |
+| 5 | 31 | 13,872,967 | 89,503 |
+| 10 | 16 | 13,018,582 | 83,991 |
+| 25 | 7 | 12,488,951 | 80,574 |
+| 50 | 4 | 12,329,438 | 79,545 |
 
 ## `latestRoundData` — read-only call
 
