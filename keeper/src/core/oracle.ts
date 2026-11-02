@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { HashpriceBTCAbi } from "../abi/HashpriceBTC.ts";
 import { getChain } from "../config.ts";
 import type { Config } from "../config.ts";
+import { sendWithFeeBump } from "./txSend.ts";
 
 export interface OracleState {
   chainHeight: number;
@@ -135,23 +136,39 @@ export class OracleClient {
   }
 
   async submitBlock(block: PreparedBlock): Promise<TransactionReceipt> {
+    const args = [block.header, block.coinbaseTx, block.merkleProof] as const;
     const { request } = await this.pc.simulateContract({
       address: this.address,
       abi: HashpriceBTCAbi,
       functionName: "submitBlock",
-      args: [block.header, block.coinbaseTx, block.merkleProof],
+      args,
       account: this.wc.account,
     });
 
-    const hash = await this.wc.writeContract(request);
-    this.log.info({ txHash: hash }, "submitBlock tx sent");
-
-    const receipt = await this.pc.waitForTransactionReceipt({
-      hash,
-      confirmations: this.confirmations,
-    });
+    const gasLimit = request.gas ?? 500_000n;
+    const receipt = await sendWithFeeBump(
+      {
+        pc: this.pc,
+        wc: this.wc,
+        log: this.log,
+        confirmations: this.confirmations,
+      },
+      ({ nonce, maxFeePerGas, maxPriorityFeePerGas }) =>
+        this.wc.writeContract({
+          address: this.address,
+          abi: HashpriceBTCAbi,
+          functionName: "submitBlock",
+          args,
+          account: this.wc.account,
+          nonce,
+          gas: gasLimit,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+        }),
+      { label: "submitBlock", gasLimit },
+    );
     this.log.info(
-      { txHash: hash, gasUsed: receipt.gasUsed.toString(), status: receipt.status },
+      { txHash: receipt.transactionHash, gasUsed: receipt.gasUsed.toString(), status: receipt.status },
       "submitBlock tx confirmed",
     );
     return receipt;
@@ -168,18 +185,47 @@ export class OracleClient {
       merkleProofs.push(b.merkleProof);
     }
 
+    const args = [ancestorHeight, prefixed0x(headers), coinbaseTxs, merkleProofs] as const;
     const { request } = await this.pc.simulateContract({
       address: this.address,
       abi: HashpriceBTCAbi,
       functionName: "submitBlocks",
-      args: [ancestorHeight, prefixed0x(headers), coinbaseTxs, merkleProofs],
+      args,
       account: this.wc.account,
     });
 
-    const hash = await this.wc.writeContract(request);
-    this.log.debug({ txHash: hash, blockCount: blocks.length }, "submitBlocks tx sent");
-
-    return this.pc.waitForTransactionReceipt({ hash, confirmations: this.confirmations });
+    // Batch submits are the expensive path; give estimate headroom when present.
+    const gasLimit = request.gas ? (request.gas * 120n) / 100n : 1_500_000n;
+    const receipt = await sendWithFeeBump(
+      {
+        pc: this.pc,
+        wc: this.wc,
+        log: this.log,
+        confirmations: this.confirmations,
+      },
+      ({ nonce, maxFeePerGas, maxPriorityFeePerGas }) =>
+        this.wc.writeContract({
+          address: this.address,
+          abi: HashpriceBTCAbi,
+          functionName: "submitBlocks",
+          args,
+          account: this.wc.account,
+          nonce,
+          gas: gasLimit,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+        }),
+      { label: "submitBlocks", gasLimit },
+    );
+    this.log.debug(
+      {
+        txHash: receipt.transactionHash,
+        blockCount: blocks.length,
+        gasUsed: receipt.gasUsed.toString(),
+      },
+      "submitBlocks tx confirmed",
+    );
+    return receipt;
   }
 
   /**
