@@ -1,7 +1,8 @@
 ################################################################################
 # CLOUDWATCH ALARMS
-# Critical Priority -> devops_alerts_sns (cell phone in prod)
-# Warning Priority -> dev_alerts_sns (Slack)
+# Component alarms stay silent. Composites notify via foundation-core topics:
+#   LMN critical → titanio-lmn-hpdx-page (SMS/email)
+#   non-prod / warning path → titanio-{env}-hpdx-alerts (Slack #hpdx-alerts)
 ################################################################################
 
 ################################################################################
