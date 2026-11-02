@@ -98,7 +98,7 @@ graph TD
 
 - **Oracle type**: `AggregatorV3Interface`
 - **Function called**: `latestRoundData()` inside `getMarketPrice()`
-- **Staleness check**: Reverts with `OracleStale()` if `block.timestamp - updatedAt > MAX_ORACLE_STALENESS` (1 hour)
+- **Staleness check**: Reverts with `OracleStale()` if `block.timestamp - updatedAt > MAX_ORACLE_STALENESS` (2 hours)
 - **Oracle address**: Storage variable, set in `initialize()`, changeable via `setOracle(AggregatorV3Interface)` (owner only)
 - **Migration**: `setOracle(newAggregatorAddress)` — single owner transaction
 - **Also reads**: `decimals()` to set `oracleDecimals` on `setOracle()`

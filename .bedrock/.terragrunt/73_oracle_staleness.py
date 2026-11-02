@@ -33,7 +33,7 @@ ETH_RPC_URL = os.environ.get("ETH_RPC_URL", "")
 BITCOIN_RPC_URL = os.environ.get("BITCOIN_RPC_URL", "")
 CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "HashpriceOracle")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
-MAX_AGE_MINUTES = int(os.environ.get("MAX_AGE_MINUTES", "60"))
+MAX_AGE_MINUTES = int(os.environ.get("MAX_AGE_MINUTES", "120"))
 
 cloudwatch = boto3.client("cloudwatch")
 

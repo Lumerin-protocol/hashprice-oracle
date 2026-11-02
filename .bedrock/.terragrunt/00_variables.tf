@@ -199,7 +199,7 @@ variable "alarm_thresholds" {
     graph_sync_lag_threshold       = 200
     graph_error_threshold          = 20
     oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
-    oracle_max_age_minutes         = 60
+    oracle_max_age_minutes         = 120
     oracle_blocks_behind_threshold = 2
   }
 }

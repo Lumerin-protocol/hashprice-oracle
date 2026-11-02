@@ -114,7 +114,7 @@ resource "aws_cloudwatch_composite_alarm" "oracle_price_too_old" {
   count             = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider          = aws.use1
   alarm_name        = "hpo-oracle-warning-${local.env_short}"
-  alarm_description = "The hashprice oracle price is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so both venues and the margin engine reject it (OracleStale) and trading and liquidations stop until its next update. If hpo-oracle-${local.env_short} is OK, Bitcoin is just between blocks (a gap this long happens about twice a month) and this clears with the next block: nothing to fix. If hpo-oracle-${local.env_short} is in ALARM, follow that page."
+  alarm_description = "The hashprice oracle price is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so both venues and the margin engine reject it (OracleStale) and trading and liquidations stop until its next update. If hpo-oracle-${local.env_short} and col-mar-spv-behind-bitcoin-${local.env_short} are OK, Bitcoin is just between blocks (a gap this long comes about once every three years) and this clears with the next block: nothing to fix. If either is in ALARM, follow that page."
 
   alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.oracle_stale[0].alarm_name})"
 
