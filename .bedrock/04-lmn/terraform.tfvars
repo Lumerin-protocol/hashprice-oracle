@@ -100,7 +100,9 @@ alarm_thresholds = {
   rds_connections_threshold      = 150
   graph_sync_lag_threshold       = 50
   graph_error_threshold          = 5
-  oracle_stale_threshold_minutes = 30 # Business rule: how old should oracle data be before it is considered stale
+  oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
+  oracle_max_age_minutes         = 60 # Venues and margin engine reject older prices (MAX_ORACLE_STALENESS); Slack warning
+  oracle_blocks_behind_threshold = 2  # Page when the relay trails the Bitcoin tip by this many blocks
 }
 
 ########################################

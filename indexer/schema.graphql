@@ -62,11 +62,30 @@ type HashpriceBtc @entity(timeseries: true) {
 # replaces that height, which keeps `cumulativeWork` consistent with the canonical chain.
 type BtcBlock @entity(immutable: false) {
   id: Int8! # Bitcoin block height
+  # Header hash in internal (little-endian) byte order, as the contract stores it.
+  # Reverse the bytes to get the form block explorers display.
+  blockHash: Bytes!
   btcTimestamp: BigInt! # raw header timestamp (nTime)
   # Median of the 11 timestamps h-10..h — Bitcoin Core's GetMedianTimePast, the
   # `mediantime` field of `getblock`. Null until 11 consecutive blocks are known.
   medianTime: BigInt
   nBits: BigInt!
+  # Total value of the coinbase transaction's outputs, in satoshis, exactly as the header
+  # claimed it. Kept raw because it is the only unrecoverable figure: `fees` below saturates.
+  coinbaseValue: BigInt!
+  # coinbaseValue - subsidy(height), floored at zero. Zero therefore means either a block
+  # with no fee revenue or a miner that underpaid itself; `coinbaseValue` distinguishes them.
+  fees: BigInt!
+  # Full 256-bit difficulty target expanded from nBits.
+  target: BigInt!
+  # diff1Target / target, truncated to an integer as the contract computes it. At mainnet
+  # difficulty (~1e14) the truncation is immaterial.
+  difficulty: BigInt!
+  # Hashrate implied by this block's difficulty alone, assuming Bitcoin's 600s target
+  # interval: expected work / 600. This is the "difficulty-implied" figure quoted by most
+  # explorers, and is a property of the target rather than a measurement — for hashrate
+  # actually observed over a window, use NetworkHashrate1d / NetworkHashrate7d.
+  impliedHashrateHpS: BigInt!
   # Sum of expected hashes (2^256 / (target + 1)) over every block up to and including
   # this one, counting from `chainBaseHeight`. Derived from the parent row, never from a
   # global running total, so a reorg recomputes it correctly as fork blocks are re-indexed.
@@ -74,6 +93,24 @@ type BtcBlock @entity(immutable: false) {
   # Oldest height reachable from here by an unbroken chain of parent rows. A window of W
   # blocks ending at h is only measurable when h - W >= chainBaseHeight.
   chainBaseHeight: Int8!
+}
+
+# One row per accepted reorg. Purely a record: the canonical BtcBlock rows are already
+# correct without it, because the contract re-emits BlockSubmitted for every block of the
+# winning fork and each row is rewritten in place. This exists so reorg frequency and
+# depth are queryable, and so the displaced tip is recoverable after the fact.
+type ChainReorgEvent @entity(timeseries: true) {
+  id: Int8!
+  timestamp: Timestamp!
+  blockNumber: BigInt!
+  newTip: Bytes! # winning fork's tip hash, internal byte order
+  newHeight: BigInt!
+  ancestorHeight: BigInt! # last height common to both chains; everything above was replaced
+  oldTip: Bytes! # displaced tip hash, internal byte order
+  oldHeight: BigInt!
+  # oldHeight - ancestorHeight: how many blocks the reorg displaced. A same-height reorg
+  # driven by cumulative work rather than length still has depth >= 1.
+  depth: Int8!
 }
 
 # Actual Bitcoin network hashrate, estimated as the expected work of the trailing 144 blocks

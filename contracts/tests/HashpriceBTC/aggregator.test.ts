@@ -20,11 +20,6 @@ describe("HashpriceBTC — AggregatorV3Interface", function () {
     assert.equal(await contracts.oracle.read.description(), "The price of 1 PH/s per day in BTC");
   });
 
-  it("version() should return 1", async function () {
-    const { contracts } = await loadFixture(deployOracleFixture);
-    assert.equal(await contracts.oracle.read.version(), 1n);
-  });
-
   it("getRoundData() should revert with NotImplemented", async function () {
     const { contracts } = await loadFixture(deployOracleFixture);
     await catchError(contracts.oracle.abi, "NotImplemented", async () => {

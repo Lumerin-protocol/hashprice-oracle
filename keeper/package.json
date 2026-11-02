@@ -15,6 +15,7 @@
     "invoke:bundle": "pnpm build:lambda && node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-bundle.ts",
     "build:lambda": "node scripts/build-lambda.ts",
     "fetch-fixtures": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/fetch-fixtures.ts",
+    "test": "node --test 'src/**/*.test.ts'",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {

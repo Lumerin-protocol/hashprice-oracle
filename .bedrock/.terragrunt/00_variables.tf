@@ -179,7 +179,9 @@ variable "alarm_thresholds" {
     rds_connections_threshold      = number
     graph_sync_lag_threshold       = number
     graph_error_threshold          = number
-    oracle_stale_threshold_minutes = number # Max acceptable oracle age (business rule, not tied to check rate)
+    oracle_stale_threshold_minutes = number # Subgraph data age and lag window
+    oracle_max_age_minutes         = number # Oracle price age the venues and margin engine still accept (MAX_ORACLE_STALENESS)
+    oracle_blocks_behind_threshold = number # Bitcoin blocks the relay may trail the tip before paging
   })
   default = {
     ecs_cpu_threshold              = 90
@@ -196,7 +198,9 @@ variable "alarm_thresholds" {
     rds_connections_threshold      = 190
     graph_sync_lag_threshold       = 200
     graph_error_threshold          = 20
-    oracle_stale_threshold_minutes = 30 # Max acceptable oracle data age
+    oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
+    oracle_max_age_minutes         = 60
+    oracle_blocks_behind_threshold = 2
   }
 }
 
