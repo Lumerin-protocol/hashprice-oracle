@@ -76,7 +76,9 @@ resource "aws_lambda_function" "oracle_update" {
   role             = aws_iam_role.lambda_exec[0].arn
   handler          = "index.handler"
   runtime          = "nodejs24.x"
-  timeout          = 60
+  # 120s leaves room for fee-bump self-heal waits (~45s each) without the
+  # runtime killing a healthy confirmation mid-flight. App fee caps are separate.
+  timeout          = 120
   memory_size      = 256 # bumped from default 128MB — observed 111MB peak with batch submissions
   source_code_hash = filebase64sha256("placeholder-lambda.zip")
 
