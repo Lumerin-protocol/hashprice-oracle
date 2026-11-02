@@ -66,20 +66,22 @@ resource "aws_cloudwatch_metric_alarm" "oracle_lambda_errors" {
   })
 }
 
-# Oracle Staleness - Data is Stale
-# Alarms when oracle_data_age_minutes > stale_threshold for unhealthy_alarm_period_minutes
+# Oracle price age. The oracle can only update when Bitcoin produces a block, so a
+# long gap between blocks ages it with nothing broken: this is the warning half
+# (hpo-oracle-warning), set at the age the venues and margin engine stop accepting.
+# A stuck relay pages through oracle_behind_bitcoin instead.
 resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider            = aws.use1
   alarm_name          = "hpo-oracle-stale-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle on-chain data is STALE - exceeds ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes"
+  alarm_description   = "The hashprice oracle's last update is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so the venues and the margin engine reject the price (MAX_ORACLE_STALENESS). Usually Bitcoin taking long between blocks."
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.oracle_alarm_evaluation_periods # unhealthy_alarm_period / check_rate
+  evaluation_periods  = 1
   metric_name         = "oracle_data_age_minutes"
   namespace           = local.monitoring_namespace
   period              = local.oracle_staleness_check_period_seconds # Match Lambda check rate
   statistic           = "Maximum"
-  threshold           = var.alarm_thresholds.oracle_stale_threshold_minutes
+  threshold           = var.alarm_thresholds.oracle_max_age_minutes
   treat_missing_data  = "breaching"
 
   dimensions = {
@@ -91,24 +93,24 @@ resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
 
   tags = merge(var.default_tags, var.foundation_tags, {
     Name     = "HPO Oracle Stale Alarm"
-    Severity = "Critical"
+    Severity = "Warning"
   })
 }
 
-# Header index freshness. latestRoundData.updatedAt only moves when a round
-# is cached; state.lastSubmittedAt moves on every successful header submission.
-resource "aws_cloudwatch_metric_alarm" "oracle_index_stale" {
+# Relay behind Bitcoin: blocks exist that the keeper has not submitted. Missing data
+# (the staleness Lambda could not read the Bitcoin tip or the oracle) counts as behind.
+resource "aws_cloudwatch_metric_alarm" "oracle_behind_bitcoin" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider            = aws.use1
-  alarm_name          = "hpo-oracle-index-stale-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle header index lastSubmittedAt is older than ${var.alarm_thresholds.oracle_stale_threshold_minutes} minutes"
-  comparison_operator = "GreaterThanThreshold"
+  alarm_name          = "hpo-oracle-behind-bitcoin-${local.env_short}"
+  alarm_description   = "The hashprice oracle trails the Bitcoin tip by ${var.alarm_thresholds.oracle_blocks_behind_threshold} or more blocks for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} minutes: the keeper is not submitting blocks that exist, and after ${var.alarm_thresholds.oracle_max_age_minutes} minutes the venues reject the price."
+  comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = local.oracle_alarm_evaluation_periods
-  metric_name         = "oracle_index_age_minutes"
+  metric_name         = "oracle_blocks_behind"
   namespace           = local.monitoring_namespace
   period              = local.oracle_staleness_check_period_seconds
   statistic           = "Maximum"
-  threshold           = var.alarm_thresholds.oracle_stale_threshold_minutes
+  threshold           = var.alarm_thresholds.oracle_blocks_behind_threshold
   treat_missing_data  = "breaching"
 
   dimensions = {
@@ -119,7 +121,7 @@ resource "aws_cloudwatch_metric_alarm" "oracle_index_stale" {
   ok_actions    = local.component_alarm_actions
 
   tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Index Stale Alarm"
+    Name     = "HPO Oracle Behind Bitcoin Alarm"
     Severity = "Critical"
   })
 }
