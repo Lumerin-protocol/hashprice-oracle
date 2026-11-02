@@ -66,8 +66,8 @@ monitoring = {
   create_subgraph_health_monitor = true
   create_oracle_staleness_check  = true
   notifications_enabled          = true                        # ENABLED for production - alerts go to humans
-  dev_alerts_topic_name          = "titanio-lmn-dev-alerts"    # Slack (info/warning)
-  devops_alerts_topic_name       = "titanio-lmn-devops-alerts" # Cell phone (critical)
+  dev_alerts_topic_name          = "titanio-lmn-hpdx-alerts"    # Slack (info/warning)
+  devops_alerts_topic_name       = "titanio-lmn-hpdx-page" # Cell phone (critical)
   dashboard_period               = 300
 }
 

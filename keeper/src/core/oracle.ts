@@ -36,7 +36,8 @@ function prefixed0x(s: string): `0x${string}` {
  * Heuristic match for the family of "RPC node hasn't ingested this block yet"
  * errors thrown by load-balanced public providers (Alchemy/Infura/QuickNode).
  * The exact phrasing varies per provider:
- *   - Alchemy: "Unknown block" / "unknown block"
+ *   - Alchemy: "Unknown block" / "unknown block", and "unsupported block number"
+ *     when the backend serving a pinned eth_call has not ingested that block yet
  *   - Infura:  "header not found"
  *   - geth:    "header for hash not found", "missing trie node"
  *   - generic: "block not found", "requested block ... not found", "block ... does not exist"
@@ -47,7 +48,7 @@ function prefixed0x(s: string): `0x${string}` {
  */
 function isStaleBlockError(err: unknown): boolean {
   const pattern =
-    /unknown block|block not found|header(?: for hash)? not found|missing trie|requested block.*not found|block.*does not exist/i;
+    /unknown block|unsupported block number|block not found|header(?: for hash)? not found|missing trie|requested block.*not found|block.*does not exist/i;
 
   let current: unknown = err;
   for (let i = 0; i < 8 && current; i++) {
