@@ -18,4 +18,8 @@ describe("configFromEnv", () => {
   it("uses KEEPER_CONFIRMATIONS when set", () => {
     assert.equal(configFromEnv({ ...baseEnv, KEEPER_CONFIRMATIONS: "2" }).confirmations, 2);
   });
+
+  it("N14: waits for 4 confirmations when KEEPER_CONFIRMATIONS is empty", () => {
+    assert.equal(configFromEnv({ ...baseEnv, KEEPER_CONFIRMATIONS: "" }).confirmations, 4);
+  });
 });

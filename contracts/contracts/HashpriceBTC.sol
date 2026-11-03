@@ -661,6 +661,12 @@ contract HashpriceBTC is AggregatorV3Interface {
         uint256 newTarget = BTCUtils.nBitsToTarget(incoming.nBits);
         uint256 expectedTarget = BTCUtils.expectedRetargetTarget(oldTarget, epochTimespan);
 
+        // nBits is Bitcoin's lossy compact encoding of the target, so the exact expected
+        // target never equals a decoded nBits; the 0.1% band covers that truncation (at most
+        // about 0.003%). It is deliberately loose: an exact re-encoding that differed from
+        // Bitcoin Core in any edge case would reject the honest retarget block and stop this
+        // non-upgradeable oracle. The slack lets a block up to 0.1% harder than Bitcoin allows
+        // win its height until the honest chain is one block longer (CF-600, accepted).
         uint256 tolerance = expectedTarget / 1000;
         if (tolerance == 0) tolerance = 1;
         if (newTarget < expectedTarget - tolerance || newTarget > expectedTarget + tolerance) {
