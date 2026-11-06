@@ -72,6 +72,29 @@ It accepts any `AggregatorV3Interface`-compatible BTC/USD feed at deploy time (e
 
 Both contracts implement `AggregatorV3Interface`, so they are drop-in compatible with any protocol that reads Chainlink price feeds.
 
+### HashpriceGlideUSD
+
+The index drops about half in the block that halves the subsidy, a step known years ahead.
+`HashpriceGlideUSD` reads `HashpriceUSD` (and `HashpriceBTC` through it) and gives venues prices
+with that scheduled step taken out, leaving the index itself unchanged:
+
+- `postHalvingPrice()`: the index × (subsidy after the next halving + fees) / (subsidy + fees),
+  using the live 144-block fee average. At the halving block the new index equals it up to one
+  block's change in that average.
+- `glidePrice()`: the perps reference. The index until `GLIDE_BLOCKS + GLIDE_END_BLOCKS` blocks
+  (12,960 + 144, about 91 days) before the halving, then linear by block down to
+  `postHalvingPrice()`, reached 144 blocks before it; the index again once the halving block is
+  relayed. The contract's own `latestRoundData()` answers it, with `HashpriceUSD`'s round id and
+  timestamps, so perps reads it as its oracle.
+- `priceRangeAt(expiry)` / `priceRangesAt(expiries)`: the futures prices `(low, high, updatedAt)`.
+  Dates settling before `halvingEta()` − w are at the index, after `halvingEta()` + w at
+  `postHalvingPrice()`, and within the window at both (`low` post-halving, `high` the index);
+  w = max(4 days, 10% of the time to the estimate). Venues value longs at `low`, shorts at `high`.
+
+Only the subsidy schedule is applied; fees, difficulty and BTC/USD move every price in the same
+block. The next halving is recomputed from the oracle height, so later halvings need no redeploy.
+Deploy with `scripts/deploy-hashprice-glide-usd.ts` (`HASHPRICE_USD_ADDRESS`).
+
 ## Keeper
 
 The keeper monitors the on-chain oracle height against the Bitcoin tip and submits missing blocks as a batch. It is runtime-agnostic and ships adapters for Node.js, AWS Lambda, and Cloudflare Workers. See [`keeper/README.md`](keeper/README.md) for setup and configuration.

@@ -12,7 +12,7 @@ const srcDir = path.join(pkgRoot, "src");
 const jsonDir = path.join(pkgRoot, "json");
 
 // Test-only mocks are not part of the public package
-const EXCLUDE = new Set(["USDCMock", "BTCUSDMock"]);
+const EXCLUDE = new Set(["USDCMock", "BTCUSDMock", "HashpriceBTCMock"]);
 
 rmSync(srcDir, { recursive: true, force: true });
 rmSync(jsonDir, { recursive: true, force: true });

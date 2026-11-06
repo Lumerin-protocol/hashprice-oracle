@@ -1,6 +1,6 @@
 # Gas Benchmark — HashpriceBTC
 
-_Last updated: 2026-10-29_
+_Last updated: 2026-11-06_
 
 ## `submitBlock` — one-by-one over 155 real mainnet blocks
 
@@ -29,6 +29,20 @@ amortise the 21,000 intrinsic fee and the single hashprice cache write across mo
 | Metric | Gas |
 |--------|----:|
 | Estimate | 26,003 |
+
+## `HashpriceGlideUSD` — read-only calls (estimates, BTC/USD mock)
+
+| Call | Gas |
+|------|----:|
+| `HashpriceUSD.latestRoundData` (baseline) | 44,354 |
+| `HashpriceGlideUSD.latestRoundData` | 57,560 |
+| `latestGlideAndIndex` | 57,433 |
+| `glidePrice` | 57,280 |
+| `postHalvingPrice` | 56,858 |
+| `priceRangeAt` | 58,010 |
+| `priceRangesAt` (3 dates) | 61,094 |
+| `halvingEta` | 27,552 |
+| `halvingStep` | 32,136 |
 
 ## Hashprice at benchmark tip
 

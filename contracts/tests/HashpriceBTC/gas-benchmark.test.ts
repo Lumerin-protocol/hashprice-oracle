@@ -7,6 +7,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const {
+  viem,
   networkHelpers: { loadFixture },
 } = await network.connect();
 
@@ -68,6 +69,85 @@ describe("HashpriceBTC — Gas benchmark", function () {
     console.log(
       `  V3 latestRoundData (estimate): ${Number(latestRoundDataGas).toLocaleString()} gas`,
     );
+
+    // ─── HashpriceGlideUSD reads, on this oracle ────────────────────
+    const btcUsd = await viem.deployContract("BTCUSDMock", []);
+    await btcUsd.write.setPrice([10_000_000_000_000n]);
+    const hashpriceUSD = await viem.deployContract("HashpriceUSD", [oracle.address, btcUsd.address]);
+    const glideUSD = await viem.deployContract("HashpriceGlideUSD", [hashpriceUSD.address]);
+    const eta = await glideUSD.read.halvingEta();
+    const day = 86_400n;
+    const dates = [eta - 60n * day, eta, eta + 60n * day];
+    const estimate = (to: string, data: `0x${string}`) =>
+      pc.estimateGas({ to: to as `0x${string}`, data });
+    const scheduleRows: [string, bigint][] = [
+      [
+        "`HashpriceUSD.latestRoundData` (baseline)",
+        await estimate(
+          hashpriceUSD.address,
+          encodeFunctionData({ abi: hashpriceUSD.abi, functionName: "latestRoundData" }),
+        ),
+      ],
+      [
+        "`HashpriceGlideUSD.latestRoundData`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestRoundData" }),
+        ),
+      ],
+      [
+        "`latestGlideAndIndex`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestGlideAndIndex" }),
+        ),
+      ],
+      [
+        "`glidePrice`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "glidePrice" }),
+        ),
+      ],
+      [
+        "`postHalvingPrice`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "postHalvingPrice" }),
+        ),
+      ],
+      [
+        "`priceRangeAt`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "priceRangeAt", args: [eta] }),
+        ),
+      ],
+      [
+        `\`priceRangesAt\` (${dates.length} dates)`,
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "priceRangesAt", args: [dates] }),
+        ),
+      ],
+      [
+        "`halvingEta`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "halvingEta" }),
+        ),
+      ],
+      [
+        "`halvingStep`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "halvingStep" }),
+        ),
+      ],
+    ];
+    for (const [label, gas] of scheduleRows) {
+      console.log(`  ${label}: ${Number(gas).toLocaleString()} gas`);
+    }
 
     const avgAll = Math.round(Number(totalGas) / toSubmit.length);
     const avgCold = Math.round(Number(coldGas) / FEE_WINDOW);
@@ -145,6 +225,12 @@ describe("HashpriceBTC — Gas benchmark", function () {
       `| Metric | Gas |`,
       `|--------|----:|`,
       `| Estimate | ${Number(latestRoundDataGas).toLocaleString()} |`,
+      ``,
+      `## \`HashpriceGlideUSD\` — read-only calls (estimates, BTC/USD mock)`,
+      ``,
+      `| Call | Gas |`,
+      `|------|----:|`,
+      ...scheduleRows.map(([label, gas]) => `| ${label} | ${Number(gas).toLocaleString()} |`),
       ``,
       `## Hashprice at benchmark tip`,
       ``,
