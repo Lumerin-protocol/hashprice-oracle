@@ -36,12 +36,12 @@ amortise the 21,000 intrinsic fee and the single hashprice cache write across mo
 |------|----:|
 | `HashpriceUSD.latestRoundData` (baseline) | 44,354 |
 | `HashpriceGlideUSD.latestRoundData` | 52,691 |
-| `latestMarkAndSchedule` | 53,374 |
+| `latestMarkAndSchedule` | 54,071 |
 | `latestSchedule` | 33,365 |
-| `glidePrice` | 52,478 |
-| `postHalvingPrice` | 51,924 |
+| `glidePrice` | 52,413 |
+| `postHalvingPrice` | 51,946 |
 | `markRangeAt` | 53,142 |
-| `markRangesAt` (3 dates) | 56,292 |
+| `markRangesAt` (3 dates) | 56,270 |
 | `halvingEta` | 27,530 |
 | `halvingStep` | 32,163 |
 

@@ -30,6 +30,19 @@ export const HashpriceGlideUSDAbi = [
   },
   {
     "inputs": [],
+    "name": "FACTOR_FIXED_MIN_LEAD",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "GLIDE_BLOCKS",
     "outputs": [
       {
@@ -302,6 +315,11 @@ export const HashpriceGlideUSDAbi = [
       {
         "internalType": "uint256",
         "name": "epoch",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "factorFixedUntil",
         "type": "uint256"
       }
     ],

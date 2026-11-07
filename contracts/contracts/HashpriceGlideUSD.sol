@@ -50,6 +50,11 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
     ///         sustained block-rate drift, so a date never moves from one price into the window.
     uint256 public constant HALVING_WINDOW_BPS = 1000;
 
+    /// @notice How long before the glide's estimated start `factorFixedUntil` stops promising a fixed
+    ///         factor: block-time randomness over the last days before the glide can exceed a 10%
+    ///         margin, but not 3 days of blocks.
+    uint256 public constant FACTOR_FIXED_MIN_LEAD = 3 days;
+
     uint256 public constant BPS = 10_000;
     uint256 public constant WAD = 1e18;
 
@@ -136,10 +141,26 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
 
     /// @notice `latestRoundData()`'s answer and `updatedAt` with `latestSchedule()`, from one oracle
     ///         read, for venues that pay holders the factor's changes.
+    /// @return mark `latestRoundData()`'s answer
+    /// @return updatedAt `latestRoundData()`'s `updatedAt`
+    /// @return factor As `latestSchedule()`
+    /// @return endFactor As `latestSchedule()`
+    /// @return epoch As `latestSchedule()`
+    /// @return factorFixedUntil A time before which the factor cannot change, so a venue may skip
+    ///         reading it until then: now plus 90% of the time to the glide's start at
+    ///         `TARGET_BLOCK_TIME` per block (room for blocks running 10% fast), but never past
+    ///         `FACTOR_FIXED_MIN_LEAD` before that start. 0 from then to the halving.
     function latestMarkAndSchedule()
         external
         view
-        returns (int256 mark, uint256 updatedAt, uint256 factor, uint256 endFactor, uint256 epoch)
+        returns (
+            int256 mark,
+            uint256 updatedAt,
+            uint256 factor,
+            uint256 endFactor,
+            uint256 epoch,
+            uint256 factorFixedUntil
+        )
     {
         Snapshot memory s = _snapshot();
         mark = int256(_glide(s));
@@ -147,6 +168,15 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         endFactor = WAD - s.step;
         factor = WAD - s.step * _glideElapsed(s.blocksToHalving) / GLIDE_BLOCKS;
         epoch = _nextHalving(_heightOf(s));
+        uint256 glideBlocks = GLIDE_BLOCKS + GLIDE_END_BLOCKS;
+        if (s.blocksToHalving > glideBlocks) {
+            uint256 toGlide = (s.blocksToHalving - glideBlocks) * TARGET_BLOCK_TIME;
+            if (toGlide > FACTOR_FIXED_MIN_LEAD) {
+                uint256 span = toGlide * 9 / 10;
+                if (span > toGlide - FACTOR_FIXED_MIN_LEAD) span = toGlide - FACTOR_FIXED_MIN_LEAD;
+                factorFixedUntil = block.timestamp + span;
+            }
+        }
     }
 
     /// @notice The share of the index the mark keeps under the schedule (`factor`, WAD), the factor
