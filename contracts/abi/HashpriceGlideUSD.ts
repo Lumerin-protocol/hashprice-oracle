@@ -277,6 +277,39 @@ export const HashpriceGlideUSDAbi = [
   },
   {
     "inputs": [],
+    "name": "latestMarkAndSchedule",
+    "outputs": [
+      {
+        "internalType": "int256",
+        "name": "mark",
+        "type": "int256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "updatedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "factor",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "endFactor",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "epoch",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "latestRoundData",
     "outputs": [
       {

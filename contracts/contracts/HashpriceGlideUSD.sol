@@ -56,6 +56,9 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
     HashpriceUSD public immutable hashpriceUsd;
     HashpriceBTC public immutable hashpriceBtc;
     uint8 private immutable _decimals;
+    /// @dev `HashpriceUSD`'s inputs, read directly so a snapshot costs no extra hop.
+    AggregatorV3Interface private immutable btcUsdOracle;
+    uint256 private immutable _indexScale;
 
     error NotImplemented();
 
@@ -68,12 +71,16 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         uint256 index;
         uint256 postHalving;
         uint256 blocksToHalving;
+        /// @dev The next halving's step as a share of the index (WAD).
+        uint256 step;
     }
 
     constructor(HashpriceUSD _hashpriceUsd) {
         hashpriceUsd = _hashpriceUsd;
         hashpriceBtc = HashpriceBTC(address(_hashpriceUsd.hashpriceOracle()));
         _decimals = _hashpriceUsd.decimals();
+        btcUsdOracle = _hashpriceUsd.btcUsdOracle();
+        _indexScale = 10 ** (uint256(hashpriceBtc.decimals()) + btcUsdOracle.decimals() - _decimals);
     }
 
     function decimals() external view returns (uint8) {
@@ -127,6 +134,21 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         return _glideElapsed(_blocksToHalving(hashpriceBtc.confirmedHeight())) * WAD / GLIDE_BLOCKS;
     }
 
+    /// @notice `latestRoundData()`'s answer and `updatedAt` with `latestSchedule()`, from one oracle
+    ///         read, for venues that pay holders the factor's changes.
+    function latestMarkAndSchedule()
+        external
+        view
+        returns (int256 mark, uint256 updatedAt, uint256 factor, uint256 endFactor, uint256 epoch)
+    {
+        Snapshot memory s = _snapshot();
+        mark = int256(_glide(s));
+        updatedAt = s.updatedAt;
+        endFactor = WAD - s.step;
+        factor = WAD - s.step * _glideElapsed(s.blocksToHalving) / GLIDE_BLOCKS;
+        epoch = _nextHalving(_heightOf(s));
+    }
+
     /// @notice The share of the index the mark keeps under the schedule (`factor`, WAD), the factor
     ///         the current segment ends at, and an `epoch` that changes when the factor resets
     ///         (the next halving height).
@@ -178,15 +200,28 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         updatedAt = s.updatedAt;
     }
 
+    /// @dev `HashpriceUSD.latestRoundData()` computed here from the same two feeds, with the same
+    ///      formula, round id and timestamps, plus the schedule. `HashpriceBTC`'s round id is its
+    ///      confirmed height, so no separate height read is needed.
     function _snapshot() internal view returns (Snapshot memory s) {
-        int256 answer;
-        (s.roundId, answer, s.startedAt, s.updatedAt, s.answeredInRound) = hashpriceUsd.latestRoundData();
+        (uint80 hpRoundId, int256 hashpriceBtcAnswer,, uint256 hpUpdatedAt,) = hashpriceBtc.latestRoundData();
+        (uint80 btcRoundId, int256 btcUsd,, uint256 btcUpdatedAt,) = btcUsdOracle.latestRoundData();
+        int256 answer = int256((uint256(hashpriceBtcAnswer) * uint256(btcUsd)) / _indexScale);
         if (answer > 0) s.index = uint256(answer);
+        s.roundId = uint80((uint256(hpRoundId) << 40) | (uint256(btcRoundId) & 0xFFFFFFFFFF));
+        s.answeredInRound = s.roundId;
+        s.startedAt = hpUpdatedAt > btcUpdatedAt ? hpUpdatedAt : btcUpdatedAt;
+        s.updatedAt = hpUpdatedAt < btcUpdatedAt ? hpUpdatedAt : btcUpdatedAt;
 
-        uint256 height = hashpriceBtc.confirmedHeight();
+        uint256 height = hpRoundId;
         s.blocksToHalving = _blocksToHalving(height);
         (uint256 rewardNow, uint256 rewardAfter) = _rewards(height);
         s.postHalving = rewardNow == 0 ? s.index : s.index * rewardAfter / rewardNow;
+        s.step = rewardNow == 0 ? 0 : WAD - rewardAfter * WAD / rewardNow;
+    }
+
+    function _heightOf(Snapshot memory s) internal pure returns (uint256) {
+        return uint256(s.roundId >> 40);
     }
 
     /// @dev The next halving's step as a share of the index (WAD).

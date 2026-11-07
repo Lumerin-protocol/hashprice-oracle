@@ -35,13 +35,14 @@ amortise the 21,000 intrinsic fee and the single hashprice cache write across mo
 | Call | Gas |
 |------|----:|
 | `HashpriceUSD.latestRoundData` (baseline) | 44,354 |
-| `HashpriceGlideUSD.latestRoundData` | 57,560 |
+| `HashpriceGlideUSD.latestRoundData` | 52,691 |
+| `latestMarkAndSchedule` | 53,374 |
 | `latestSchedule` | 33,365 |
-| `glidePrice` | 57,258 |
-| `postHalvingPrice` | 56,836 |
-| `markRangeAt` | 58,010 |
-| `markRangesAt` (3 dates) | 61,182 |
-| `halvingEta` | 27,552 |
+| `glidePrice` | 52,478 |
+| `postHalvingPrice` | 51,924 |
+| `markRangeAt` | 53,142 |
+| `markRangesAt` (3 dates) | 56,292 |
+| `halvingEta` | 27,530 |
 | `halvingStep` | 32,163 |
 
 ## Hashprice at benchmark tip

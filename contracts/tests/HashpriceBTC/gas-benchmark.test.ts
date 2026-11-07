@@ -96,6 +96,13 @@ describe("HashpriceBTC — Gas benchmark", function () {
         ),
       ],
       [
+        "`latestMarkAndSchedule`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestMarkAndSchedule" }),
+        ),
+      ],
+      [
         "`latestSchedule`",
         await estimate(
           glideUSD.address,
