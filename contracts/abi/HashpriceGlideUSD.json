@@ -277,29 +277,6 @@
   },
   {
     "inputs": [],
-    "name": "latestGlideAndIndex",
-    "outputs": [
-      {
-        "internalType": "int256",
-        "name": "glide",
-        "type": "int256"
-      },
-      {
-        "internalType": "int256",
-        "name": "index",
-        "type": "int256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "updatedAt",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "latestRoundData",
     "outputs": [
       {
@@ -333,24 +310,21 @@
   },
   {
     "inputs": [],
-    "name": "nextHalvingHeight",
+    "name": "latestSchedule",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "factor",
         "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "postHalvingPrice",
-    "outputs": [
+      },
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "endFactor",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "epoch",
         "type": "uint256"
       }
     ],
@@ -365,7 +339,7 @@
         "type": "uint256"
       }
     ],
-    "name": "priceRangeAt",
+    "name": "markRangeAt",
     "outputs": [
       {
         "internalType": "uint256",
@@ -394,7 +368,7 @@
         "type": "uint256[]"
       }
     ],
-    "name": "priceRangesAt",
+    "name": "markRangesAt",
     "outputs": [
       {
         "internalType": "uint256[]",
@@ -409,6 +383,32 @@
       {
         "internalType": "uint256",
         "name": "updatedAt",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nextHalvingHeight",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "postHalvingPrice",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
         "type": "uint256"
       }
     ],

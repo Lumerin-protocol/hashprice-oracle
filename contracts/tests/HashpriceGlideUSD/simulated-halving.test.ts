@@ -55,7 +55,7 @@ describe("HashpriceGlideUSD — simulated halving", function () {
     const maxDrop = (idx - postHalving(idx, start)) / c.glideBlocks + 1n;
 
     let previous = await contracts.glideUSD.read.glidePrice();
-    for (const elapsed of [1n, 2n, 3n, 1_000n, 1_001n, 6_480n, 6_481n, c.glideBlocks - 1n, c.glideBlocks]) {
+    for (const elapsed of [1n, 2n, 3n, c.glideBlocks / 2n, c.glideBlocks / 2n + 1n, 1_000n, 1_001n, c.glideBlocks - 1n, c.glideBlocks]) {
       await relay(start + elapsed);
       const glide = await contracts.glideUSD.read.glidePrice();
       assert.ok(glide <= previous, `glide rose at ${elapsed}`);
@@ -74,7 +74,7 @@ describe("HashpriceGlideUSD — simulated halving", function () {
     const now = BigInt(await time.latest());
     const dates = [now + 86_400n, now + 30n * 86_400n, now + 60n * 86_400n];
     const indexBefore = await index();
-    const [lowsBefore] = await contracts.glideUSD.read.priceRangesAt([dates]);
+    const [lowsBefore] = await contracts.glideUSD.read.markRangesAt([dates]);
     assert.ok(
       lowsBefore.every((low) => low < indexBefore),
       "dates about the halving and after it are priced below the index",
@@ -82,7 +82,7 @@ describe("HashpriceGlideUSD — simulated halving", function () {
 
     await relay(HALVING_2028);
     const idx = await index();
-    const [lows, highs] = await contracts.glideUSD.read.priceRangesAt([dates]);
+    const [lows, highs] = await contracts.glideUSD.read.markRangesAt([dates]);
     for (let i = 0; i < dates.length; i++) {
       assert.equal(lows[i], idx);
       assert.equal(highs[i], idx);

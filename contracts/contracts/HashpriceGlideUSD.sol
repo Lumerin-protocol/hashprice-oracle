@@ -20,7 +20,7 @@ import { BTCUtils } from "./libraries/BTCUtils.sol";
 ///           remain before the halving, then linear by block down to `postHalvingPrice()`,
 ///           reached `GLIDE_END_BLOCKS` blocks before it. Progress counts blocks, so the glide
 ///           finishes before the halving however fast blocks come.
-///         - `priceRangeAt(t)` (futures): a date settling before the estimated halving date minus
+///         - `markRangeAt(t)` (futures): a date settling before the estimated halving date minus
 ///           the window is priced at the index, one after it plus the window post-halving, and one
 ///           inside it at both (`low` post-halving, `high` the index): venues value longs at `low`
 ///           and shorts at `high`.
@@ -33,8 +33,8 @@ import { BTCUtils } from "./libraries/BTCUtils.sol";
 contract HashpriceGlideUSD is AggregatorV3Interface {
     uint256 public constant HALVING_INTERVAL = BTCUtils.HALVING_INTERVAL;
 
-    /// @notice Length of the perps glide, about 90 days.
-    uint256 public constant GLIDE_BLOCKS = 12_960;
+    /// @notice Length of the perps glide, about 7 days.
+    uint256 public constant GLIDE_BLOCKS = 1008;
 
     /// @notice Blocks before the halving at which the glide reaches the post-halving price, about
     ///         a day.
@@ -119,10 +119,7 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
 
     /// @notice The next halving's step as a share of the index (WAD).
     function halvingStep() external view returns (uint256) {
-        uint256 height = hashpriceBtc.confirmedHeight();
-        (uint256 rewardNow, uint256 rewardAfter) = _rewards(height);
-        if (rewardNow == 0) return 0;
-        return WAD - rewardAfter * WAD / rewardNow;
+        return _step(hashpriceBtc.confirmedHeight());
     }
 
     /// @notice How far the perps glide has gone (WAD): 0 before it starts, WAD at its end.
@@ -130,11 +127,19 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         return _glideElapsed(_blocksToHalving(hashpriceBtc.confirmedHeight())) * WAD / GLIDE_BLOCKS;
     }
 
-    /// @notice `latestRoundData()`'s answer and `updatedAt` with `HashpriceUSD`'s answer beside it,
-    ///         from one oracle read, for venues that scale deltas by glide / index.
-    function latestGlideAndIndex() external view returns (int256 glide, int256 index, uint256 updatedAt) {
-        Snapshot memory s = _snapshot();
-        return (int256(_glide(s)), int256(s.index), s.updatedAt);
+    /// @notice The share of the index the mark keeps under the schedule (`factor`, WAD), the factor
+    ///         the current segment ends at, and an `epoch` that changes when the factor resets
+    ///         (the next halving height).
+    /// @dev For venues that pay holders the factor's changes (drift funding). Within an epoch the
+    ///      factor moves only along the glide (and with the live fee average); at an epoch change
+    ///      it resets to 1 in the block the index steps down by the old `endFactor`, so
+    ///      index × factor is continuous across it.
+    function latestSchedule() external view returns (uint256 factor, uint256 endFactor, uint256 epoch) {
+        uint256 height = hashpriceBtc.confirmedHeight();
+        uint256 step = _step(height);
+        endFactor = WAD - step;
+        factor = WAD - step * _glideElapsed(_blocksToHalving(height)) / GLIDE_BLOCKS;
+        epoch = _nextHalving(height);
     }
 
     /// @notice The index with the next halving's subsidy step applied.
@@ -147,17 +152,17 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         return _glide(_snapshot());
     }
 
-    /// @notice Price range of a contract settling at `expiry`: venues value longs at `low` and
+    /// @notice Mark range of a contract settling at `expiry`: venues value longs at `low` and
     ///         shorts at `high`.
-    function priceRangeAt(uint256 expiry) external view returns (uint256 low, uint256 high, uint256 updatedAt) {
+    function markRangeAt(uint256 expiry) external view returns (uint256 low, uint256 high, uint256 updatedAt) {
         Snapshot memory s = _snapshot();
         uint256 eta = _eta(s.blocksToHalving);
         (low, high) = _range(s, expiry, eta, _window(eta));
         updatedAt = s.updatedAt;
     }
 
-    /// @notice `priceRangeAt` for several expiries from one oracle read.
-    function priceRangesAt(uint256[] calldata expiries)
+    /// @notice `markRangeAt` for several expiries from one oracle read.
+    function markRangesAt(uint256[] calldata expiries)
         external
         view
         returns (uint256[] memory low, uint256[] memory high, uint256 updatedAt)
@@ -182,6 +187,13 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         s.blocksToHalving = _blocksToHalving(height);
         (uint256 rewardNow, uint256 rewardAfter) = _rewards(height);
         s.postHalving = rewardNow == 0 ? s.index : s.index * rewardAfter / rewardNow;
+    }
+
+    /// @dev The next halving's step as a share of the index (WAD).
+    function _step(uint256 height) internal view returns (uint256) {
+        (uint256 rewardNow, uint256 rewardAfter) = _rewards(height);
+        if (rewardNow == 0) return 0;
+        return WAD - rewardAfter * WAD / rewardNow;
     }
 
     /// @dev Block reward (subsidy + fee average) now and after the next halving, in satoshis.

@@ -68,32 +68,3 @@ describe("HashpriceGlideUSD — latestRoundData()", function () {
     assert.equal(answer, 0n);
   });
 });
-
-describe("HashpriceGlideUSD — latestGlideAndIndex()", function () {
-  it("returns the glide, the index and HashpriceUSD's updatedAt from one read", async function () {
-    const { contracts, relay, glideStart, index, updatedAt, c } = await loadFixture(fixture);
-    await relay(glideStart(HALVING_2028) + c.glideBlocks / 2n);
-    const [glide, idx, at] = await contracts.glideUSD.read.latestGlideAndIndex();
-    const [, answer, , feedUpdatedAt] = await contracts.glideUSD.read.latestRoundData();
-    assert.equal(glide, answer);
-    assert.equal(idx, await index());
-    assert.equal(at, await updatedAt());
-    assert.equal(at, feedUpdatedAt);
-    assert.ok(glide < idx, "the glide is below the index half way through");
-  });
-
-  it("returns the glide equal to the index before the glide", async function () {
-    const { contracts, index } = await loadFixture(fixture);
-    const [glide, idx] = await contracts.glideUSD.read.latestGlideAndIndex();
-    assert.equal(idx, await index());
-    assert.equal(glide, idx);
-  });
-
-  it("returns HashpriceUSD's answer as the index, 0 included", async function () {
-    const { contracts } = await loadFixture(fixture);
-    await contracts.btcUsd.write.setPrice([0n]);
-    const [glide, idx] = await contracts.glideUSD.read.latestGlideAndIndex();
-    assert.equal(glide, 0n);
-    assert.equal(idx, 0n);
-  });
-});

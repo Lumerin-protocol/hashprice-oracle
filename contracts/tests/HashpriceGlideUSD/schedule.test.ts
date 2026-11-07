@@ -214,7 +214,7 @@ describe("HashpriceGlideUSD — futures price ranges", function () {
       ["well after", eta + 4n * w, post, post],
     ];
     for (const [label, t, low, high] of cases) {
-      const [gotLow, gotHigh, gotAt] = await s.contracts.glideUSD.read.priceRangeAt([t]);
+      const [gotLow, gotHigh, gotAt] = await s.contracts.glideUSD.read.markRangeAt([t]);
       assertClose(gotLow, low, 1n, `${label} low`);
       assertClose(gotHigh, high, 1n, `${label} high`);
       assert.equal(gotAt, at, `${label} updatedAt`);
@@ -224,7 +224,7 @@ describe("HashpriceGlideUSD — futures price ranges", function () {
   it("prices a matured date at the index", async function () {
     const s = await loadFixture(fixture);
     const now = BigInt(await time.latest());
-    const [low, high] = await s.contracts.glideUSD.read.priceRangeAt([now - 86_400n]);
+    const [low, high] = await s.contracts.glideUSD.read.markRangeAt([now - 86_400n]);
     assert.equal(low, await s.index());
     assert.equal(high, await s.index());
   });
@@ -233,12 +233,12 @@ describe("HashpriceGlideUSD — futures price ranges", function () {
     const s = await loadFixture(fixture);
     const { eta, w } = await windowAndEta(s);
     const dates = [eta - 2n * w, eta - w / 2n, eta, eta + w / 2n, eta + 2n * w];
-    const [lows, highs, at] = await s.contracts.glideUSD.read.priceRangesAt([dates]);
+    const [lows, highs, at] = await s.contracts.glideUSD.read.markRangesAt([dates]);
     assert.equal(lows.length, dates.length);
     assert.equal(highs.length, dates.length);
     assert.equal(at, await s.updatedAt());
     for (let i = 0; i < dates.length; i++) {
-      const [low, high] = await s.contracts.glideUSD.read.priceRangeAt([dates[i]]);
+      const [low, high] = await s.contracts.glideUSD.read.markRangeAt([dates[i]]);
       assert.equal(lows[i], low, `date ${i} low`);
       assert.equal(highs[i], high, `date ${i} high`);
     }
@@ -252,7 +252,7 @@ describe("HashpriceGlideUSD — futures price ranges", function () {
     await s.relay(HALVING_2028);
     const idx = await s.index();
     for (const t of [eta - w, eta, eta + w, eta + 90n * 86_400n]) {
-      const [low, high] = await s.contracts.glideUSD.read.priceRangeAt([t]);
+      const [low, high] = await s.contracts.glideUSD.read.markRangeAt([t]);
       assert.equal(low, idx);
       assert.equal(high, idx);
     }
@@ -279,8 +279,8 @@ describe("HashpriceGlideUSD — futures price ranges", function () {
         steps++;
         const idx = await s.index();
         const post = s.postHalving(idx, height);
-        const [bLow, bHigh] = await s.contracts.glideUSD.read.priceRangeAt([before]);
-        const [aLow, aHigh] = await s.contracts.glideUSD.read.priceRangeAt([after]);
+        const [bLow, bHigh] = await s.contracts.glideUSD.read.markRangeAt([before]);
+        const [aLow, aHigh] = await s.contracts.glideUSD.read.markRangeAt([after]);
         assert.equal(bLow, idx, `pre-halving date entered the window at ${height}`);
         assert.equal(bHigh, idx);
         assertClose(aLow, post, 1n, `post-halving date entered the window at ${height}`);

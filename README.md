@@ -82,11 +82,11 @@ with that scheduled step taken out, leaving the index itself unchanged:
   using the live 144-block fee average. At the halving block the new index equals it up to one
   block's change in that average.
 - `glidePrice()`: the perps reference. The index until `GLIDE_BLOCKS + GLIDE_END_BLOCKS` blocks
-  (12,960 + 144, about 91 days) before the halving, then linear by block down to
+  (1,008 + 144, about 8 days) before the halving, then linear by block down to
   `postHalvingPrice()`, reached 144 blocks before it; the index again once the halving block is
   relayed. The contract's own `latestRoundData()` answers it, with `HashpriceUSD`'s round id and
   timestamps, so perps reads it as its oracle.
-- `priceRangeAt(expiry)` / `priceRangesAt(expiries)`: the futures prices `(low, high, updatedAt)`.
+- `markRangeAt(expiry)` / `markRangesAt(expiries)`: the futures marks `(low, high, updatedAt)`.
   Dates settling before `halvingEta()` − w are at the index, after `halvingEta()` + w at
   `postHalvingPrice()`, and within the window at both (`low` post-halving, `high` the index);
   w = max(4 days, 10% of the time to the estimate). Venues value longs at `low`, shorts at `high`.

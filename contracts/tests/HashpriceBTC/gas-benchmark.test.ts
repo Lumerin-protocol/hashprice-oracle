@@ -96,10 +96,10 @@ describe("HashpriceBTC — Gas benchmark", function () {
         ),
       ],
       [
-        "`latestGlideAndIndex`",
+        "`latestSchedule`",
         await estimate(
           glideUSD.address,
-          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestGlideAndIndex" }),
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestSchedule" }),
         ),
       ],
       [
@@ -117,17 +117,17 @@ describe("HashpriceBTC — Gas benchmark", function () {
         ),
       ],
       [
-        "`priceRangeAt`",
+        "`markRangeAt`",
         await estimate(
           glideUSD.address,
-          encodeFunctionData({ abi: glideUSD.abi, functionName: "priceRangeAt", args: [eta] }),
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "markRangeAt", args: [eta] }),
         ),
       ],
       [
-        `\`priceRangesAt\` (${dates.length} dates)`,
+        `\`markRangesAt\` (${dates.length} dates)`,
         await estimate(
           glideUSD.address,
-          encodeFunctionData({ abi: glideUSD.abi, functionName: "priceRangesAt", args: [dates] }),
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "markRangesAt", args: [dates] }),
         ),
       ],
       [
