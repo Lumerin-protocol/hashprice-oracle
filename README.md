@@ -90,6 +90,11 @@ with that scheduled step taken out, leaving the index itself unchanged:
   Dates settling before `halvingEta()` − w are at the index, after `halvingEta()` + w at
   `postHalvingPrice()`, and within the window at both (`low` post-halving, `high` the index);
   w = max(4 days, 10% of the time to the estimate). Venues value longs at `low`, shorts at `high`.
+- `latestSchedule()` / `latestMarkAndSchedule()`: the glide's scheduled factor (its share of the
+  index: 1 before the glide, about 0.5 at its end), the factor it ends at, and an epoch (the next
+  halving height), which perps uses to pay longs the scheduled decline as drift funding.
+  `latestMarkAndSchedule()` also returns the glide and `factorFixedUntil`, the time before which
+  the factor cannot move (more than 3 days before the glide), so perps can skip the read.
 
 Only the subsidy schedule is applied; fees, difficulty and BTC/USD move every price in the same
 block. The next halving is recomputed from the oracle height, so later halvings need no redeploy.
