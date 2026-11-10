@@ -4,10 +4,10 @@
     "testnet": {
       "chainId": 84532,
       "network": "base-sepolia",
-      "startBlock": 44704529,
+      "startBlock": 57068233,
       "contracts": {
-        "HashpriceBTC": "0x7b7f9698cadca34f13d6091c4ee34045f97442e7",
-        "HashpriceUSD": "0x7df07e84e57890f429935946748757758f7964f1",
+        "HashpriceBTC": "0x6575e5b952822a3df09619763005371d0b95a7d6",
+        "HashpriceUSD": "0xc1b2476b81865dc292136851b322bdf89a3f2b37",
         "BtcUsdAggregator": "0x37b5E07C59238ad3bB11AC27129387A67F3340B6",
         "HashrateOracleLegacy": "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
       },
