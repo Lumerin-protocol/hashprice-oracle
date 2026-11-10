@@ -60,11 +60,14 @@ type HashpriceBtc @entity(timeseries: true) {
 # Per-Bitcoin-block bookkeeping needed to estimate the actual network hashrate.
 # Not a timeseries: rows are keyed by Bitcoin height and rewritten when a reorg
 # replaces that height, which keeps `cumulativeWork` consistent with the canonical chain.
+# blockHash, coinbaseValue, fees, target, difficulty and impliedHashrateHpS are nullable so
+# a deployment can graft from indexer v3.3.4, whose rows predate them; they are always set
+# on rows indexed since.
 type BtcBlock @entity(immutable: false) {
   id: Int8! # Bitcoin block height
   # Header hash in internal (little-endian) byte order, as the contract stores it.
   # Reverse the bytes to get the form block explorers display.
-  blockHash: Bytes!
+  blockHash: Bytes
   btcTimestamp: BigInt! # raw header timestamp (nTime)
   # Median of the 11 timestamps h-10..h — Bitcoin Core's GetMedianTimePast, the
   # `mediantime` field of `getblock`. Null until 11 consecutive blocks are known.
@@ -72,20 +75,20 @@ type BtcBlock @entity(immutable: false) {
   nBits: BigInt!
   # Total value of the coinbase transaction's outputs, in satoshis, exactly as the header
   # claimed it. Kept raw because it is the only unrecoverable figure: `fees` below saturates.
-  coinbaseValue: BigInt!
+  coinbaseValue: BigInt
   # coinbaseValue - subsidy(height), floored at zero. Zero therefore means either a block
   # with no fee revenue or a miner that underpaid itself; `coinbaseValue` distinguishes them.
-  fees: BigInt!
+  fees: BigInt
   # Full 256-bit difficulty target expanded from nBits.
-  target: BigInt!
+  target: BigInt
   # diff1Target / target, truncated to an integer as the contract computes it. At mainnet
   # difficulty (~1e14) the truncation is immaterial.
-  difficulty: BigInt!
+  difficulty: BigInt
   # Hashrate implied by this block's difficulty alone, assuming Bitcoin's 600s target
   # interval: expected work / 600. This is the "difficulty-implied" figure quoted by most
   # explorers, and is a property of the target rather than a measurement — for hashrate
   # actually observed over a window, use NetworkHashrate1d / NetworkHashrate7d.
-  impliedHashrateHpS: BigInt!
+  impliedHashrateHpS: BigInt
   # Sum of expected hashes (2^256 / (target + 1)) over every block up to and including
   # this one, counting from `chainBaseHeight`. Derived from the parent row, never from a
   # global running total, so a reorg recomputes it correctly as fork blocks are re-indexed.

@@ -110,6 +110,28 @@ The subgraph is configured in `subgraph.template.yaml` with:
 3. Query the entities to get position, order, and hashrate data
 4. Use the timeseries data to analyze hashrate trends over time
 
+## Versioning and deploys
+
+`deploy-subgraph.yml` deploys on changes to the source, schema, manifest template, package
+files, `contracts/abi/` or `config/`, as `v<package.json version>-<env>-<commit>` (git tag
+`indexer-v<version>-<env>-<commit>`). Consumers query the rolling tag (`dev-latest`,
+`lmn-latest`), which the workflow moves to the new version.
+
+- **Same compiled build** as the previous version (comments and docs don't count): nothing
+  is deployed. The build hash is stored in the git tag.
+- **Same major**: grafts onto the environment's previous version, keeping its history, and
+  moves the tag once it has caught up. The schema must stay graft-compatible: new fields
+  nullable, no removed or retyped fields, else the deploy fails.
+- **Major bump**: full redeploy from the manifest's start blocks; the tag stays on the old
+  version until a manual run with `promote=<version>` once it has synced. History from
+  contracts no longer in the manifest (the pre-reset `HashpriceBTC`) is lost.
+- **Manual run**: `graft_from` deploys even if unchanged, from `<name>/<version>` or, with
+  `none`, from the start blocks.
+
+A graft starts at the base's latest block, not at a chosen one: Goldsky prunes history.
+A handler fix therefore applies only from the graft onwards; rewriting old rows needs a
+major bump. Versions are never deleted.
+
 ## Example Queries
 
 ```graphql
