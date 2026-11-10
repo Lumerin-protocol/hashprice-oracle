@@ -112,9 +112,9 @@ The subgraph is configured in `subgraph.template.yaml` with:
 
 ## Versioning and deploys
 
-`deploy-subgraph.yml` deploys on changes to the source, schema, manifest template, package
-files, `contracts/abi/` or `config/`, as `v<package.json version>-<env>-<commit>` (git tag
-`indexer-v<version>-<env>-<commit>`). Consumers query the rolling tag (`dev-latest`,
+`deploy-subgraph.yml` runs the integration tests, then deploys, on changes to the source,
+schema, manifest template, package files, tests, `contracts/` sources, ABIs or `config/`,
+as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<commit>`). Consumers query the rolling tag (`dev-latest`,
 `lmn-latest`), which the workflow moves to the new version.
 
 - **Same compiled build** as the previous version (comments and docs don't count): nothing
