@@ -374,7 +374,8 @@ jobs:
 
   test:
     name: 🧪 Indexer tests
-    runs-on: ubuntu-latest
+    # graph-cli has Matchstick binaries for Ubuntu up to 24 only.
+    runs-on: ubuntu-24.04
     needs: setup
 
     steps:
