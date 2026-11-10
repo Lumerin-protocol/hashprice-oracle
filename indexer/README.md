@@ -112,7 +112,7 @@ The subgraph is configured in `subgraph.template.yaml` with:
 
 ## Versioning and deploys
 
-`deploy-subgraph.yml` runs the integration tests, then deploys, on changes to the source,
+`deploy-subgraph.yml` runs the unit and integration tests, then deploys, on changes to the source,
 schema, manifest template, package files, tests, `contracts/` sources, ABIs or `config/`,
 as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<commit>`). Consumers query the rolling tag (`dev-latest`,
 `lmn-latest`), which the workflow moves to the new version.
@@ -120,8 +120,8 @@ as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<
 - **Same compiled build** as the previous version (comments and docs don't count): nothing
   is deployed. The build hash is stored in the git tag.
 - **Same major**: grafts onto the environment's previous version, keeping its history, and
-  moves the tag once it has caught up. The schema must stay graft-compatible: new fields
-  nullable, no removed or retyped fields, else the deploy fails.
+  moves the tag once it has caught up. The schema must stay graft-compatible (see
+  [Graft-compatible schema changes](#graft-compatible-schema-changes)), else the deploy fails.
 - **Major bump**: full redeploy from the manifest's start blocks; the tag stays on the old
   version until a manual run with `promote=<version>` once it has synced. History from
   contracts no longer in the manifest (the pre-reset `HashpriceBTC`) is lost.
@@ -131,6 +131,38 @@ as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<
 A graft starts at the base's latest block, not at a chosen one: Goldsky prunes history.
 A handler fix therefore applies only from the graft onwards; rewriting old rows needs a
 major bump. Versions are never deleted.
+
+### Graft-compatible schema changes
+
+A graft copies every row of the base as it is and runs handlers only from the graft block,
+so the schema may only grow: new entity types and new nullable fields. Removing or retyping
+a field or type, making a field required, or changing an entity's `immutable` flag fails
+the deploy. Changes that need more go through a compatible form until the next major:
+
+- **New required field**: add it nullable. Rows copied from the base have no value; every
+  row indexed since does. Comment the field `# Nullable for graft compatibility with
+  v<base>.` so the cleanup can find it. Consumers must treat it as optional until then.
+- **Row describing current state** (contract addresses, decimals) that a graft copies
+  stale, e.g. after a graft onto new contracts: an immutable row can't be rewritten, and
+  the flag can't be changed. Add a mutable successor type, `<Name>V2 @entity(immutable:
+  false)`, as a singleton the handler rewrites whenever its data source names different
+  contracts. Mark the old type deprecated in a schema comment, stop writing it, and move
+  consumers to the successor once an indexer with it is deployed.
+
+  The successor is mutable because it describes the present, not history: immutable rows
+  are write-once, so each change would append a row and every reader would have to find
+  the newest one. A mutable singleton is updated in place and read by its fixed id; the
+  block-range versioning a mutable entity costs is negligible for one row. Event and
+  timeseries entities stay immutable.
+
+**Cleanup**: a major bump redeploys from scratch with no base to stay compatible with, so do
+the cleanup in the same release: delete deprecated types and make the compatibility-nullable
+fields required again, then update consumers that guarded against the missing values.
+Keep the `V2` names; renaming them back breaks every consumer. Currently outstanding:
+
+- `BtcBlock`: `blockHash`, `coinbaseValue`, `fees`, `target`, `difficulty` and
+  `impliedHashrateHpS` are nullable for grafts from v3.3.4.
+- `HashpriceMeta`: deprecated by `HashpriceMetaV2` in v3.6.0.
 
 ## Example Queries
 

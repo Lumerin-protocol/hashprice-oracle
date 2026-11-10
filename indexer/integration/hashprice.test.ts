@@ -44,8 +44,9 @@ describe("Hashprice feeds", () => {
 
     const snap = await indexSnapshot(conn);
 
-    const meta = snap.entity("HashpriceMeta", "0");
-    assert.ok(meta, "HashpriceMeta is initialized");
+    const meta = snap.entity("HashpriceMetaV2", "0");
+    assert.ok(meta, "HashpriceMetaV2 is initialized");
+    assert.equal(snap.entity("HashpriceMeta", "0"), undefined, "the deprecated HashpriceMeta is not written");
     assert.equal(meta.hashpriceBtcDecimals, String(await read<number>(d, d.oracle, "decimals")));
     assert.equal(meta.btcUsdDecimals, String(await read<number>(d, d.btcUsd, "decimals")));
     assert.equal(meta.hashpriceUsdDecimals, String(await read<number>(d, d.hashpriceUsd, "decimals")));
