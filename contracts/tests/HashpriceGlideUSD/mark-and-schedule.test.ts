@@ -1,7 +1,7 @@
 import { network } from "hardhat";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { deployGlideUSDFixture, START_HEIGHT } from "./fixtures.ts";
+import { deployGlideUSDFixture } from "./fixtures.ts";
 
 const conn = await network.connect();
 const {
@@ -47,12 +47,10 @@ describe("HashpriceGlideUSD — latestMarkAndSchedule() factorFixedUntil", funct
     return (result as readonly bigint[])[5];
   }
 
-  it("before the glide: now + 90% of the estimated time to the glide's start", async function () {
+  it("before the glide: now + FACTOR_FIXED_MAX_SPAN", async function () {
     const s = await loadFixture(fixture);
     const now = BigInt(await s.networkHelpers.time.latest());
-    const blocksToGlide = s.glideStart(HALVING_2028) - BigInt(START_HEIGHT);
-    const fixedSpan = (blocksToGlide * s.c.targetBlockTime * 9n) / 10n;
-    assert.equal(await fixedUntil(s), now + fixedSpan);
+    assert.equal(await fixedUntil(s), now + (await s.contracts.glideUSD.read.FACTOR_FIXED_MAX_SPAN()));
   });
 
   it("is 0 from the glide's start to the halving, and again after it until the next glide", async function () {
@@ -63,9 +61,7 @@ describe("HashpriceGlideUSD — latestMarkAndSchedule() factorFixedUntil", funct
     }
     await s.relay(HALVING_2028);
     const now = BigInt(await s.networkHelpers.time.latest());
-    const next = HALVING_2028 + s.c.halvingInterval;
-    const blocksToGlide = next - s.c.glideBlocks - s.c.glideEndBlocks - HALVING_2028;
-    assert.equal(await fixedUntil(s), now + (blocksToGlide * s.c.targetBlockTime * 9n) / 10n);
+    assert.equal(await fixedUntil(s), now + (await s.contracts.glideUSD.read.FACTOR_FIXED_MAX_SPAN()));
   });
 });
 
@@ -80,7 +76,7 @@ describe("HashpriceGlideUSD — factorFixedUntil stops FACTOR_FIXED_MIN_LEAD bef
     const lead = await s.contracts.glideUSD.read.FACTOR_FIXED_MIN_LEAD();
     const blocksInLead = lead / s.c.targetBlockTime;
 
-    // Twice the lead before the glide: 90% of the time would reach into the lead, so it stops there.
+    // Twice the lead before the glide: the span stops at the lead.
     await s.relay(s.glideStart(HALVING_2028) - 2n * blocksInLead);
     const now = BigInt(await s.networkHelpers.time.latest());
     assert.equal(await fixedUntil(s), now + 2n * blocksInLead * s.c.targetBlockTime - lead);

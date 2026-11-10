@@ -94,7 +94,8 @@ with that scheduled step taken out, leaving the index itself unchanged:
   index: 1 before the glide, about 0.5 at its end), the factor it ends at, and an epoch (the next
   halving height), which perps uses to pay longs the scheduled decline as drift funding.
   `latestMarkAndSchedule()` also returns the glide and `factorFixedUntil`, the time before which
-  the factor cannot move (more than 3 days before the glide), so perps can skip the read.
+  the factor cannot move (at most 7 days from now and at least 3 days before the glide), so perps
+  can skip the read.
 
 Only the subsidy schedule is applied; fees, difficulty and BTC/USD move every price in the same
 block. The next halving is recomputed from the oracle height, so later halvings need no redeploy.

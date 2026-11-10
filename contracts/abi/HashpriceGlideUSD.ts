@@ -30,6 +30,19 @@ export const HashpriceGlideUSDAbi = [
   },
   {
     "inputs": [],
+    "name": "FACTOR_FIXED_MAX_SPAN",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "FACTOR_FIXED_MIN_LEAD",
     "outputs": [
       {

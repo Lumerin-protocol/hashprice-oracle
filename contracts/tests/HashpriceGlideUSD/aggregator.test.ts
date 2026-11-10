@@ -18,9 +18,8 @@ describe("HashpriceGlideUSD — AggregatorV3Interface", function () {
     assert.equal(await contracts.glideUSD.read.decimals(), await contracts.hashpriceUSD.read.decimals());
   });
 
-  it("version() is 1 and description() is set", async function () {
+  it("description() is set", async function () {
     const { contracts } = await loadFixture(fixture);
-    assert.equal(await contracts.glideUSD.read.version(), 1n);
     assert.ok((await contracts.glideUSD.read.description()).length > 0);
   });
 

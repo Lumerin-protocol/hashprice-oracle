@@ -51,9 +51,12 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
     uint256 public constant HALVING_WINDOW_BPS = 1000;
 
     /// @notice How long before the glide's estimated start `factorFixedUntil` stops promising a fixed
-    ///         factor: block-time randomness over the last days before the glide can exceed a 10%
-    ///         margin, but not 3 days of blocks.
+    ///         factor.
     uint256 public constant FACTOR_FIXED_MIN_LEAD = 3 days;
+
+    /// @notice Longest span `factorFixedUntil` promises from now. With `FACTOR_FIXED_MIN_LEAD`, a
+    ///         promise is broken only by blocks averaging 70% of `TARGET_BLOCK_TIME` or less across it.
+    uint256 public constant FACTOR_FIXED_MAX_SPAN = 7 days;
 
     uint256 public constant BPS = 10_000;
     uint256 public constant WAD = 1e18;
@@ -97,7 +100,7 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
     }
 
     function version() external pure returns (uint256) {
-        return 1;
+        return 2;
     }
 
     function getRoundData(uint80) external pure returns (uint80, int256, uint256, uint256, uint80) {
@@ -147,9 +150,9 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
     /// @return endFactor As `latestSchedule()`
     /// @return epoch As `latestSchedule()`
     /// @return factorFixedUntil A time before which the factor cannot change, so a venue may skip
-    ///         reading it until then: now plus 90% of the time to the glide's start at
-    ///         `TARGET_BLOCK_TIME` per block (room for blocks running 10% fast), but never past
-    ///         `FACTOR_FIXED_MIN_LEAD` before that start. 0 from then to the halving.
+    ///         reading it until then: `FACTOR_FIXED_MIN_LEAD` before the glide's start estimated at
+    ///         `TARGET_BLOCK_TIME` per block, and at most `FACTOR_FIXED_MAX_SPAN` from now. 0 from
+    ///         then to the halving.
     function latestMarkAndSchedule()
         external
         view
@@ -172,8 +175,8 @@ contract HashpriceGlideUSD is AggregatorV3Interface {
         if (s.blocksToHalving > glideBlocks) {
             uint256 toGlide = (s.blocksToHalving - glideBlocks) * TARGET_BLOCK_TIME;
             if (toGlide > FACTOR_FIXED_MIN_LEAD) {
-                uint256 span = toGlide * 9 / 10;
-                if (span > toGlide - FACTOR_FIXED_MIN_LEAD) span = toGlide - FACTOR_FIXED_MIN_LEAD;
+                uint256 span = toGlide - FACTOR_FIXED_MIN_LEAD;
+                if (span > FACTOR_FIXED_MAX_SPAN) span = FACTOR_FIXED_MAX_SPAN;
                 factorFixedUntil = block.timestamp + span;
             }
         }
