@@ -1,3 +1,4 @@
 # Location for AI-generated documentation
 
 - **[dev-main-promotion-runbook.md](./dev-main-promotion-runbook.md)** — the only `dev` → `main` promotion guide.
+- **[incidents/](./incidents/)** — post-incident write-ups (timeline, root cause, fix plan).
