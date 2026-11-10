@@ -5,16 +5,16 @@ pragma solidity >=0.8.0;
 import {HashpriceBTC} from "./HashpriceBTC.sol";
 
 /// @title HashpriceBTCDeploy
-/// @notice HashpriceBTC anchored at block 967135 (2026-09-15T14:31:15.000Z), epoch start 965664
+/// @notice HashpriceBTC anchored at block 975182 (2026-11-09T14:34:14.000Z), epoch start 973728
 contract HashpriceBTCDeploy is HashpriceBTC {
     constructor()
         HashpriceBTC(
-            0xd706429d0aaf5eea87c4a58a996ed9758bc597cfe38c01000000000000000000, // block 967135
-            967135, // height
-            1789482675, // 2026-09-15T14:31:15.000Z
-            0x1702355e, // nBits
-            1788640367, // epoch start (block 965664)
-            0x1702355e // epoch start nBits
+            0x2ec270903572c70719ec43660f43279639b6f820ef7100000000000000000000, // block 975182
+            975182, // height
+            1794234854, // 2026-11-09T14:34:14.000Z
+            0x1701e5ac, // nBits
+            1793301298, // epoch start (block 973728)
+            0x1701e5ac // epoch start nBits
         )
     {}
 }

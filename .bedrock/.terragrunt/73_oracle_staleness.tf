@@ -5,7 +5,6 @@
 
 locals {
   oracle_staleness_name = "hpo-oracle-staleness-${local.env_short}"
-  # oracle_max_age_minutes is defined in 70_monitoring_common.tf
 }
 
 ################################################################################
@@ -44,9 +43,10 @@ resource "aws_lambda_function" "oracle_staleness" {
       # logs "Missing configuration" and returns 500 in that case.
       HASHPRICE_BTC_ADDRESS = var.wallets.hashprice_btc_address
       ETH_RPC_URL           = var.oracle_lambda_secrets.eth_rpc_url
+      BITCOIN_RPC_URL       = var.oracle_lambda_secrets.bitcoin_rpc_url
       CW_NAMESPACE          = local.monitoring_namespace
       ENVIRONMENT           = local.env_short
-      MAX_AGE_MINUTES       = tostring(var.alarm_thresholds.oracle_stale_threshold_minutes)
+      MAX_AGE_MINUTES       = tostring(var.alarm_thresholds.oracle_max_age_minutes)
     }
   }
 

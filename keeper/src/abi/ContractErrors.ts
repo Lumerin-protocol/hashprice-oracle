@@ -32,6 +32,11 @@ export const contractErrors = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "Sha256PrecompileMissing",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -40,6 +45,11 @@ export const contractErrors = [
       }
     ],
     "name": "OwnableInvalidOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidNBits",
     "type": "error"
   },
   {
@@ -146,6 +156,11 @@ export const contractErrors = [
   {
     "inputs": [],
     "name": "BrokenChain",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AncestorNotInBuffer",
     "type": "error"
   },
   {
@@ -335,11 +350,6 @@ export const contractErrors = [
       }
     ],
     "name": "ERC20InsufficientAllowance",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "AncestorNotInBuffer",
     "type": "error"
   },
   {

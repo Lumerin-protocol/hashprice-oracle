@@ -77,9 +77,7 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     // in ETHEREUM_RPC_URL.
     chainlinkBtcUsdAddress: env.CHAINLINK_BTC_USD_ADDRESS as `0x${string}` | undefined,
     chainlinkRpcUrl: chainlinkAlchemyKey ? alchemyRpcUrl("base-mainnet", chainlinkAlchemyKey) : undefined,
-    // Number(undefined) is NaN, and NaN ?? 4 is still NaN — that breaks
-    // waitForTransactionReceipt comparisons. Default to 1 confirmation.
-    confirmations: Number(env.KEEPER_CONFIRMATIONS ?? "1"),
+    confirmations: Number(env.KEEPER_CONFIRMATIONS || 4),
   };
 }
 

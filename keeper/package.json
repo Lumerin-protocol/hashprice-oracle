@@ -15,17 +15,20 @@
     "invoke:bundle": "pnpm build:lambda && node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/invoke-bundle.ts",
     "build:lambda": "node scripts/build-lambda.ts",
     "fetch-fixtures": "node --env-file=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=.env scripts/fetch-fixtures.ts",
-    "typecheck": "tsgo --noEmit"
+    "test": "node --test 'src/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint ."
   },
   "dependencies": {
     "pino": "^9.6.0",
     "viem": "^2.42.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.11",
     "@types/node": "^24.0.0",
-    "@typescript/native-preview": "7.0.0-dev.20260410.1",
     "esbuild": "^0.25.4",
-    "pino-pretty": "^13.0.0"
+    "pino-pretty": "^13.0.0",
+    "typescript": "^7.0.2"
   },
   "packageManager": "pnpm@11.22.0"
 }
