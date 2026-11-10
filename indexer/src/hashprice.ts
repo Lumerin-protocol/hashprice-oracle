@@ -8,8 +8,6 @@ import {
 } from "@graphprotocol/graph-ts";
 import { AggregatorProxy } from "../generated/HashpriceBTC/AggregatorProxy";
 import { AggregatorV2V3Interface } from "../generated/HashpriceBTC/AggregatorV2V3Interface";
-import { AggregatorV3Interface } from "../generated/HashpriceBTC/AggregatorV3Interface";
-import { HashpriceBTC } from "../generated/HashpriceBTC/HashpriceBTC";
 import { AnswerUpdated } from "../generated/HashpriceBTC/AggregatorProxy";
 import {
   BlockSubmitted,
@@ -22,12 +20,13 @@ import {
   BtcBlock,
   ChainReorgEvent,
   HashpriceBtc,
-  HashpriceMeta,
+  HashpriceMetaV2,
   LatestRates,
   NetworkHashrate1d,
   NetworkHashrate7d,
 } from "../generated/schema";
 import { ChainlinkAggregator } from "../generated/templates";
+import { loadHashpriceMeta, loadOrInitializeHashpriceMeta } from "./hashpriceMeta";
 
 const LATEST_RATES_ID = 0;
 
@@ -61,7 +60,7 @@ const WINDOW_1D = DAY_IN_MINUTES / BLOCKS_PER_MINUTE; // 24 hours at 10 min/bloc
 const WINDOW_7D = (7 * DAY_IN_MINUTES) / BLOCKS_PER_MINUTE; // 7 days at 10 min/block
 
 // Once handler — starts the BTC/USD aggregator data source so its events are
-// indexed before the first HashpriceBTC update. HashpriceMeta is created later
+// indexed before the first HashpriceBTC update. HashpriceMetaV2 is created later
 // on the first feed event after every source contract exists.
 export function initFeeds(block: ethereum.Block): void {
   const context = dataSource.context();
@@ -87,57 +86,6 @@ export function initFeeds(block: ethereum.Block): void {
   }
   rates.btcUsdAggregator = btcUsdAggResult.value;
   rates.save();
-}
-
-function loadOrInitializeHashpriceMeta(block: ethereum.Block): HashpriceMeta | null {
-  let meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (meta !== null) return meta;
-
-  const context = dataSource.context();
-  const hashpriceBtcAddress = dataSource.address();
-  const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
-  const hashpriceUsdAddress = Address.fromString(context.mustGet("hashpriceUsdAddress").toString());
-
-  const hashpriceBtcDecimalsResult = HashpriceBTC.bind(hashpriceBtcAddress).try_decimals();
-  if (hashpriceBtcDecimalsResult.reverted) {
-    log.warning(
-      "HashpriceBTC is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  const btcUsdDecimalsResult = AggregatorProxy.bind(btcUsdAddress).try_decimals();
-  if (btcUsdDecimalsResult.reverted) {
-    log.warning(
-      "BTC/USD proxy is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  const hashpriceUsdDecimalsResult = AggregatorV3Interface.bind(hashpriceUsdAddress).try_decimals();
-  if (hashpriceUsdDecimalsResult.reverted) {
-    log.warning(
-      "HashpriceUSD is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  meta = new HashpriceMeta(LATEST_RATES_ID);
-  meta.id = LATEST_RATES_ID;
-  meta.hashpriceBtcAddress = hashpriceBtcAddress;
-  meta.hashpriceUsdAddress = hashpriceUsdAddress;
-  meta.btcUsdAddress = btcUsdAddress;
-  meta.startBlock = context.mustGet("hashpriceStartBlock").toBigInt();
-  meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
-  meta.btcUsdDecimals = btcUsdDecimalsResult.value;
-  meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
-  meta.save();
-
-  log.info("HashpriceMeta initialized at block {}", [block.number.toString()]);
-  return meta;
 }
 
 // Records one accepted Bitcoin block. Everything comes from the event itself, so a batch of
@@ -312,13 +260,13 @@ export function handleAnswerUpdated(event: AnswerUpdated): void {
   rates.btcUsdBlockNumber = event.block.number;
   rates.save();
 
-  const meta = HashpriceMeta.load(LATEST_RATES_ID);
+  const meta = loadHashpriceMeta();
   if (meta === null) return;
 
   deriveHashpriceUsd(rates, meta);
 }
 
-function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
+function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMetaV2): void {
   log.info("inside deriveHashpriceUsd", []);
   if (
     rates.btcUsdId === 0 ||
