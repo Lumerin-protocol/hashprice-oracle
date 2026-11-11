@@ -1,8 +1,9 @@
 name: Deploy hashprice subgraph
 
-# Versions are v<indexer/package.json version>-<env>-<commit>. A deploy grafts onto the
-# environment's previous version unless the major changed, in which case it redeploys from
-# the start blocks and leaves the rolling tag for a manual `promote` once it has synced.
+# Versions are v<indexer/package.json version>-<env>-<commit>. A deploy grafts onto the version
+# the rolling tag points to (else the environment's newest version of the same major) unless the
+# major changed, in which case it redeploys from the start blocks and leaves the rolling tag for
+# a manual `promote` once it has synced.
 # A build identical to the previous version's (same major, same compiled output) is not
 # deployed. Versions are never deleted. A graft onto a different HashpriceBTC fails when that
 # oracle is ahead of the base's highest indexed Bitcoin height, unless `allow_gap` is set.
@@ -448,9 +449,20 @@ jobs:
           ALLOW_GAP: ${{ github.event.inputs.allow_gap == 'true' }}
         run: |
           set -euo pipefail
+          # Default base: the version the rolling tag points to, which may have been deployed
+          # by hand; while a new major awaits promote, the newest same-major git tag.
           case "${GRAFT_INPUT}" in
             none) GRAFT_FROM="" ;;
-            "") GRAFT_FROM="${GRAFT_BASE:+${GOLDSKY_SUBGRAPH_NAME}/${GRAFT_BASE}}" ;;
+            "")
+              GRAFT_FROM="${GRAFT_BASE:+${GOLDSKY_SUBGRAPH_NAME}/${GRAFT_BASE}}"
+              TAGGED=$(goldsky subgraph list --token "${GOLDSKY_API_KEY}" 2>/dev/null \
+                | awk -v alias="${GOLDSKY_SUBGRAPH_NAME}/${GOLDSKY_ROLLING_TAG}" '$2 == alias && $3 == "->" { print $4; exit }' || true)
+              TAGGED_VERSION="${TAGGED#"${GOLDSKY_SUBGRAPH_NAME}"/}"
+              if [ -n "${TAGGED}" ] && [ "${TAGGED_VERSION%%.*}" = "${SUBGRAPH_VERSION%%.*}" ] \
+                && [ "${TAGGED_VERSION}" != "${SUBGRAPH_VERSION}" ]; then
+                GRAFT_FROM="${TAGGED}"
+              fi
+              ;;
             *) GRAFT_FROM="${GRAFT_INPUT}" ;;
           esac
           GRAFT_ARGS=()
