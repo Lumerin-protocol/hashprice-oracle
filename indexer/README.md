@@ -119,8 +119,9 @@ as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<
 
 - **Same compiled build** as the previous version (comments and docs don't count): nothing
   is deployed. The build hash is stored in the git tag.
-- **Same major**: grafts onto the environment's previous version, keeping its history, and
-  moves the tag once it has caught up. The schema must stay graft-compatible (see
+- **Same major**: grafts onto the version the rolling tag points to (even one deployed by
+  hand), keeping its history, and moves the tag once it has caught up. While a new major
+  awaits `promote`, the base is the newest version of that major instead. The schema must stay graft-compatible (see
   [Graft-compatible schema changes](#graft-compatible-schema-changes)), else the deploy fails.
 - **Major bump**: full redeploy from the manifest's start blocks; the tag stays on the old
   version until a manual run with `promote=<version>` once it has synced. History from
