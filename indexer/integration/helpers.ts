@@ -232,6 +232,83 @@ export async function deployLongSyntheticFixture(conn: NetworkConnection) {
   return { deployment: d, genesisHeight, chain };
 }
 
+/** Heights a gap fixture keeps from the indexer, as many as dev missed (975,339–975,350). */
+export const GAP_LENGTH = 12;
+
+/** Heights mined after the gap: past the 10 whose median time past is approximate. */
+const AFTER_GAP = 30;
+
+/**
+ * A synthetic chain with a 7-day window of history, then GAP_LENGTH heights the indexer is
+ * not to see, then AFTER_GAP more.
+ */
+async function mineGapChain(conn: NetworkConnection) {
+  const { genesisHeight, genesisHash, baseTs } = await deploySyntheticGenesis(conn);
+  const below = WINDOW_7D + MTP_WINDOW + 2;
+  const chain = mineSyntheticChain(genesisHash, genesisHeight + 1, below + GAP_LENGTH + AFTER_GAP, baseTs, 10_000n);
+  await advanceClockTo(conn, chain[chain.length - 1].timestamp + 3600);
+  const gapStart = genesisHeight + 1 + below;
+  return { genesisHeight, genesisHash, baseTs, chain, gapStart, gapEnd: gapStart + GAP_LENGTH - 1 };
+}
+
+/** Submits heights `from`..`to` of `chain` in batches of 100; returns the last receipt. */
+async function submitSyntheticRange(d: Deployment, chain: SyntheticBlock[], from: number, to: number) {
+  const offset = chain[0].height;
+  let receipt: Awaited<ReturnType<typeof submitSyntheticBatch>> | undefined;
+  for (let height = from; height <= to; height += 100) {
+    const last = Math.min(height + 99, to);
+    receipt = await submitSyntheticBatch(d, height - 1, chain.slice(height - offset, last - offset + 1));
+  }
+  if (receipt === undefined) throw new Error(`no heights in ${from}..${to}`);
+  return receipt;
+}
+
+/** One oracle fed the whole gap chain; the gap heights are all submitted in EVM block `gapBlock`. */
+export async function deployGapFixture(conn: NetworkConnection) {
+  const { genesisHeight, genesisHash, baseTs, chain, gapStart, gapEnd } = await mineGapChain(conn);
+  const d = await deployFeeds(conn, {
+    hash: genesisHash,
+    height: genesisHeight,
+    timestamp: baseTs,
+    nBits: SYNTHETIC_NBITS,
+  }, SYNTHETIC_ORACLE);
+
+  await submitSyntheticRange(d, chain, genesisHeight + 1, gapStart - 1);
+  const { blockNumber: gapBlock } = await submitSyntheticRange(d, chain, gapStart, gapEnd);
+  await submitSyntheticRange(d, chain, gapEnd + 1, chain[chain.length - 1].height);
+  return { deployment: d, chain, gapStart, gapEnd, gapBlock };
+}
+
+/**
+ * Dev after the oracle switch: `next` holds the chain from the last gap height and is fed the
+ * heights above it up to the tip's parent; `previous`, deployed after, is fed the heights below
+ * the gap; then `next` gets the tip, in EVM block `tipBlock`.
+ */
+export async function deployOracleSwitchGapFixture(conn: NetworkConnection) {
+  const { genesisHeight, genesisHash, baseTs, chain, gapStart, gapEnd } = await mineGapChain(conn);
+  const tip = chain[chain.length - 1].height;
+  const lastGapBlock = chain[gapEnd - chain[0].height];
+
+  const next = await deployFeeds(conn, {
+    hash: lastGapBlock.hash,
+    height: gapEnd,
+    timestamp: lastGapBlock.timestamp,
+    nBits: SYNTHETIC_NBITS,
+  }, SYNTHETIC_ORACLE);
+  await submitSyntheticRange(next, chain, gapEnd + 1, tip - 1);
+
+  const previous = await deployFeeds(conn, {
+    hash: genesisHash,
+    height: genesisHeight,
+    timestamp: baseTs,
+    nBits: SYNTHETIC_NBITS,
+  }, SYNTHETIC_ORACLE);
+  await submitSyntheticRange(previous, chain, genesisHeight + 1, gapStart - 1);
+
+  const { blockNumber: tipBlock } = await submitSyntheticRange(next, chain, tip, tip);
+  return { previous, next, chain, gapStart, gapEnd, tipBlock };
+}
+
 /** Synthetic genesis plus a 5-block canonical chain, and a 6-block fork from the same genesis. */
 export async function deployReorgFixture(conn: NetworkConnection) {
   const { genesisHeight, genesisHash, baseTs } = await deploySyntheticGenesis(conn);
@@ -279,8 +356,13 @@ export async function submitBlock(d: Deployment, block: BtcBlock) {
  * Points the indexer at `d`: renders the test manifest with its addresses, binds the oracle
  * and the BTC/USD aggregator, captures the view calls the mapping makes, and buffers every
  * log since the deployment block so the `once` handler and the full block history replay.
+ * `range` narrows the logs buffered, e.g. to leave out the blocks of a gap.
  */
-export async function indexDeployment(conn: NetworkConnection, d: Deployment): Promise<void> {
+export async function indexDeployment(
+  conn: NetworkConnection,
+  d: Deployment,
+  range: { fromBlock?: bigint; toBlock?: bigint } = {},
+): Promise<void> {
   renderManifest({
     HASHPRICE_BTC_ADDRESS: d.oracle.address,
     HASHPRICE_USD_ADDRESS: d.hashpriceUsd.address,
@@ -295,7 +377,7 @@ export async function indexDeployment(conn: NetworkConnection, d: Deployment): P
   conn.matchstick.bind("ChainlinkAggregator", d.btcUsd.address, aggregatorAbi);
   await conn.matchstick.captureViewMocks();
   conn.matchstick.addCallMocks(await captureViewMocksFromContract(d.pc, d.hashpriceUsd.abi, d.hashpriceUsd.address));
-  await conn.matchstick.ingest({ fromBlock: d.startBlock });
+  await conn.matchstick.ingest({ fromBlock: range.fromBlock ?? d.startBlock, toBlock: range.toBlock });
 }
 
 /** Replays every buffered log through the mapping and returns the store. */

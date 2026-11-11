@@ -4,7 +4,8 @@ name: Deploy hashprice subgraph
 # environment's previous version unless the major changed, in which case it redeploys from
 # the start blocks and leaves the rolling tag for a manual `promote` once it has synced.
 # A build identical to the previous version's (same major, same compiled output) is not
-# deployed. Versions are never deleted.
+# deployed. Versions are never deleted. A graft onto a different HashpriceBTC fails when that
+# oracle is ahead of the base's highest indexed Bitcoin height, unless `allow_gap` is set.
 
 on:
   push:
@@ -61,6 +62,11 @@ on:
         description: "Only move the rolling tag to this version (e.g. v4.0.0-dev-abc1234), once it has synced"
         required: false
         type: string
+      allow_gap:
+        description: "Graft even though the configured HashpriceBTC accepted heights the base never indexed; they stay missing"
+        required: false
+        type: boolean
+        default: false
 
 # Never cancel a run midway: it could stop between deploying a version and tagging it.
 concurrency:
@@ -439,6 +445,7 @@ jobs:
           GOLDSKY_ENDPOINT: ${{ needs.build.outputs.goldsky_endpoint }}
           GRAFT_INPUT: ${{ github.event.inputs.graft_from }}
           GRAFT_BASE: ${{ needs.build.outputs.graft_base }}
+          ALLOW_GAP: ${{ github.event.inputs.allow_gap == 'true' }}
         run: |
           set -euo pipefail
           case "${GRAFT_INPUT}" in
@@ -482,6 +489,62 @@ jobs:
           }
 
           echo "📊 Current ${GOLDSKY_ROLLING_TAG}: $(meta "${GOLDSKY_ENDPOINT}" | jq -c '.data._meta // "unavailable"' 2>/dev/null || echo unavailable)"
+
+          # --- A graft indexes only events after its block. Onto a different HashpriceBTC, the
+          # heights that oracle accepted above the base's highest BtcBlock are never indexed:
+          # graft before switching the keeper to it (indexer/README.md). ---
+          if [ -n "${GRAFT_FROM}" ]; then
+            BASE_ENDPOINT="${GOLDSKY_ENDPOINT%/"${GOLDSKY_SUBGRAPH_NAME}"/"${GOLDSKY_ROLLING_TAG}"/gn}/${GRAFT_FROM}/gn"
+            ORACLE=$(sed -nE 's/^ *address: *"?(0x[0-9a-fA-F]{40})"?.*/\1/p' subgraph.yaml | head -1 | tr 'A-F' 'a-f')
+            NETWORK=$(sed -nE 's/^ *network: *"?([a-z-]+)"?.*/\1/p' subgraph.yaml | head -1)
+            case "${NETWORK}" in
+              base) RPC_URL=https://mainnet.base.org ;;
+              base-sepolia) RPC_URL=https://sepolia.base.org ;;
+              *) echo "::error::No RPC for network '${NETWORK}'"; exit 1 ;;
+            esac
+
+            base_query() {
+              curl -s -m 15 --retry 3 -X POST -H "Content-Type: application/json" \
+                -d "{\"query\":\"$1\"}" "${BASE_ENDPOINT}" 2>/dev/null || true
+            }
+            # HashpriceMetaV2 since v3.6.0; older bases only have HashpriceMeta.
+            BASE_ORACLE=$(base_query '{ hashpriceMetaV2S(first: 1) { hashpriceBtcAddress } }' \
+              | jq -r '.data.hashpriceMetaV2S[0].hashpriceBtcAddress // empty' 2>/dev/null || true)
+            if [ -z "${BASE_ORACLE}" ]; then
+              BASE_ORACLE=$(base_query '{ hashpriceMetas(first: 1, orderBy: id, orderDirection: desc) { hashpriceBtcAddress } }' \
+                | jq -r '.data.hashpriceMetas[0].hashpriceBtcAddress // empty' 2>/dev/null || true)
+            fi
+
+            GAP=""
+            if [ "${BASE_ORACLE}" = "${ORACLE}" ]; then
+              echo "🔗 ${GRAFT_FROM} already indexes ${ORACLE}: no gap"
+            else
+              BASE_HEIGHT=$(base_query '{ btcBlocks(first: 1, orderBy: id, orderDirection: desc) { id } }' \
+                | jq -r '.data.btcBlocks[0].id // empty' 2>/dev/null || true)
+              # state() returns PackedState; its first word is chainHeight, a uint32.
+              STATE=$(curl -s -m 15 --retry 3 -X POST -H "Content-Type: application/json" \
+                -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"${ORACLE}\",\"data\":\"0xc19d93fb\"},\"latest\"]}" \
+                "${RPC_URL}" 2>/dev/null | jq -r '.result // empty' 2>/dev/null || true)
+              if [ -z "${BASE_HEIGHT}" ] || [ "${#STATE}" -lt 66 ]; then
+                GAP="could not read the highest BtcBlock of ${GRAFT_FROM} (${BASE_HEIGHT:-none}) or the tip of ${ORACLE} on ${NETWORK}"
+              else
+                ORACLE_HEIGHT=$(( 16#${STATE:58:8} ))
+                echo "🔗 ${GRAFT_FROM} indexes ${BASE_ORACLE:-an unknown oracle} up to height ${BASE_HEIGHT}; ${ORACLE} is at ${ORACLE_HEIGHT}"
+                if [ "${ORACLE_HEIGHT}" -gt "${BASE_HEIGHT}" ]; then
+                  GAP="${ORACLE} accepted Bitcoin heights $((BASE_HEIGHT + 1))..${ORACLE_HEIGHT} before this graft, which never indexes them"
+                fi
+              fi
+            fi
+
+            if [ -n "${GAP}" ]; then
+              if [ "${ALLOW_GAP}" = "true" ]; then
+                echo "::warning::${GAP}; deploying anyway (allow_gap). The indexer bridges gaps under 2,016 heights with approximate hashrate points."
+              else
+                echo "::error::${GAP}. Graft while the keeper still feeds ${BASE_ORACLE:-the old oracle}, then switch it; or rerun with allow_gap."
+                exit 1
+              fi
+            fi
+          fi
 
           # --- Deploy new version ---
           echo "📤 Deploying ${GOLDSKY_SUBGRAPH_NAME}/${SUBGRAPH_VERSION}..."

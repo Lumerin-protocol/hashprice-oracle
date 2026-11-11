@@ -130,7 +130,15 @@ as `v<package.json version>-<env>-<commit>` (git tag `indexer-v<version>-<env>-<
 
 A graft starts at the base's latest block, not at a chosen one: Goldsky prunes history.
 A handler fix therefore applies only from the graft onwards; rewriting old rows needs a
-major bump. Versions are never deleted.
+major bump, or a one-time rewrite by the first handler after the graft. Versions are never
+deleted.
+
+Oracle events emitted before the graft block are never indexed. Graft onto a new
+`HashpriceBTC` while the keeper still feeds the old one, then switch the keeper: if the new
+oracle accepts heights first, they are missing from `BtcBlock`. Since v3.7.0 a gap of fewer
+than 2,016 heights is bridged: its work follows from the neighbouring blocks' `nBits`, and
+the median time past of the 10 blocks after it is approximate (`medianTimeApproximate`), as
+are the hashrate rows whose window starts or ends on one of them (`exact: false`).
 
 ### Graft-compatible schema changes
 
@@ -163,6 +171,8 @@ Keep the `V2` names; renaming them back breaks every consumer. Currently outstan
 - `BtcBlock`: `blockHash`, `coinbaseValue`, `fees`, `target`, `difficulty` and
   `impliedHashrateHpS` are nullable for grafts from v3.3.4.
 - `HashpriceMeta`: deprecated by `HashpriceMetaV2` in v3.6.0.
+- `NetworkHashrate1d`, `NetworkHashrate7d`: `exact` is nullable for grafts from v3.6.0.
+  `BtcBlock.medianTimeApproximate` stays nullable (null with `medianTime`).
 
 ## Example Queries
 

@@ -37,6 +37,7 @@ dataSources:
         - HashpriceMeta
         - LatestRates
         - BtcBlock
+        - BtcChainState
         - ChainReorgEvent
         - NetworkHashrate1d
         - NetworkHashrate7d
