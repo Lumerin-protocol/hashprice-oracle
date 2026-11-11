@@ -12,11 +12,15 @@ type LatestRates @entity(immutable: false) {
   networkHashrate1dHpS: BigInt
   networkHashrate1dUpdatedAt: BigInt
   networkHashrate1dBlockNumber: BigInt
+  # The latest NetworkHashrate1d row's `exact`.
+  networkHashrate1dExact: Boolean
 
   networkHashrate7dId: Int8
   networkHashrate7dHpS: BigInt
   networkHashrate7dUpdatedAt: BigInt
   networkHashrate7dBlockNumber: BigInt
+  # The latest NetworkHashrate7d row's `exact`.
+  networkHashrate7dExact: Boolean
 
   btcUsdId: Int8
   btcUsdPrice: BigInt
@@ -85,8 +89,12 @@ type BtcBlock @entity(immutable: false) {
   blockHash: Bytes
   btcTimestamp: BigInt! # raw header timestamp (nTime)
   # Median of the 11 timestamps h-10..h — Bitcoin Core's GetMedianTimePast, the
-  # `mediantime` field of `getblock`. Null until 11 consecutive blocks are known.
+  # `mediantime` field of `getblock`. Null until the run reaches 10 blocks below h.
   medianTime: BigInt
+  # True when some of h-10..h-1 were never indexed (the first 10 blocks after a bridged
+  # gap), so `medianTime` is the median of the timestamps that were. Null when `medianTime`
+  # is, and on rows grafted from v3.6.0.
+  medianTimeApproximate: Boolean
   nBits: BigInt!
   # Total value of the coinbase transaction's outputs, in satoshis, exactly as the header
   # claimed it. Kept raw because it is the only unrecoverable figure: `fees` below saturates.
@@ -112,10 +120,20 @@ type BtcBlock @entity(immutable: false) {
   # Sum of expected hashes (2^256 / (target + 1)) over every block up to and including
   # this one, counting from `chainBaseHeight`. Derived from the parent row, never from a
   # global running total, so a reorg recomputes it correctly as fork blocks are re-indexed.
+  # Heights that were never indexed count with the nBits of their difficulty epoch, taken
+  # from the nearest indexed block, which makes the sum exact across a bridged gap.
   cumulativeWork: BigInt!
-  # Oldest height reachable from here by an unbroken chain of parent rows. A window of W
-  # blocks ending at h is only measurable when h - W >= chainBaseHeight.
+  # Oldest height reachable from here by a chain of parent rows, bridging gaps of fewer
+  # than 2,016 heights. A window of W blocks ending at h is only measurable when
+  # h - W >= chainBaseHeight.
   chainBaseHeight: Int8!
+}
+
+# Singleton (id 0). The `chainBaseHeight` of the run last searched for an indexed block
+# below its base, so each run is searched and joined to the chain below at most once.
+type BtcChainState @entity(immutable: false) {
+  id: Int8!
+  checkedChainBaseHeight: Int8!
 }
 
 # One row per accepted reorg. Purely a record: the canonical BtcBlock rows are already
@@ -152,6 +170,10 @@ type NetworkHashrate1d @entity(timeseries: true) {
   # medianTime(h) - medianTime(h - 144); the divisor, kept so the number can be audited and
   # so luck is readable directly — it sits near 86400 but drifts with block-interval variance.
   elapsedSeconds: BigInt!
+  # False when the window starts or ends on a block whose median time past is approximate
+  # (BtcBlock.medianTimeApproximate), which can shift `elapsedSeconds` by minutes.
+  # Nullable for graft compatibility with v3.6.0.
+  exact: Boolean
 }
 
 # 1008 blocks ≈ 7 days. Same estimator as NetworkHashrate1d over a longer window, which
@@ -166,6 +188,8 @@ type NetworkHashrate7d @entity(timeseries: true) {
   confirmedHeight: BigInt!
   # medianTime(h) - medianTime(h - 1008); sits near 604800.
   elapsedSeconds: BigInt!
+  # As on NetworkHashrate1d.
+  exact: Boolean
 }
 
 type BtcUsd @entity(timeseries: true) {
