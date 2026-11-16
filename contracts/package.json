@@ -20,12 +20,10 @@
     "compile": "hardhat compile",
     "run:dev": "hardhat run --env dev",
     "run:prod": "hardhat run --env prd",
-    "clean": "rm -rf abi artifacts cache abi",
-    "aderyn": "aderyn"
+    "clean": "rm -rf abi artifacts cache abi"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
-    "@cyfrin/aderyn": "^0.5.13",
     "@openzeppelin/contracts": "npm:@openzeppelin/contracts@5.1.0",
     "@openzeppelin/contracts-upgradeable": "npm:@openzeppelin/contracts-upgradeable@5.1.0",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
