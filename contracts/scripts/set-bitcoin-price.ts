@@ -1,4 +1,4 @@
-import { viem } from "hardhat";
+import { network } from "hardhat";
 import { formatUnits, parseUnits } from "viem";
 import { createInterface } from "readline";
 
@@ -14,6 +14,7 @@ async function main() {
 
   console.log("Connecting to BTCUSDMock at:", oracleAddress);
 
+  const { viem } = await network.connect();
   const pc = await viem.getPublicClient();
 
   const btcPriceOracleMock = await viem.getContractAt("BTCUSDMock", oracleAddress);

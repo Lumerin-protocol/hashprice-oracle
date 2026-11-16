@@ -4,7 +4,6 @@
 # URL rather than the tag package.json depends on.
 allowBuilds:
   "@arbitrum/nitro-contracts": true
-  "@cyfrin/aderyn": true
   esbuild: false
   hardhat-viem-abi@https://codeload.github.com/lsheva/hardhat-viem-abi/tar.gz/194bf0c28cc1ef7a37e4d6aec024fbd191f5b8a9#path:packages/hardhat-viem-abi: true
   keccak: true
