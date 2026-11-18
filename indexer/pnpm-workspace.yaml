@@ -6,3 +6,7 @@ allowBuilds:
   matchstick-as: true
   protobufjs: false
   ssh2: false
+  esbuild: true
+minimumReleaseAgeExclude:
+  - hardhat-matchstick-ts@0.4.4
+  - matchstick-ts@0.6.1

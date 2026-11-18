@@ -1,0 +1,2 @@
+# The integration tests render this manifest with the addresses of the contracts they deploy.
+manifestPath: subgraph.test.yaml

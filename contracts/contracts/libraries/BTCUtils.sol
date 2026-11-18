@@ -162,6 +162,8 @@ library BTCUtils {
     /// @notice Parse a raw Bitcoin coinbase tx and return total output value (satoshis)
     /// @dev The tx must be in non-witness serialization (for txid computation).
     ///      Layout: version(4) | vinCount(varint,=1) | vin | voutCount(varint) | vouts | locktime(4)
+    ///      Rejects anything not shaped like a coinbase (null prevout, exact length), so a 64-byte
+    ///      internal merkle node folded up a shorter proof cannot pass as the coinbase.
     function parseCoinbaseOutputValue(bytes calldata rawTx) internal pure returns (uint64 totalValue) {
         uint256 offset = 4; // skip version
 
@@ -169,6 +171,12 @@ library BTCUtils {
         (uint64 vinCount, uint256 vinSize) = readVarint(rawTx, offset);
         offset += vinSize;
         if (vinCount != 1) revert InvalidCoinbaseTx();
+
+        // Null prevout (32 zero bytes, index 0xffffffff): only a coinbase may spend it, and a merkle
+        // node would need 36 chosen bytes inside a hash preimage.
+        if (bytes32(rawTx[offset:offset + 32]) != 0 || readUint32LE(rawTx, offset + 32) != 0xffffffff) {
+            revert InvalidCoinbaseTx();
+        }
 
         // Skip the single input: prevHash(32) + prevIndex(4) + scriptLen(varint) + script + sequence(4)
         offset += 36; // prevHash + prevIndex
@@ -185,6 +193,9 @@ library BTCUtils {
             (uint64 pkScriptLen, uint256 pkSize) = readVarint(rawTx, offset);
             offset += pkSize + uint256(pkScriptLen);
         }
+
+        // Only the 4-byte locktime may remain.
+        if (offset + 4 != rawTx.length) revert InvalidCoinbaseTx();
     }
 
     /// @dev Bitcoin: `floor(oldTarget * actualTimespan / EPOCH_TIMESPAN)` without overflowing

@@ -10,7 +10,7 @@ wallets = {
   futures_address         = "0x56d8d4a03a0f34b93b86e0b7941aff29178d0479"
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11"
   btcusd_oracle_address   = "0x614dcafa33af0705c7b4a37667ef511f400f36d0" # update 2/6/2026 "0x8d71cD231c2C9b1C85cfa8Cc2b5d0e89974480ea" # DEV ONLY 
-  hashprice_btc_address   = "0x7b7f9698cadca34f13d6091c4ee34045f97442e7" # config/dev.env HASHPRICE_BTC_ADDRESS
+  hashprice_btc_address   = "0x6575e5b952822a3df09619763005371d0b95a7d6" # config/dev.env HASHPRICE_BTC_ADDRESS
 }
 
 # Spot marketplace / proxy-indexer (Arbitrum Sepolia) — must match spot-marketplace .bedrock/02-dev
@@ -98,7 +98,9 @@ alarm_thresholds = {
   rds_connections_threshold      = 190
   graph_sync_lag_threshold       = 200
   graph_error_threshold          = 20
-  oracle_stale_threshold_minutes = 30 # Business rule: how old should oracle data be before it is considered stale
+  oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
+  oracle_max_age_minutes         = 120 # Venues and margin engine reject older prices (MAX_ORACLE_STALENESS); Slack warning
+  oracle_blocks_behind_threshold = 2  # Page when the relay trails the Bitcoin tip by this many blocks
 }
 
 ########################################

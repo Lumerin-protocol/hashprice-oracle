@@ -60,5 +60,7 @@ Do **not** attach SNS to every metric alarm (noise / double-page). Exception: va
 
 - Shared lookups/locals: `.bedrock/.terragrunt/70_monitoring_common.tf`
 - Component alarms: `80_alarms.tf` (and related)
-- Composites: `81_composite_alarms.tf`
+- Composites: `81_composite_alarms.tf`. The oracle uses the warn/crit split: `hpo-oracle-<env>`
+  pages when the keeper fails or the relay trails the Bitcoin tip; `hpo-oracle-warning-<env>` posts
+  to Slack when the price is older than the venues accept, which a slow Bitcoin block alone causes.
 - Topic names: `.bedrock/02-dev/terraform.tfvars`, `.bedrock/04-lmn/terraform.tfvars` → `monitoring {}`

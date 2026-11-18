@@ -7,8 +7,12 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const {
+  viem,
   networkHelpers: { loadFixture },
 } = await network.connect();
+
+/** Batch sizes to sweep independently from the keeper's single-block submitBlock fast path. */
+const BATCH_SIZES = [1, 5, 10, 25, 50];
 
 describe("HashpriceBTC — Gas benchmark", function () {
   it("average gas per block (submit one-by-one)", async function () {
@@ -66,10 +70,131 @@ describe("HashpriceBTC — Gas benchmark", function () {
       `  V3 latestRoundData (estimate): ${Number(latestRoundDataGas).toLocaleString()} gas`,
     );
 
+    // ─── HashpriceGlideUSD reads, on this oracle ────────────────────
+    const btcUsd = await viem.deployContract("BTCUSDMock", []);
+    await btcUsd.write.setPrice([10_000_000_000_000n]);
+    const hashpriceUSD = await viem.deployContract("HashpriceUSD", [oracle.address, btcUsd.address]);
+    const glideUSD = await viem.deployContract("HashpriceGlideUSD", [hashpriceUSD.address]);
+    const eta = await glideUSD.read.halvingEta();
+    const day = 86_400n;
+    const dates = [eta - 60n * day, eta, eta + 60n * day];
+    const estimate = (to: string, data: `0x${string}`) =>
+      pc.estimateGas({ to: to as `0x${string}`, data });
+    const scheduleRows: [string, bigint][] = [
+      [
+        "`HashpriceUSD.latestRoundData` (baseline)",
+        await estimate(
+          hashpriceUSD.address,
+          encodeFunctionData({ abi: hashpriceUSD.abi, functionName: "latestRoundData" }),
+        ),
+      ],
+      [
+        "`HashpriceGlideUSD.latestRoundData`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestRoundData" }),
+        ),
+      ],
+      [
+        "`latestMarkAndSchedule`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestMarkAndSchedule" }),
+        ),
+      ],
+      [
+        "`latestSchedule`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "latestSchedule" }),
+        ),
+      ],
+      [
+        "`glidePrice`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "glidePrice" }),
+        ),
+      ],
+      [
+        "`postHalvingPrice`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "postHalvingPrice" }),
+        ),
+      ],
+      [
+        "`markRangeAt`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "markRangeAt", args: [eta] }),
+        ),
+      ],
+      [
+        `\`markRangesAt\` (${dates.length} dates)`,
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "markRangesAt", args: [dates] }),
+        ),
+      ],
+      [
+        "`halvingEta`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "halvingEta" }),
+        ),
+      ],
+      [
+        "`halvingStep`",
+        await estimate(
+          glideUSD.address,
+          encodeFunctionData({ abi: glideUSD.abi, functionName: "halvingStep" }),
+        ),
+      ],
+    ];
+    for (const [label, gas] of scheduleRows) {
+      console.log(`  ${label}: ${Number(gas).toLocaleString()} gas`);
+    }
+
     const avgAll = Math.round(Number(totalGas) / toSubmit.length);
     const avgCold = Math.round(Number(coldGas) / FEE_WINDOW);
     const avgWarm = warmCount > 0 ? Math.round(Number(warmGas) / warmCount) : null;
     const hashpriceBtc = (Number(answer) / Number(satsPerBtc)).toFixed(8);
+
+    // ─── submitBlocks, swept over batch size ────────────────────────
+    //
+    // Same blocks, same total work, only the number of transactions differs. The
+    // per-block figure falls with batch size because the 21,000 intrinsic fee and the
+    // hashprice cache write are paid once per call rather than once per block.
+    const batchRows: { size: number; perBlock: number; total: bigint; calls: number }[] = [];
+
+    for (const size of BATCH_SIZES) {
+      const fresh = await loadFixture(deployV3Fixture);
+      let batchTotal = 0n;
+      let calls = 0;
+      let ancestorHeight = fresh.config.checkpoint.height;
+
+      for (let i = 0; i < toSubmit.length; i += size) {
+        const chunk = toSubmit.slice(i, i + size);
+        const formatted = chunk.map(formatBlock);
+        const hash = await fresh.contracts.oracle.write.submitBlocks([
+          ancestorHeight,
+          `0x${formatted.map((b) => b.header.slice(2)).join("")}`,
+          formatted.map((b) => b.coinbaseTx),
+          formatted.map((b) => b.merkleProof),
+        ]);
+        const receipt = await fresh.accounts.pc.waitForTransactionReceipt({ hash });
+        batchTotal += receipt.gasUsed;
+        calls++;
+        ancestorHeight = chunk[chunk.length - 1].height;
+      }
+
+      const perBlock = Math.round(Number(batchTotal) / toSubmit.length);
+      batchRows.push({ size, perBlock, total: batchTotal, calls });
+      console.log(
+        `  V3 submitBlocks batch=${String(size).padStart(2)}: ${perBlock.toLocaleString()} gas/block over ${calls} txs`,
+      );
+    }
 
     const date = new Date().toISOString().slice(0, 10);
     const lines = [
@@ -89,11 +214,30 @@ describe("HashpriceBTC — Gas benchmark", function () {
           ]
         : []),
       ``,
+      `## \`submitBlocks\` — same ${toSubmit.length} blocks, swept over batch size`,
+      ``,
+      `The keeper uses \`submitBlock\` for a single plain extension and \`submitBlocks\` for`,
+      `backlogs and reorgs. The \`size = 1\` row isolates the batch path's floor; larger batches`,
+      `amortise the 21,000 intrinsic fee and the single hashprice cache write across more blocks.`,
+      ``,
+      `| Batch size | Transactions | Total gas | Gas per block |`,
+      `|-----------:|-------------:|----------:|--------------:|`,
+      ...batchRows.map(
+        (r) =>
+          `| ${r.size} | ${r.calls} | ${Number(r.total).toLocaleString()} | ${r.perBlock.toLocaleString()} |`,
+      ),
+      ``,
       `## \`latestRoundData\` — read-only call`,
       ``,
       `| Metric | Gas |`,
       `|--------|----:|`,
       `| Estimate | ${Number(latestRoundDataGas).toLocaleString()} |`,
+      ``,
+      `## \`HashpriceGlideUSD\` — read-only calls (estimates, BTC/USD mock)`,
+      ``,
+      `| Call | Gas |`,
+      `|------|----:|`,
+      ...scheduleRows.map(([label, gas]) => `| ${label} | ${Number(gas).toLocaleString()} |`),
       ``,
       `## Hashprice at benchmark tip`,
       ``,

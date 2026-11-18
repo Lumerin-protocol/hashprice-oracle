@@ -8,29 +8,29 @@ import {
 } from "@graphprotocol/graph-ts";
 import { AggregatorProxy } from "../generated/HashpriceBTC/AggregatorProxy";
 import { AggregatorV2V3Interface } from "../generated/HashpriceBTC/AggregatorV2V3Interface";
-import { AggregatorV3Interface } from "../generated/HashpriceBTC/AggregatorV3Interface";
-import {
-  HashpriceBTC,
-  HashpriceBTC__getBlockFromTipResultValue0Struct,
-} from "../generated/HashpriceBTC/HashpriceBTC";
 import { AnswerUpdated } from "../generated/HashpriceBTC/AggregatorProxy";
 import {
   BlockSubmitted,
+  ChainReorg,
   HashpriceUpdated,
 } from "../generated/HashpriceBTC/HashpriceBTC";
 import {
   HashpriceUsd,
   BtcUsd,
   BtcBlock,
+  BtcChainState,
+  ChainReorgEvent,
   HashpriceBtc,
-  HashpriceMeta,
+  HashpriceMetaV2,
   LatestRates,
   NetworkHashrate1d,
   NetworkHashrate7d,
 } from "../generated/schema";
 import { ChainlinkAggregator } from "../generated/templates";
+import { loadHashpriceMeta, loadOrInitializeHashpriceMeta } from "./hashpriceMeta";
 
 const LATEST_RATES_ID = 0;
+const BTC_CHAIN_STATE_ID: i64 = 0;
 
 const ONE = BigInt.fromI32(1);
 const TWO = BigInt.fromI32(2);
@@ -40,12 +40,24 @@ const TWO_256 = TWO.pow(128).pow(2);
 // Bitcoin's maximum nBits exponent; anything above needs more than 256 bits.
 const MAX_NBITS_EXPONENT: u32 = 32;
 
-// Mirrors HashpriceBTC.BLOCK_BUFFER_SIZE. A height further than this behind the tip is no
-// longer readable through getBlockFromTip — its ring slot has been overwritten.
-const BLOCK_BUFFER_SIZE = 32;
+// Difficulty-1 target, 0xffff * 2^208. Mirrors BTCUtils.DIFF1_TARGET.
+const DIFF1_TARGET = BigInt.fromI32(0xffff).times(TWO.pow(208));
+
+// Bitcoin's target block interval in seconds, the divisor behind difficulty-implied hashrate.
+const TARGET_BLOCK_INTERVAL = BigInt.fromI32(600);
+
+// Subsidy schedule. Mirrors BTCUtils.getBlockSubsidy: 50 BTC halving every 210,000 blocks,
+// reaching zero after 64 halvings.
+const HALVING_INTERVAL: i64 = 210000;
+const MAX_HALVINGS: i64 = 64;
+const INITIAL_SUBSIDY = BigInt.fromI64(50 * 100000000);
 
 // Bitcoin Core's median-time-past window: the block itself plus its 10 ancestors.
 const MTP_WINDOW = 11;
+
+// Bitcoin's difficulty epoch. A gap of fewer heights crosses at most one retarget, so the work
+// of its heights follows from the nBits of the indexed blocks on either side of it.
+const RETARGET_INTERVAL: i64 = 2016;
 
 const BLOCKS_PER_MINUTE = 10;
 const DAY_IN_MINUTES = 24 * 60;
@@ -54,7 +66,7 @@ const WINDOW_1D = DAY_IN_MINUTES / BLOCKS_PER_MINUTE; // 24 hours at 10 min/bloc
 const WINDOW_7D = (7 * DAY_IN_MINUTES) / BLOCKS_PER_MINUTE; // 7 days at 10 min/block
 
 // Once handler — starts the BTC/USD aggregator data source so its events are
-// indexed before the first HashpriceBTC update. HashpriceMeta is created later
+// indexed before the first HashpriceBTC update. HashpriceMetaV2 is created later
 // on the first feed event after every source contract exists.
 export function initFeeds(block: ethereum.Block): void {
   const context = dataSource.context();
@@ -82,91 +94,160 @@ export function initFeeds(block: ethereum.Block): void {
   rates.save();
 }
 
-function loadOrInitializeHashpriceMeta(block: ethereum.Block): HashpriceMeta | null {
-  let meta = HashpriceMeta.load(LATEST_RATES_ID);
-  if (meta !== null) return meta;
-
-  const context = dataSource.context();
-  const hashpriceBtcAddress = dataSource.address();
-  const btcUsdAddress = Address.fromString(context.mustGet("btcUsdAddress").toString());
-  const hashpriceUsdAddress = Address.fromString(context.mustGet("hashpriceUsdAddress").toString());
-
-  const hashpriceBtcDecimalsResult = HashpriceBTC.bind(hashpriceBtcAddress).try_decimals();
-  if (hashpriceBtcDecimalsResult.reverted) {
-    log.warning(
-      "HashpriceBTC is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  const btcUsdDecimalsResult = AggregatorProxy.bind(btcUsdAddress).try_decimals();
-  if (btcUsdDecimalsResult.reverted) {
-    log.warning(
-      "BTC/USD proxy is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  const hashpriceUsdDecimalsResult = AggregatorV3Interface.bind(hashpriceUsdAddress).try_decimals();
-  if (hashpriceUsdDecimalsResult.reverted) {
-    log.warning(
-      "HashpriceUSD is unavailable at block {}; metadata initialization will retry on feed updates.",
-      [block.number.toString()],
-    );
-    return null;
-  }
-
-  meta = new HashpriceMeta(LATEST_RATES_ID);
-  meta.id = LATEST_RATES_ID;
-  meta.hashpriceBtcAddress = hashpriceBtcAddress;
-  meta.hashpriceUsdAddress = hashpriceUsdAddress;
-  meta.btcUsdAddress = btcUsdAddress;
-  meta.startBlock = context.mustGet("hashpriceStartBlock").toBigInt();
-  meta.hashpriceBtcDecimals = hashpriceBtcDecimalsResult.value;
-  meta.btcUsdDecimals = btcUsdDecimalsResult.value;
-  meta.hashpriceUsdDecimals = hashpriceUsdDecimalsResult.value;
-  meta.save();
-
-  log.info("HashpriceMeta initialized at block {}", [block.number.toString()]);
-  return meta;
-}
-
-// Records the header timestamp and difficulty target of one accepted Bitcoin block, which is
-// what the actual-hashrate estimate is built from. The event itself carries neither, so both
-// are read back out of the contract's ring buffer.
+// Records one accepted Bitcoin block. Everything comes from the event itself, so a batch of
+// any depth indexes correctly — an earlier version read the header back through
+// getBlockFromTip and had to give up on blocks whose ring slot had already been overwritten,
+// leaving a hole that broke `chainBaseHeight` continuity and disabled the hashrate windows.
 export function handleBlockSubmitted(event: BlockSubmitted): void {
   const height = event.params.height;
-  const entry = readBlockEntry(event.address, height);
-  if (entry === null) return;
+  const nBits = event.params.nBits;
+  const btcTimestamp = event.params.timestamp;
 
-  const target = nBitsToTarget(entry.nBits);
+  const target = nBitsToTarget(nBits);
   if (target === null) return;
   const work = TWO_256.div(target.plus(ONE));
 
   // Accumulate from the parent row rather than a global running total: a reorg re-emits
   // BlockSubmitted for every fork block in order from the common ancestor, so each
   // overwritten height rebuilds its sum from an already-corrected parent.
-  const parent = BtcBlock.load(height.toI64() - 1);
+  let parent = BtcBlock.load(height.toI64() - 1);
+  if (parent !== null && !isRunChecked(parent.chainBaseHeight)) {
+    joinRunToChainBelow(parent.chainBaseHeight, height.toI64() - 1);
+    parent = BtcBlock.load(height.toI64() - 1);
+  }
+
   let cumulativeWork = work;
   let chainBaseHeight = height.toI64();
   if (parent !== null) {
     cumulativeWork = parent.cumulativeWork.plus(work);
     chainBaseHeight = parent.chainBaseHeight;
+  } else {
+    // A gap: the subgraph started, or was grafted, after the oracle had accepted the heights
+    // below. Continue the chain below it when it is near enough to bridge.
+    const below = findIndexedBelow(height.toI64());
+    if (below !== null) {
+      cumulativeWork = below.cumulativeWork.plus(bridgedWork(below, height.toI64(), nBits)).plus(work);
+      chainBaseHeight = below.chainBaseHeight;
+    }
+    markRunChecked(chainBaseHeight);
   }
 
+  const coinbaseValue = event.params.coinbaseValue;
+  const subsidy = getBlockSubsidy(height.toI64());
+
   const block = new BtcBlock(height.toI64());
-  block.btcTimestamp = entry.timestamp;
-  block.nBits = entry.nBits;
+  block.blockHash = event.params.blockHash;
+  block.btcTimestamp = btcTimestamp;
+  block.nBits = nBits;
+  block.coinbaseValue = coinbaseValue;
+  // Saturating, matching the contract: a coinbase paying less than the subsidy would
+  // otherwise make this negative.
+  block.fees = coinbaseValue.gt(subsidy) ? coinbaseValue.minus(subsidy) : BigInt.zero();
+  block.target = target;
+  block.difficulty = DIFF1_TARGET.div(target);
+  block.impliedHashrateHpS = work.div(TARGET_BLOCK_INTERVAL);
   block.cumulativeWork = cumulativeWork;
   block.chainBaseHeight = chainBaseHeight;
-  block.medianTime = medianTimePast(
-    height.toI64(),
-    entry.timestamp,
-    chainBaseHeight,
-  );
+  setMedianTime(block);
   block.save();
+}
+
+function isRunChecked(chainBaseHeight: i64): bool {
+  const state = BtcChainState.load(BTC_CHAIN_STATE_ID);
+  return state !== null && state.checkedChainBaseHeight == chainBaseHeight;
+}
+
+function markRunChecked(chainBaseHeight: i64): void {
+  let state = BtcChainState.load(BTC_CHAIN_STATE_ID);
+  if (state === null) state = new BtcChainState(BTC_CHAIN_STATE_ID);
+  state.checkedChainBaseHeight = chainBaseHeight;
+  state.save();
+}
+
+// The nearest indexed block below `height` and less than an epoch away, or null.
+function findIndexedBelow(height: i64): BtcBlock | null {
+  for (let h = height - 1; h >= height - RETARGET_INTERVAL && h >= 0; h--) {
+    const block = BtcBlock.load(h);
+    if (block !== null) return block;
+  }
+  return null;
+}
+
+// Work of the heights strictly between `below` and `height`, which were never indexed. Each
+// counts with the nBits of its epoch: `below`'s up to the next retarget, and `nBits`, the
+// block at `height`'s, from it on.
+function bridgedWork(below: BtcBlock, height: i64, nBits: BigInt): BigInt {
+  const retarget = (below.id / RETARGET_INTERVAL + 1) * RETARGET_INTERVAL;
+  const belowEpoch = (height < retarget ? height : retarget) - below.id - 1;
+  const aboveEpoch = height > retarget ? height - retarget : 0;
+  return blockWork(below.nBits)
+    .times(BigInt.fromI64(belowEpoch))
+    .plus(blockWork(nBits).times(BigInt.fromI64(aboveEpoch)));
+}
+
+function blockWork(nBits: BigInt): BigInt {
+  const target = nBitsToTarget(nBits);
+  return target === null ? BigInt.zero() : TWO_256.div(target.plus(ONE));
+}
+
+// Joins the run of rows `base`..`last` to the nearest indexed block below `base`, when one is
+// less than an epoch away. Rows indexed before v3.7.0 started a new run after any gap; the
+// first block after a v3.7.0 graft rewrites that run once. The joined run counts as checked,
+// so this never walks further down.
+function joinRunToChainBelow(base: i64, last: i64): void {
+  const first = BtcBlock.load(base);
+  if (first === null) {
+    markRunChecked(base);
+    return;
+  }
+  const below = findIndexedBelow(base);
+  if (below === null) {
+    markRunChecked(base);
+    return;
+  }
+
+  // The run counted its work from zero at `base`.
+  const offset = below.cumulativeWork.plus(bridgedWork(below, base, first.nBits));
+  const joinedBase = below.chainBaseHeight;
+  for (let h = base; h <= last; h++) {
+    const row = BtcBlock.load(h);
+    if (row === null || row.chainBaseHeight != base) break;
+    row.cumulativeWork = row.cumulativeWork.plus(offset);
+    row.chainBaseHeight = joinedBase;
+    setMedianTime(row);
+    row.save();
+  }
+  log.info("Joined Bitcoin heights {}..{} to the chain below height {}", [
+    base.toString(),
+    last.toString(),
+    below.id.toString(),
+  ]);
+  markRunChecked(joinedBase);
+}
+
+// Records an accepted reorg. The contract emits this before the winning fork's own
+// BlockSubmitted logs, so the replaced BtcBlock rows still hold the losing chain's data at
+// this point and are overwritten by the handlers that follow. Nothing is corrected here.
+export function handleChainReorg(event: ChainReorg): void {
+  const ancestorHeight = event.params.ancestorHeight;
+  const oldHeight = event.params.oldHeight;
+
+  log.warning("chain reorg at height {}: fork from {} replaces tip {}", [
+    event.params.newHeight.toString(),
+    ancestorHeight.toString(),
+    oldHeight.toString(),
+  ]);
+
+  const row = new ChainReorgEvent(0);
+  row.timestamp = event.block.timestamp.toI64();
+  row.blockNumber = event.block.number;
+  row.newTip = event.params.newTip;
+  row.newHeight = event.params.newHeight;
+  row.ancestorHeight = ancestorHeight;
+  row.oldTip = event.params.oldTip;
+  row.oldHeight = oldHeight;
+  row.depth = oldHeight.minus(ancestorHeight).toI64();
+  row.save();
 }
 
 // Handles hashprice updates — saves HashpriceBtc and derives HashpriceUsd from latest BtcUsd
@@ -202,12 +283,14 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
     row.elapsedSeconds = hashrate1d.elapsedSeconds;
+    row.exact = hashrate1d.exact;
     row.save();
 
     rates.networkHashrate1dId = event.params.confirmedHeight.toI64();
     rates.networkHashrate1dHpS = hashrate1d.hashrateHpS;
     rates.networkHashrate1dUpdatedAt = event.block.timestamp;
     rates.networkHashrate1dBlockNumber = event.block.number;
+    rates.networkHashrate1dExact = hashrate1d.exact;
   }
 
   const hashrate7d = deriveWindowHashrate(
@@ -221,12 +304,14 @@ export function handleHashpriceUpdated(event: HashpriceUpdated): void {
     row.blockNumber = event.block.number;
     row.confirmedHeight = event.params.confirmedHeight;
     row.elapsedSeconds = hashrate7d.elapsedSeconds;
+    row.exact = hashrate7d.exact;
     row.save();
 
     rates.networkHashrate7dId = event.params.confirmedHeight.toI64();
     rates.networkHashrate7dHpS = hashrate7d.hashrateHpS;
     rates.networkHashrate7dUpdatedAt = event.block.timestamp;
     rates.networkHashrate7dBlockNumber = event.block.number;
+    rates.networkHashrate7dExact = hashrate7d.exact;
   }
 
   rates.save();
@@ -272,13 +357,13 @@ export function handleAnswerUpdated(event: AnswerUpdated): void {
   rates.btcUsdBlockNumber = event.block.number;
   rates.save();
 
-  const meta = HashpriceMeta.load(LATEST_RATES_ID);
+  const meta = loadHashpriceMeta();
   if (meta === null) return;
 
   deriveHashpriceUsd(rates, meta);
 }
 
-function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
+function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMetaV2): void {
   log.info("inside deriveHashpriceUsd", []);
   if (
     rates.btcUsdId === 0 ||
@@ -331,10 +416,12 @@ function deriveHashpriceUsd(rates: LatestRates, meta: HashpriceMeta): void {
 class WindowHashrate {
   hashrateHpS: BigInt;
   elapsedSeconds: BigInt;
+  exact: bool;
 
-  constructor(hashrateHpS: BigInt, elapsedSeconds: BigInt) {
+  constructor(hashrateHpS: BigInt, elapsedSeconds: BigInt, exact: bool) {
     this.hashrateHpS = hashrateHpS;
     this.elapsedSeconds = elapsedSeconds;
+    this.exact = exact;
   }
 }
 
@@ -376,83 +463,37 @@ function deriveWindowHashrate(
   }
 
   const work = end.cumulativeWork.minus(start.cumulativeWork);
-  return new WindowHashrate(work.div(elapsed), elapsed);
+  const exact = !end.medianTimeApproximate && !start.medianTimeApproximate;
+  return new WindowHashrate(work.div(elapsed), elapsed, exact);
 }
 
-// Median of the header timestamps of `height` and its 10 ancestors — Bitcoin Core's
-// GetMedianTimePast, exposed as `mediantime` by the `getblock` RPC. `ownTimestamp` is passed
-// in because the caller has not written its own BtcBlock row yet.
-function medianTimePast(
-  height: i64,
-  ownTimestamp: BigInt,
-  chainBaseHeight: i64,
-): BigInt | null {
-  if (height - (MTP_WINDOW - 1) < chainBaseHeight) return null;
+// Median of the header timestamps of `block` and its 10 ancestors — Bitcoin Core's
+// GetMedianTimePast, exposed as `mediantime` by the `getblock` RPC. Ancestors in a bridged gap
+// were never indexed; the median of the timestamps that were is then flagged as approximate.
+function setMedianTime(block: BtcBlock): void {
+  const height = block.id;
+  if (height - (MTP_WINDOW - 1) < block.chainBaseHeight) {
+    block.medianTime = null;
+    return;
+  }
 
-  const timestamps: BigInt[] = [ownTimestamp];
+  const timestamps: BigInt[] = [block.btcTimestamp];
   for (let i = 1; i < MTP_WINDOW; i++) {
     const ancestor = BtcBlock.load(height - i);
-    if (ancestor === null) return null;
-    timestamps.push(ancestor.btcTimestamp);
+    if (ancestor !== null) timestamps.push(ancestor.btcTimestamp);
   }
 
   timestamps.sort(compareBigInt);
-  return timestamps[MTP_WINDOW / 2];
+  block.medianTime = timestamps[timestamps.length / 2];
+  block.medianTimeApproximate = timestamps.length < MTP_WINDOW;
 }
 
-// Reads the header timestamp and nBits for `height` back out of the contract's ring buffer.
-// getBlockFromTip indexes backwards from the tip, so the tip's own height has to be fetched
-// first; graph-node caches eth_call results per block, so the repeated tip lookup across
-// every BlockSubmitted log in one batch costs a single RPC round trip.
-function readBlockEntry(
-  contractAddress: Address,
-  height: BigInt,
-): HashpriceBTC__getBlockFromTipResultValue0Struct | null {
-  const contract = HashpriceBTC.bind(contractAddress);
-
-  const tipResult = contract.try_getBlockFromTip(0);
-  if (tipResult.reverted) {
-    log.error("getBlockFromTip(0) reverted while reading height {}", [
-      height.toString(),
-    ]);
-    return null;
-  }
-  const tip = tipResult.value;
-
-  const offset = tip.height.minus(height).toI64();
-  if (offset < 0 || offset >= BLOCK_BUFFER_SIZE) {
-    log.warning(
-      "Height {} is {} blocks behind tip {}, outside the {}-slot buffer",
-      [
-        height.toString(),
-        offset.toString(),
-        tip.height.toString(),
-        BLOCK_BUFFER_SIZE.toString(),
-      ],
-    );
-    return null;
-  }
-  if (offset === 0) return tip;
-
-  const entryResult = contract.try_getBlockFromTip(offset as i32);
-  if (entryResult.reverted) {
-    log.error("getBlockFromTip({}) reverted while reading height {}", [
-      offset.toString(),
-      height.toString(),
-    ]);
-    return null;
-  }
-
-  // A ring slot may still hold an entry from 32 blocks ago even when the offset looks sane.
-  const entry = entryResult.value;
-  if (entry.height.notEqual(height)) {
-    log.warning("Ring slot for height {} holds height {}", [
-      height.toString(),
-      entry.height.toString(),
-    ]);
-    return null;
-  }
-  return entry;
+// Block subsidy in satoshis at `height`. Mirrors BTCUtils.getBlockSubsidy so that
+// `fees` here matches the figure the contract feeds into its own fee average.
+function getBlockSubsidy(height: i64): BigInt {
+  const halvings = height / HALVING_INTERVAL;
+  if (halvings >= MAX_HALVINGS) return BigInt.zero();
+  return INITIAL_SUBSIDY.div(TWO.pow(halvings as u8));
 }
 
 // Expands a compact nBits target: coefficient * 2^(8 * (exponent - 3)).

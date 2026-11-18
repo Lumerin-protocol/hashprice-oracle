@@ -3,7 +3,9 @@ Oracle Staleness Check Lambda
 
 Queries the on-chain HashpriceBTC oracle (Chainlink AggregatorV3 interface)
 to check data freshness. Pushes the age of the latest round to CloudWatch
-for alarming.
+for alarming, and how many blocks the oracle's header chain trails the
+Bitcoin tip (read from the keeper's Bitcoin RPC). The age alone cannot tell a
+stuck relay from Bitcoin taking long between blocks; the block count can.
 
 ABI (relevant subset):
   function latestRoundData() view returns (
@@ -16,19 +18,22 @@ ABI (relevant subset):
   function decimals() view returns (uint8);
 """
 
+import base64
 import json
 import os
 import time
 from datetime import datetime, timezone
+import urllib.parse
 import urllib.request
 
 import boto3
 
 HASHPRICE_BTC_ADDRESS = os.environ.get("HASHPRICE_BTC_ADDRESS", "").lower()
 ETH_RPC_URL = os.environ.get("ETH_RPC_URL", "")
+BITCOIN_RPC_URL = os.environ.get("BITCOIN_RPC_URL", "")
 CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "HashpriceOracle")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
-MAX_AGE_MINUTES = int(os.environ.get("MAX_AGE_MINUTES", "30"))
+MAX_AGE_MINUTES = int(os.environ.get("MAX_AGE_MINUTES", "120"))
 
 cloudwatch = boto3.client("cloudwatch")
 
@@ -41,31 +46,49 @@ STATE_SELECTOR = "0xc19d93fb"              # state()
 UINT80_MASK = (1 << 80) - 1
 
 
-def eth_call(to_address: str, data: str):
-    """Make an eth_call to the configured RPC endpoint. Returns the raw
-    hex string ('0x...') on success, None on RPC error or transport failure."""
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "eth_call",
-        "params": [{"to": to_address, "data": data}, "latest"],
-        "id": 1,
-    }
+def json_rpc(url: str, method: str, params: list):
+    """POST one JSON-RPC request. Returns its `result`, or None on an RPC error
+    or transport failure. Credentials in the URL (user:pass@host) are sent as
+    Basic auth, as the keeper does."""
+    parts = urllib.parse.urlsplit(url)
+    # Cloudflare-fronted RPCs answer 403 to urllib's default User-Agent.
+    headers = {"Content-Type": "application/json", "User-Agent": "hpo-oracle-staleness"}
+    if parts.username:
+        token = f"{urllib.parse.unquote(parts.username)}:{urllib.parse.unquote(parts.password or '')}"
+        headers["Authorization"] = "Basic " + base64.b64encode(token.encode()).decode()
+        url = urllib.parse.urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[1]))
+    payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
     req = urllib.request.Request(
-        ETH_RPC_URL,
+        url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
-        if "error" in result:
-            print(f"RPC error: {result['error']}")
+        # Bitcoin Core answers `"error": null` on success.
+        if result.get("error"):
+            print(f"{method} RPC error: {result['error']}")
             return None
         return result.get("result")
     except Exception as e:
-        print(f"Transport error calling RPC: {e}")
+        print(f"Transport error calling {method}: {e}")
         return None
+
+
+def eth_call(to_address: str, data: str):
+    """Make an eth_call to the configured RPC endpoint. Returns the raw
+    hex string ('0x...') on success, None on RPC error or transport failure."""
+    return json_rpc(ETH_RPC_URL, "eth_call", [{"to": to_address, "data": data}, "latest"])
+
+
+def get_bitcoin_tip_height():
+    """Bitcoin `getblockcount` on the keeper's RPC, or None if unset or failing."""
+    if not BITCOIN_RPC_URL:
+        return None
+    height = json_rpc(BITCOIN_RPC_URL, "getblockcount", [])
+    return height if isinstance(height, int) else None
 
 
 def parse_int256(hex64: str) -> int:
@@ -155,6 +178,7 @@ def lambda_handler(event, context):
     print(f"Starting oracle staleness check at {datetime.now(timezone.utc).isoformat()}")
     print(f"Oracle address: {HASHPRICE_BTC_ADDRESS}")
     print(f"RPC URL: {ETH_RPC_URL[:50]}..." if ETH_RPC_URL else "RPC URL: NOT SET")
+    print("Bitcoin RPC: set" if BITCOIN_RPC_URL else "Bitcoin RPC: NOT SET")
     print(f"Max age threshold: {MAX_AGE_MINUTES} minutes")
 
     if not HASHPRICE_BTC_ADDRESS or not ETH_RPC_URL:
@@ -239,6 +263,18 @@ def lambda_handler(event, context):
     else:
         print("WARNING: could not read oracle state().lastSubmittedAt")
 
+    # Missing when either read fails; the alarm treats that as behind.
+    bitcoin_tip = get_bitcoin_tip_height()
+    blocks_behind = None
+    if index_state and bitcoin_tip is not None:
+        blocks_behind = max(0, bitcoin_tip - index_state["chain_height"])
+        print(f"Bitcoin tip={bitcoin_tip}, oracle trails it by {blocks_behind} blocks")
+        metric_data.append(
+            {"MetricName": "oracle_blocks_behind", "Value": float(blocks_behind), "Unit": "Count", "Dimensions": dim}
+        )
+    else:
+        print("WARNING: could not read the Bitcoin tip or the oracle height; oracle_blocks_behind not published")
+
     push_to_cloudwatch(metric_data)
 
     return {
@@ -251,5 +287,6 @@ def lambda_handler(event, context):
             "updated_at": updated_at,
             "age_minutes": age_minutes,
             "is_stale": is_stale,
+            "blocks_behind": blocks_behind,
         }),
     }

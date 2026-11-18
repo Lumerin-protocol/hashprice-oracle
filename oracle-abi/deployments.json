@@ -4,10 +4,10 @@
     "testnet": {
       "chainId": 84532,
       "network": "base-sepolia",
-      "startBlock": 44704529,
+      "startBlock": 57068233,
       "contracts": {
-        "HashpriceBTC": "0x7b7f9698cadca34f13d6091c4ee34045f97442e7",
-        "HashpriceUSD": "0x7df07e84e57890f429935946748757758f7964f1",
+        "HashpriceBTC": "0x6575e5b952822a3df09619763005371d0b95a7d6",
+        "HashpriceUSD": "0xc1b2476b81865dc292136851b322bdf89a3f2b37",
         "BtcUsdAggregator": "0x37b5E07C59238ad3bB11AC27129387A67F3340B6",
         "HashrateOracleLegacy": "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f"
       },
@@ -18,8 +18,15 @@
     "mainnet": {
       "chainId": 8453,
       "network": "base",
-      "contracts": {},
-      "subgraphs": {}
+      "startBlock": 59157880,
+      "contracts": {
+        "HashpriceBTC": "0xce4140ec552397dc33461bc9404f5dfc28e42251",
+        "HashpriceUSD": "0xe557558a39fb0d81eac683ef5884fb9847ab9584",
+        "BtcUsdAggregator": "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F"
+      },
+      "subgraphs": {
+        "oracles": "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-oracles/lmn-latest/gn"
+      }
     }
   }
 }

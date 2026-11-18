@@ -15,7 +15,7 @@ locals {
       width  = 8
       height = 4
       properties = {
-        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Keeper Lambda**: Bitcoin header submissions\n* **On-chain index**: lastSubmittedAt age\n* **Oracle subgraph**: Goldsky hpow-oracles\n\n## Thresholds\n* Oracle max age: ${var.alarm_thresholds.oracle_stale_threshold_minutes} min"
+        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Keeper Lambda**: Bitcoin header submissions\n* **On-chain index**: lastSubmittedAt age\n* **Oracle subgraph**: Goldsky hpow-oracles\n\n## Thresholds\n* Pages when the relay trails the Bitcoin tip by ${var.alarm_thresholds.oracle_blocks_behind_threshold}+ blocks for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min\n* Slack warning past ${var.alarm_thresholds.oracle_max_age_minutes} min without an update, when the venues reject the price (usually a slow Bitcoin block)"
       }
     },
     # Service Status - Task Counts
@@ -158,7 +158,7 @@ locals {
         ]
         annotations = {
           horizontal = [
-            { color = "#d62728", value = var.alarm_thresholds.oracle_stale_threshold_minutes, label = "Stale Threshold", fill = "above" }
+            { color = "#d62728", value = var.alarm_thresholds.oracle_max_age_minutes, label = "Venues reject the price", fill = "above" }
           ]
         }
       }
@@ -297,9 +297,10 @@ locals {
         region  = var.default_region
         stat    = "Maximum"
         period  = var.monitoring.dashboard_period
-        yAxis   = { left = { min = 0, label = "Bitcoin height" } }
+        yAxis   = { left = { min = 0, label = "Bitcoin height" }, right = { min = 0, label = "Blocks behind" } }
         metrics = [
           [local.monitoring_namespace, "oracle_chain_height", "Environment", local.env_short, { "label" : "Chain Height", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_blocks_behind", "Environment", local.env_short, { "label" : "Blocks behind the Bitcoin tip", "color" : "#d62728", "yAxis" : "right" }],
         ]
       }
     },
