@@ -11,7 +11,7 @@ wallets = {
   futures_address         = "0xf97a1bbfb5e061ef73dad8ebf25939d93639fb7f" # futures FUTURES_ADDRESS
   multicall_address       = "0xcA11bde05977b3631167028862bE2a173976CA11" # futures REACT_APP_MULTICALL_ADDRESS
   btcusd_oracle_address   = "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F" # HASHPRICE / collateral BTC_USD_ADDRESS
-  hashprice_btc_address   = "0x70027c6f1b40e7461172af1241330b499c8c2e22" # HASHPRICE_BTC_ADDRESS
+  hashprice_btc_address   = "0xce4140ec552397dc33461bc9404f5dfc28e42251" # HASHPRICE_BTC_ADDRESS
 }
 
 spot_indexer_contracts = {
