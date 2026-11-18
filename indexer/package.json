@@ -17,7 +17,7 @@
     "setup-local": "pnpm prepare-local && pnpm codegen && pnpm build && pnpm create-local && pnpm deploy-local",
     "seed:generate": "node --experimental-strip-types --env-file-if-exists=../config/dev.env --env-file-if-exists=../.env --env-file-if-exists=../contracts/.env scripts/generate-seed.ts",
     "test": "pnpm test:unit && pnpm test:integration",
-    "test:unit": "node integration/manifest.ts && graph codegen subgraph.test.yaml && graph test hashprice-meta",
+    "test:unit": "node integration/manifest.ts && graph codegen subgraph.test.yaml && graph test -v 0.6.0 hashprice-meta",
     "test:integration": "node integration/manifest.ts && graph codegen subgraph.test.yaml && hardhat test nodejs",
     "test:integration:debug": "MATCHSTICK_VERBOSE=true pnpm test:integration",
     "indexer": "docker compose --env-file ../config/dev.env --env-file ../.env up"

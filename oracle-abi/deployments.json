@@ -18,8 +18,15 @@
     "mainnet": {
       "chainId": 8453,
       "network": "base",
-      "contracts": {},
-      "subgraphs": {}
+      "startBlock": 59157880,
+      "contracts": {
+        "HashpriceBTC": "0xce4140ec552397dc33461bc9404f5dfc28e42251",
+        "HashpriceUSD": "0xe557558a39fb0d81eac683ef5884fb9847ab9584",
+        "BtcUsdAggregator": "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F"
+      },
+      "subgraphs": {
+        "oracles": "https://api.goldsky.com/api/public/project_cmmz5dm4l7ocp01xng61y5nwr/subgraphs/hpow-oracles/lmn-latest/gn"
+      }
     }
   }
 }
