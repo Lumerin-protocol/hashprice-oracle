@@ -23,7 +23,7 @@ interface Plan {
 
 type PlannedTx = TxRequest & { plan: Plan };
 
-/** The dev BTC/USD mock keeps the Lambda schedule's cadence. */
+/** The dev BTC/USD mock keeps the 5-minute cadence the old Lambda schedule had. */
 const BTC_USD_UPDATE_INTERVAL_MS = 300_000;
 
 /**
@@ -125,9 +125,8 @@ export class Relay {
   /**
    * Reads oracle chain height, detects reorgs by comparing tip hashes, finds the
    * common ancestor if needed, then submits the canonical chain from that point.
-   * `deadline` bounds the wait for an unmined tx (Lambda); the service passes none.
    */
-  async tick(opts: { deadline?: number } = {}): Promise<KeeperResult> {
+  async tick(): Promise<KeeperResult> {
     const { config, log } = this;
 
     if (config.updateBtcUsd && Date.now() - this.lastBtcUsdUpdateAt >= BTC_USD_UPDATE_INTERVAL_MS) {
@@ -183,7 +182,7 @@ export class Relay {
 
       let outcome: SendOutcome<PlannedTx>;
       try {
-        outcome = await this.sender.send(build, opts);
+        outcome = await this.sender.send(build);
       } catch (err) {
         if (revertErrorName(err) === "NotHeaviestChain" && this.isEqualHeightReplacement(plan)) {
           this.waitForBtcAbove = plan.btcTip;
@@ -280,13 +279,4 @@ export class Relay {
   private isEqualHeightReplacement(plan: Plan): boolean {
     return plan.isReorg && plan.ancestorHeight + plan.blocks.length <= plan.oracleHeight;
   }
-}
-
-/** Single run for the Lambda adapter. */
-export async function runKeeper(
-  config: Config,
-  log: Logger,
-  opts: { deadline?: number } = {},
-): Promise<KeeperResult> {
-  return new Relay(config, log).tick(opts);
 }

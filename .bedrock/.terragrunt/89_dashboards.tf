@@ -15,7 +15,7 @@ locals {
       width  = 8
       height = 4
       properties = {
-        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Keeper Lambda**: Bitcoin header submissions\n* **On-chain index**: lastSubmittedAt age\n* **Oracle subgraph**: Goldsky hpow-oracles\n\n## Thresholds\n* Pages when the relay trails the Bitcoin tip by ${var.alarm_thresholds.oracle_blocks_behind_threshold}+ blocks for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min\n* Slack warning past ${var.alarm_thresholds.oracle_max_age_minutes} min without an update, when the venues reject the price (usually a slow Bitcoin block)"
+        markdown = "# Hashprice Oracle - ${upper(local.env_short)}\n## Key Indicators\n* **Oracle relay** (ECS): Bitcoin header submissions\n* **On-chain index**: lastSubmittedAt age\n* **Oracle subgraph**: Goldsky hpow-oracles\n\n## Thresholds\n* Pages when the relay trails the Bitcoin tip by ${var.alarm_thresholds.oracle_blocks_behind_threshold}+ blocks for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min\n* Slack warning past ${var.alarm_thresholds.oracle_max_age_minutes} min without an update, when the venues reject the price (usually a slow Bitcoin block)"
       }
     },
     # Service Status - Task Counts
@@ -39,7 +39,7 @@ locals {
         ]
       }
     },
-    # Lambda Status
+    # Oracle relay status
     {
       type   = "metric"
       x      = 16
@@ -47,16 +47,15 @@ locals {
       width  = 8
       height = 4
       properties = {
-        title     = "Oracle Lambda - Executions"
+        title     = "Oracle Relay - Blocks Relayed"
         view      = "singleValue"
         stacked   = false
         region    = var.default_region
-        stat      = "Sum"
         period    = var.monitoring.dashboard_period
         sparkline = true
         metrics = [
-          ["AWS/Lambda", "Invocations", "FunctionName", "futures-oracle-update-v2", { "label" : "Invocations", "color" : "#2ca02c" }],
-          ["AWS/Lambda", "Errors", "FunctionName", "futures-oracle-update-v2", { "label" : "Errors", "color" : "#d62728" }],
+          [local.monitoring_namespace, "oracle_relay_seconds", { "label" : "Blocks relayed", "stat" : "SampleCount", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "oracle_relay_errors", { "label" : "Errors", "stat" : "Sum", "color" : "#d62728" }],
         ]
       }
     },
@@ -164,7 +163,7 @@ locals {
         }
       }
     },
-    # Oracle Lambda Duration
+    # Oracle relay latency and activity
     {
       type   = "metric"
       x      = 8
@@ -172,25 +171,23 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "Oracle Lambda - Duration"
+        title   = "Oracle Relay - Latency"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
-        stat    = "Average"
         period  = var.monitoring.dashboard_period
-        yAxis   = { left = { min = 0, label = "Milliseconds" } }
+        yAxis   = { left = { label = "Seconds" } }
         metrics = [
-          ["AWS/Lambda", "Duration", "FunctionName", "futures-oracle-update-v2", { "label" : "Duration", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_relay_seconds", { "label" : "Seen to Base inclusion (max)", "stat" : "Maximum", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_relay_header_latency_seconds", { "label" : "Header time to Base inclusion (avg)", "stat" : "Average", "color" : "#7f7f7f" }],
         ]
         annotations = {
           horizontal = [
-            { color = "#d62728", value = var.alarm_thresholds.lambda_duration_threshold, label = "Warning Threshold" },
-            { color = "#ff0000", value = 60000, label = "Timeout (60s)" }
+            { color = "#d62728", value = local.oracle_relay_max_seconds, label = "Slow" }
           ]
         }
       }
     },
-    # Oracle Lambda Log Metrics
     {
       type   = "metric"
       x      = 16
@@ -198,7 +195,7 @@ locals {
       width  = 8
       height = 5
       properties = {
-        title   = "Oracle Lambda - Log Metrics"
+        title   = "Oracle Relay - Ticks, Errors, Fee Bumps"
         view    = "timeSeries"
         stacked = false
         region  = var.default_region
@@ -206,8 +203,9 @@ locals {
         period  = var.monitoring.dashboard_period
         yAxis   = { left = { min = 0 } }
         metrics = [
-          [local.monitoring_namespace, "oracle_lambda_errors", { "label" : "Failed Runs", "color" : "#d62728" }],
-          [local.monitoring_namespace, "oracle_job_completions", { "label" : "Completed Runs", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "oracle_relay_ticks", { "label" : "Ticks", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "oracle_relay_errors", { "label" : "Errors", "color" : "#d62728" }],
+          [local.monitoring_namespace, "oracle_relay_fee_bumps", { "label" : "Fee bumps", "color" : "#ff7f0e" }],
         ]
       }
     },
@@ -306,57 +304,12 @@ locals {
       }
     },
 
-    # Row 6: Oracle relay service (N64)
+    # Row 6: Oracle relay - unmined tx age
     {
       type   = "metric"
       x      = 0
       y      = 24
-      width  = 8
-      height = 5
-      properties = {
-        title   = "Oracle Relay - Latency"
-        view    = "timeSeries"
-        stacked = false
-        region  = var.default_region
-        period  = var.monitoring.dashboard_period
-        yAxis   = { left = { label = "Seconds" } }
-        metrics = [
-          [local.monitoring_namespace, "oracle_relay_seconds", { "label" : "Seen to Base inclusion (max)", "stat" : "Maximum", "color" : "#1f77b4" }],
-          [local.monitoring_namespace, "oracle_relay_header_latency_seconds", { "label" : "Header time to Base inclusion (avg)", "stat" : "Average", "color" : "#7f7f7f" }],
-        ]
-        annotations = {
-          horizontal = [
-            { color = "#d62728", value = local.oracle_relay_max_seconds, label = "Slow" }
-          ]
-        }
-      }
-    },
-    {
-      type   = "metric"
-      x      = 8
-      y      = 24
-      width  = 8
-      height = 5
-      properties = {
-        title   = "Oracle Relay - Ticks, Errors, Fee Bumps"
-        view    = "timeSeries"
-        stacked = false
-        region  = var.default_region
-        stat    = "Sum"
-        period  = var.monitoring.dashboard_period
-        yAxis   = { left = { min = 0 } }
-        metrics = [
-          [local.monitoring_namespace, "oracle_relay_ticks", { "label" : "Ticks", "color" : "#2ca02c" }],
-          [local.monitoring_namespace, "oracle_relay_errors", { "label" : "Errors", "color" : "#d62728" }],
-          [local.monitoring_namespace, "oracle_relay_fee_bumps", { "label" : "Fee bumps", "color" : "#ff7f0e" }],
-        ]
-      }
-    },
-    {
-      type   = "metric"
-      x      = 16
-      y      = 24
-      width  = 8
+      width  = 24
       height = 5
       properties = {
         title   = "Oracle Relay - Unmined Tx Age"

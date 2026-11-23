@@ -17,7 +17,7 @@ output "hpdx_dashboard_name" {
   value       = (var.monitoring.create && var.monitoring.create_dashboards) ? aws_cloudwatch_dashboard.hpdx[0].dashboard_name : null
 }
 
-output "oracle_lambda_name" {
-  description = "Name of the oracle lambda"
-  value       = (var.oracle_lambda.create) ? aws_lambda_function.oracle_update[0].function_name : null
+output "oracle_relay_service_name" {
+  description = "Name of the oracle relay ECS service"
+  value       = local.create_oracle_relay ? aws_ecs_service.oracle_relay_use1[0].name : null
 }

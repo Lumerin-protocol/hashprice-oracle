@@ -71,14 +71,10 @@ variable "admin_api_key" {
 }
 
 ################################################################################
-# Oracle Lambda Variables
+# Oracle relay variables
 ################################################################################
-variable "oracle_lambda" {
-  description = "Oracle Lambda to create"
-  type        = map(any)
-}
 variable "oracle_relay" {
-  description = "Oracle relay ECS service (N64), replacing the oracle Lambda. CI owns its image, env and desired count."
+  description = "Oracle relay ECS service (N64). CI owns its image, env and desired count."
   type = object({
     create   = bool
     task_cpu = number
@@ -92,7 +88,7 @@ variable "oracle_relay" {
 }
 
 variable "oracle_lambda_secrets" {
-  description = "Oracle Lambda secrets to create"
+  description = "Oracle relay secrets (oracle-lambda-secrets-v3-<env>; the name predates the relay service)"
   type        = map(any)
   sensitive   = true
 }
@@ -182,9 +178,6 @@ variable "alarm_thresholds" {
     ecs_cpu_threshold              = number
     ecs_memory_threshold           = number
     ecs_min_running_tasks          = number
-    lambda_error_threshold         = number
-    lambda_duration_threshold      = number
-    lambda_throttle_threshold      = number
     alb_5xx_threshold              = number
     alb_unhealthy_threshold        = number
     alb_latency_threshold          = number
@@ -201,9 +194,6 @@ variable "alarm_thresholds" {
     ecs_cpu_threshold              = 90
     ecs_memory_threshold           = 90
     ecs_min_running_tasks          = 1
-    lambda_error_threshold         = 5
-    lambda_duration_threshold      = 55000
-    lambda_throttle_threshold      = 10
     alb_5xx_threshold              = 20
     alb_unhealthy_threshold        = 1
     alb_latency_threshold          = 15

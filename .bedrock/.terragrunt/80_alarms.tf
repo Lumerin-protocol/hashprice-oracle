@@ -38,34 +38,6 @@ resource "aws_cloudwatch_metric_alarm" "spot_indexer_down" {
   })
 }
 
-# Oracle Lambda - Errors
-resource "aws_cloudwatch_metric_alarm" "oracle_lambda_errors" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-oracle-lambda-failing-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle Lambda errors for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = var.alarm_thresholds.lambda_error_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = "futures-oracle-update-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Lambda Errors Alarm"
-    Severity = "Critical"
-  })
-}
-
 # Oracle price age. The oracle can only update when Bitcoin produces a block, so a
 # long gap between blocks ages it with nothing broken: this is the warning half
 # (hpo-oracle-warning), set at the age the venues and margin engine stop accepting.
@@ -126,59 +98,8 @@ resource "aws_cloudwatch_metric_alarm" "oracle_behind_bitcoin" {
   })
 }
 
-# Application failures. The keeper returns HTTP 500 instead of throwing, so
-# AWS/Lambda Errors stays at zero while these pino level-50 logs are the signal.
-resource "aws_cloudwatch_metric_alarm" "oracle_lambda_log_errors" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-oracle-lambda-log-errors-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle keeper logged a failed run"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "oracle_lambda_errors"
-  namespace           = local.monitoring_namespace
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 0
-  treat_missing_data  = "notBreaching"
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Lambda Log Errors Alarm"
-    Severity = "Critical"
-  })
-}
-
-# Heartbeat. A caught-up keeper still logs "keeper run completed" every schedule.
-resource "aws_cloudwatch_metric_alarm" "oracle_lambda_silent" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-oracle-lambda-silent-${local.env_short}"
-  alarm_description   = "CRITICAL: Oracle keeper has not completed a run for 15 minutes"
-  comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 3
-  metric_name         = "oracle_job_completions"
-  namespace           = local.monitoring_namespace
-  period              = 300
-  statistic           = "Sum"
-  threshold           = 1
-  treat_missing_data  = "breaching"
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Lambda Silent Alarm"
-    Severity = "Critical"
-  })
-}
-
 ################################################################################
 # ORACLE RELAY SERVICE (N64)
-# Created with the service; part of hpo-oracle-<env> only after stage 2
-# (local.oracle_relay_is_primary), so they have history before they can page.
 ################################################################################
 
 resource "aws_cloudwatch_metric_alarm" "oracle_relay_down" {
@@ -412,62 +333,6 @@ resource "aws_cloudwatch_metric_alarm" "spot_memory_high" {
 
   tags = merge(var.default_tags, var.foundation_tags, {
     Name     = "HPO Spot Memory High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# Oracle Lambda - Duration High
-resource "aws_cloudwatch_metric_alarm" "oracle_duration_high" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-oracle-duration-high-${local.env_short}"
-  alarm_description   = "WARNING: Oracle duration high for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "Duration"
-  namespace           = "AWS/Lambda"
-  period              = 300
-  statistic           = "Average"
-  threshold           = var.alarm_thresholds.lambda_duration_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = "futures-oracle-update-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Duration High Alarm"
-    Severity = "Warning"
-  })
-}
-
-# Oracle Lambda - Throttled
-resource "aws_cloudwatch_metric_alarm" "oracle_throttled" {
-  count               = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
-  provider            = aws.use1
-  alarm_name          = "hpo-oracle-throttled-${local.env_short}"
-  alarm_description   = "WARNING: Oracle throttled for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = local.standard_alarm_evaluation_periods
-  metric_name         = "Throttles"
-  namespace           = "AWS/Lambda"
-  period              = 300
-  statistic           = "Sum"
-  threshold           = var.alarm_thresholds.lambda_throttle_threshold
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = "futures-oracle-update-v2"
-  }
-
-  alarm_actions = local.component_alarm_actions
-  ok_actions    = local.component_alarm_actions
-
-  tags = merge(var.default_tags, var.foundation_tags, {
-    Name     = "HPO Oracle Throttled Alarm"
     Severity = "Warning"
   })
 }

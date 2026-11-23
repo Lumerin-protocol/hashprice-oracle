@@ -85,18 +85,3 @@ resource "aws_cloudwatch_log_group" "spot_indexer" {
     },
   )
 }
-
-# Create the default CloudWatch Log Group resource for Oracle Lambda Services 
-resource "aws_cloudwatch_log_group" "oracle_lambda" {
-  count             = var.oracle_lambda.create ? 1 : 0
-  provider          = aws.use1
-  name              = "bedrock-hpo-${var.oracle_lambda.svc_name}-${substr(var.account_shortname, 8, 3)}"
-  retention_in_days = local.cloudwatch_event_retention
-  tags = merge(
-    var.default_tags,
-    var.foundation_tags,
-    {
-      Capability = "Bedrock Cloudwatch Log Group",
-    },
-  )
-}

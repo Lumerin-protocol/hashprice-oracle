@@ -104,7 +104,7 @@ export interface RpcTransaction {
 
 /**
  * Synchronous SHA-256 injected by each runtime adapter.
- * Node/Lambda use `node:crypto`, CF Workers use a pure-JS implementation.
+ * The Node adapter uses `node:crypto`.
  */
 let _sha256: (data: Uint8Array) => Uint8Array;
 
