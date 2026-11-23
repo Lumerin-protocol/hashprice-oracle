@@ -35,6 +35,7 @@ locals {
         sparkline = true
         metrics = [
           ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "ecs-hashprice-oracle-${local.env_short}", "ServiceName", "svc-spot-indexer-${local.env_short}", { "label" : "Spot Indexer", "color" : "#1f77b4" }],
+          ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "ecs-hashprice-oracle-${local.env_short}", "ServiceName", local.oracle_relay.svc_name, { "label" : "Oracle Relay", "color" : "#2ca02c" }],
         ]
       }
     },
@@ -302,6 +303,77 @@ locals {
           [local.monitoring_namespace, "oracle_chain_height", "Environment", local.env_short, { "label" : "Chain Height", "color" : "#1f77b4" }],
           [local.monitoring_namespace, "oracle_blocks_behind", "Environment", local.env_short, { "label" : "Blocks behind the Bitcoin tip", "color" : "#d62728", "yAxis" : "right" }],
         ]
+      }
+    },
+
+    # Row 6: Oracle relay service (N64)
+    {
+      type   = "metric"
+      x      = 0
+      y      = 24
+      width  = 8
+      height = 5
+      properties = {
+        title   = "Oracle Relay - Latency"
+        view    = "timeSeries"
+        stacked = false
+        region  = var.default_region
+        period  = var.monitoring.dashboard_period
+        yAxis   = { left = { label = "Seconds" } }
+        metrics = [
+          [local.monitoring_namespace, "oracle_relay_seconds", { "label" : "Seen to Base inclusion (max)", "stat" : "Maximum", "color" : "#1f77b4" }],
+          [local.monitoring_namespace, "oracle_relay_header_latency_seconds", { "label" : "Header time to Base inclusion (avg)", "stat" : "Average", "color" : "#7f7f7f" }],
+        ]
+        annotations = {
+          horizontal = [
+            { color = "#d62728", value = local.oracle_relay_max_seconds, label = "Slow" }
+          ]
+        }
+      }
+    },
+    {
+      type   = "metric"
+      x      = 8
+      y      = 24
+      width  = 8
+      height = 5
+      properties = {
+        title   = "Oracle Relay - Ticks, Errors, Fee Bumps"
+        view    = "timeSeries"
+        stacked = false
+        region  = var.default_region
+        stat    = "Sum"
+        period  = var.monitoring.dashboard_period
+        yAxis   = { left = { min = 0 } }
+        metrics = [
+          [local.monitoring_namespace, "oracle_relay_ticks", { "label" : "Ticks", "color" : "#2ca02c" }],
+          [local.monitoring_namespace, "oracle_relay_errors", { "label" : "Errors", "color" : "#d62728" }],
+          [local.monitoring_namespace, "oracle_relay_fee_bumps", { "label" : "Fee bumps", "color" : "#ff7f0e" }],
+        ]
+      }
+    },
+    {
+      type   = "metric"
+      x      = 16
+      y      = 24
+      width  = 8
+      height = 5
+      properties = {
+        title   = "Oracle Relay - Unmined Tx Age"
+        view    = "timeSeries"
+        stacked = false
+        region  = var.default_region
+        stat    = "Maximum"
+        period  = var.monitoring.dashboard_period
+        yAxis   = { left = { min = 0, label = "Seconds" } }
+        metrics = [
+          [local.monitoring_namespace, "oracle_relay_unmined_seconds", { "label" : "Oldest unmined", "color" : "#d62728" }],
+        ]
+        annotations = {
+          horizontal = [
+            { color = "#d62728", value = local.oracle_relay_max_unmined_seconds, label = "Pages" }
+          ]
+        }
       }
     },
   ]

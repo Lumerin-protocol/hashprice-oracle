@@ -119,6 +119,44 @@ resource "aws_iam_role_policy" "github_lambda_update_oracle" {
     ]
   })
 }
+################################################################################
+# ECS UPDATE POLICY - Oracle relay service (deploy-keeper.yml, N64)
+################################################################################
+resource "aws_iam_role_policy" "github_ecs_update_oracle_relay" {
+  count = var.core_resources.create && local.create_oracle_relay ? 1 : 0
+  name  = "ecs-update-oracle-relay"
+  role  = aws_iam_role.github_actions_hashprice_oracle[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "UpdateOracleRelayECSService"
+        Effect   = "Allow"
+        Action   = ["ecs:UpdateService", "ecs:DescribeServices"]
+        Resource = [aws_ecs_service.oracle_relay_use1[0].id]
+      },
+      {
+        Sid      = "TaskDefinitionOperations"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"]
+        Resource = "*"
+      },
+      {
+        Sid      = "PassRoleToECS"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = [local.titanio_role_arn]
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
 
 
 

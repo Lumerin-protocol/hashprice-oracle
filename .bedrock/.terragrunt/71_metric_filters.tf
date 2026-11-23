@@ -93,3 +93,41 @@ resource "aws_cloudwatch_log_metric_filter" "oracle_job_completions" {
     unit      = "Count"
   }
 }
+
+################################################################################
+# ORACLE RELAY SERVICE METRIC FILTERS (N64)
+# keeper/src/adapters/node.ts and core/{keeper,txSend}.ts log an `event` field.
+################################################################################
+
+locals {
+  oracle_relay_metric_filters = {
+    # Any pino error: failed ticks ("tick_error") and errors inside one.
+    oracle_relay_errors = { pattern = "{ $.level >= 50 }", value = "1", unit = "Count" }
+    # Heartbeat: every tick, including those with nothing to submit (startup, each
+    # Bitcoin block, the 60 s fallback poll).
+    oracle_relay_ticks = { pattern = "{ $.event = \"tick\" }", value = "1", unit = "Count" }
+    # First sight of a Bitcoin block by the relay to its inclusion on Base.
+    oracle_relay_seconds = { pattern = "{ $.event = \"relayed\" }", value = "$.relaySec", unit = "Seconds" }
+    # Bitcoin header time to Base inclusion. Header times are miner-set (minutes off
+    # either way), so this one is for the dashboard, not an alarm.
+    oracle_relay_header_latency_seconds = { pattern = "{ $.event = \"relayed\" }", value = "$.latencySec", unit = "Seconds" }
+    # Logged every minute while a relay tx stays unmined.
+    oracle_relay_unmined_seconds = { pattern = "{ $.event = \"tx_unmined\" }", value = "$.unminedSec", unit = "Seconds" }
+    oracle_relay_fee_bumps       = { pattern = "{ $.event = \"fee_bump\" }", value = "1", unit = "Count" }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "oracle_relay" {
+  for_each       = (var.monitoring.create && var.monitoring.create_metric_filters && local.create_oracle_relay) ? local.oracle_relay_metric_filters : {}
+  provider       = aws.use1
+  name           = "hpo-${replace(each.key, "_", "-")}"
+  pattern        = each.value.pattern
+  log_group_name = aws_cloudwatch_log_group.oracle_relay_use1[0].name
+
+  metric_transformation {
+    name      = each.key
+    namespace = local.monitoring_namespace
+    value     = each.value.value
+    unit      = each.value.unit
+  }
+}

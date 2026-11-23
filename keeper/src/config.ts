@@ -22,6 +22,18 @@ function alchemyRpcUrl(network: string, apiKey: string) {
   return `https://${network}.g.alchemy.com/v2/${apiKey}`;
 }
 
+// Alchemy serves the Bitcoin WebSocket API on the HTTPS URL's host.
+function alchemyWsUrl(rpcUrl: string): string | undefined {
+  try {
+    const url = new URL(rpcUrl);
+    if (!url.hostname.endsWith(".g.alchemy.com")) return undefined;
+    url.protocol = "wss:";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 // The deployed keeper receives ETHEREUM_RPC_URL, not ALCHEMY_API_KEY. Dev's URL
 // is Base Sepolia, and the same key can read Base mainnet Chainlink.
 function alchemyKeyFromRpcUrl(url: string | undefined): string | undefined {
@@ -55,11 +67,14 @@ export function configFromEnv(env: Record<string, string | undefined>) {
   const alchemyApiKey = env.ALCHEMY_API_KEY;
   const chainlinkAlchemyKey = alchemyApiKey ?? alchemyKeyFromRpcUrl(env.ETHEREUM_RPC_URL);
   const ethNetwork = alchemyEthNetwork[chainId];
+  const bitcoinRpcUrl = alchemyApiKey
+    ? alchemyRpcUrl("bitcoin-mainnet", alchemyApiKey)
+    : required("BITCOIN_RPC_URL");
 
   return {
-    bitcoinRpcUrl: alchemyApiKey
-      ? alchemyRpcUrl("bitcoin-mainnet", alchemyApiKey)
-      : required("BITCOIN_RPC_URL"),
+    bitcoinRpcUrl,
+    // New-block subscription for the service; without it the service only polls.
+    bitcoinWsUrl: env.BITCOIN_WS_URL || alchemyWsUrl(bitcoinRpcUrl),
     ethereumRpcUrl:
       alchemyApiKey && ethNetwork
         ? alchemyRpcUrl(ethNetwork, alchemyApiKey)
@@ -68,7 +83,8 @@ export function configFromEnv(env: Record<string, string | undefined>) {
     hashpriceBtcAddress: required("HASHPRICE_BTC_ADDRESS") as `0x${string}`,
     privateKey: required("PRIVATE_KEY") as `0x${string}`,
     logLevel: env.LOG_LEVEL ?? "info",
-    pollIntervalMs: Number(env.KEEPER_POLL_INTERVAL_MS ?? "60000"),
+    pollIntervalMs: Number(env.KEEPER_POLL_INTERVAL_MS || 60_000),
+    healthPort: Number(env.HEALTH_PORT || 8080),
     maxBatchSize: Number(env.KEEPER_MAX_BATCH_SIZE ?? "10"),
     btcUsdAddress: env.BTC_USD_ADDRESS as `0x${string}` | undefined,
     updateBtcUsd: ["1", "true"].includes((env.UPDATE_BTC_USD ?? "").toLowerCase()),

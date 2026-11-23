@@ -3,7 +3,6 @@ import {
   type Account,
   type Chain,
   type PublicClient,
-  type TransactionReceipt,
   type Transport,
   type WalletClient,
   createPublicClient,
@@ -14,7 +13,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { HashpriceBTCAbi } from "../abi/HashpriceBTC.ts";
 import { getChain } from "../config.ts";
 import type { Config } from "../config.ts";
-import { sendWithFeeBump } from "./txSend.ts";
+import { type TxRequest, withGasHeadroom } from "./txSend.ts";
 
 export interface OracleState {
   chainHeight: number;
@@ -67,11 +66,10 @@ function isStaleBlockError(err: unknown): boolean {
 const SUBSTANTIAL_LAG_MS = 2_000;
 
 export class OracleClient {
-  private readonly pc: PublicClient;
-  private readonly wc: WalletClient<Transport, Chain, Account>;
+  readonly pc: PublicClient;
+  readonly wc: WalletClient<Transport, Chain, Account>;
   private readonly address: `0x${string}`;
   private readonly log: Logger;
-  private readonly confirmations: number;
   private blockBufferSize?: number;
 
   constructor(config: Config, log: Logger) {
@@ -83,7 +81,6 @@ export class OracleClient {
     this.wc = createWalletClient({ chain, transport, account });
     this.address = config.hashpriceBtcAddress;
     this.log = log.child({ component: "oracle" });
-    this.confirmations = config.confirmations;
   }
 
   /**
@@ -152,25 +149,20 @@ export class OracleClient {
     });
   }
 
-  async submitBlock(block: PreparedBlock): Promise<TransactionReceipt> {
+  /** Reverts here (estimateContractGas simulates the call) carry the decoded contract error. */
+  async buildSubmitBlock(block: PreparedBlock): Promise<TxRequest> {
     const args = [block.header, block.coinbaseTx, block.merkleProof] as const;
-    const { request } = await this.pc.simulateContract({
+    const estimate = await this.pc.estimateContractGas({
       address: this.address,
       abi: HashpriceBTCAbi,
       functionName: "submitBlock",
       args,
       account: this.wc.account,
     });
-
-    const gasLimit = request.gas ?? 500_000n;
-    const receipt = await sendWithFeeBump(
-      {
-        pc: this.pc,
-        wc: this.wc,
-        log: this.log,
-        confirmations: this.confirmations,
-      },
-      ({ nonce, maxFeePerGas, maxPriorityFeePerGas }) =>
+    return {
+      label: "submitBlock",
+      gas: withGasHeadroom(estimate),
+      send: ({ nonce, gas, maxFeePerGas, maxPriorityFeePerGas }) =>
         this.wc.writeContract({
           address: this.address,
           abi: HashpriceBTCAbi,
@@ -178,20 +170,14 @@ export class OracleClient {
           args,
           account: this.wc.account,
           nonce,
-          gas: gasLimit,
+          gas,
           maxFeePerGas,
           maxPriorityFeePerGas,
         }),
-      { label: "submitBlock", gasLimit },
-    );
-    this.log.info(
-      { txHash: receipt.transactionHash, gasUsed: receipt.gasUsed.toString(), status: receipt.status },
-      "submitBlock tx confirmed",
-    );
-    return receipt;
+    };
   }
 
-  async submitBlocks(ancestorHeight: number, blocks: PreparedBlock[]): Promise<TransactionReceipt> {
+  async buildSubmitBlocks(ancestorHeight: number, blocks: PreparedBlock[]): Promise<TxRequest> {
     let headers = "";
     const coinbaseTxs: `0x${string}`[] = [];
     const merkleProofs: `0x${string}`[][] = [];
@@ -203,24 +189,17 @@ export class OracleClient {
     }
 
     const args = [ancestorHeight, prefixed0x(headers), coinbaseTxs, merkleProofs] as const;
-    const { request } = await this.pc.simulateContract({
+    const estimate = await this.pc.estimateContractGas({
       address: this.address,
       abi: HashpriceBTCAbi,
       functionName: "submitBlocks",
       args,
       account: this.wc.account,
     });
-
-    // Batch submits are the expensive path; give estimate headroom when present.
-    const gasLimit = request.gas ? (request.gas * 120n) / 100n : 1_500_000n;
-    const receipt = await sendWithFeeBump(
-      {
-        pc: this.pc,
-        wc: this.wc,
-        log: this.log,
-        confirmations: this.confirmations,
-      },
-      ({ nonce, maxFeePerGas, maxPriorityFeePerGas }) =>
+    return {
+      label: "submitBlocks",
+      gas: withGasHeadroom(estimate),
+      send: ({ nonce, gas, maxFeePerGas, maxPriorityFeePerGas }) =>
         this.wc.writeContract({
           address: this.address,
           abi: HashpriceBTCAbi,
@@ -228,21 +207,11 @@ export class OracleClient {
           args,
           account: this.wc.account,
           nonce,
-          gas: gasLimit,
+          gas,
           maxFeePerGas,
           maxPriorityFeePerGas,
         }),
-      { label: "submitBlocks", gasLimit },
-    );
-    this.log.debug(
-      {
-        txHash: receipt.transactionHash,
-        blockCount: blocks.length,
-        gasUsed: receipt.gasUsed.toString(),
-      },
-      "submitBlocks tx confirmed",
-    );
-    return receipt;
+    };
   }
 
   /**

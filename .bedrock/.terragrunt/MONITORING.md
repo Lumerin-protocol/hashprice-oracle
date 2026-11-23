@@ -63,4 +63,9 @@ Do **not** attach SNS to every metric alarm (noise / double-page). Exception: va
 - Composites: `81_composite_alarms.tf`. The oracle uses the warn/crit split: `hpo-oracle-<env>`
   pages when the keeper fails or the relay trails the Bitcoin tip; `hpo-oracle-warning-<env>` posts
   to Slack when the price is older than the venues accept, which a slow Bitcoin block alone causes.
+  The keeper children of `hpo-oracle-<env>` are the Lambda's (`hpo-oracle-lambda-*`, duration,
+  throttled) while `oracle_lambda.schedule_enabled` is true, then the relay service's
+  (`hpo-oracle-relay-down/errors/silent/slow/unmined`, from the log metric filters in
+  `71_metric_filters.tf`). The relay alarms exist from the moment the service does, so they have
+  history before they join the composite.
 - Topic names: `.bedrock/02-dev/terraform.tfvars`, `.bedrock/04-lmn/terraform.tfvars` → `monitoring {}`

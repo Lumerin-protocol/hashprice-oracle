@@ -9,6 +9,7 @@ RUN apk add --no-cache tini
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY src/ ./src/
+COPY lib/ ./lib/
 COPY package.json ./
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
