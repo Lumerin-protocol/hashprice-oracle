@@ -62,7 +62,9 @@ Do **not** attach SNS to every metric alarm (noise / double-page). Exception: va
 - Component alarms: `80_alarms.tf` (and related)
 - Composites: `81_composite_alarms.tf`. The oracle uses the warn/crit split: `hpo-oracle-<env>`
   pages when the keeper fails or the relay trails the Bitcoin tip; `hpo-oracle-warning-<env>` posts
-  to Slack when the price is older than the venues accept, which a slow Bitcoin block alone causes.
+  to Slack when the price is over 60 minutes old, which a slow Bitcoin block alone causes;
+  `hpo-oracle-freeze-<env>` pages at 90 minutes and again at 120, when the venues reject the price
+  and nothing liquidates. The collateral-margin monitor covers the BTC/USD input the same way.
   The keeper children of `hpo-oracle-<env>` are the Lambda's (`hpo-oracle-lambda-*`, duration,
   throttled) while `oracle_lambda.schedule_enabled` is true, then the relay service's
   (`hpo-oracle-relay-down/errors/silent/slow/unmined`, from the log metric filters in
