@@ -77,6 +77,20 @@ variable "oracle_lambda" {
   description = "Oracle Lambda to create"
   type        = map(any)
 }
+variable "oracle_relay" {
+  description = "Oracle relay ECS service (N64), replacing the oracle Lambda. CI owns its image, env and desired count."
+  type = object({
+    create   = bool
+    task_cpu = number
+    task_ram = number
+  })
+  default = {
+    create   = false
+    task_cpu = 256
+    task_ram = 512
+  }
+}
+
 variable "oracle_lambda_secrets" {
   description = "Oracle Lambda secrets to create"
   type        = map(any)

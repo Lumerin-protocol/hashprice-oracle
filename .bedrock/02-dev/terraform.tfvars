@@ -51,6 +51,15 @@ oracle_lambda = {
   chain_id     = "84532"
   log_level    = "info"
   job_interval = "5"
+  # N64 stage 2: false once svc-oracle-relay-dev is running (stops the schedule,
+  # moves hpo-oracle-dev to the relay alarms).
+  schedule_enabled = true
+}
+
+oracle_relay = {
+  create   = true
+  task_cpu = 256
+  task_ram = 512
 }
 
 ########################################

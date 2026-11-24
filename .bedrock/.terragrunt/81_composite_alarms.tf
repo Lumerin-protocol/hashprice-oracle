@@ -75,20 +75,37 @@ resource "aws_cloudwatch_composite_alarm" "spot_indexer_unhealthy" {
 # ALARM if the keeper is failing or silent, or the relay is behind the Bitcoin tip.
 # AWS's email carries this description and the triggering child's ARN, never the
 # child's own description, so this text has to say what each child means.
+# The keeper children are the Lambda's until N64 stage 2 turns its schedule off, then the
+# relay service's.
+locals {
+  oracle_keeper_child_alarms = local.oracle_relay_is_primary ? concat(
+    aws_cloudwatch_metric_alarm.oracle_relay_down[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_silent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_slow[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_unmined[*].alarm_name,
+    ) : concat(
+    aws_cloudwatch_metric_alarm.oracle_lambda_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_lambda_log_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_lambda_silent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_duration_high[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_throttled[*].alarm_name,
+  )
+  oracle_keeper_children_description = local.oracle_relay_is_primary ? "relay-down = the relay service ${local.oracle_relay.svc_name} has no running task. relay-errors = it logged errors in two 5-minute periods running. relay-silent = it has not completed a tick for 15 min. relay-slow = a Bitcoin block took over ${local.oracle_relay_max_seconds / 60} min from the relay seeing it to its Base inclusion. relay-unmined = a relay tx has been unmined on Base for ${local.oracle_relay_max_unmined_seconds / 60} min (the relay keeps raising fees up to its cap). Check the ${local.oracle_relay_log_group} logs" : "lambda-failing or lambda-log-errors = the keeper Lambda futures-oracle-update-v2 is failing. lambda-silent = it has not finished a run for 15 min. duration-high or throttled = it is slow or throttled. Check the /aws/lambda/futures-oracle-update-v2 logs"
+}
+
 resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
-  count             = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
+  count             = (var.monitoring.create && var.monitoring.create_alarms && (var.oracle_lambda.create || local.create_oracle_relay)) ? 1 : 0
   provider          = aws.use1
   alarm_name        = "hpo-oracle-${local.env_short}"
-  alarm_description = "Hashprice oracle needs attention. The alarm under 'Triggering children' says what: behind-bitcoin = the relay trails the Bitcoin tip, so the keeper is not submitting blocks that exist (prices go stale and the venues reject them after ${var.alarm_thresholds.oracle_max_age_minutes} min). lambda-failing or lambda-log-errors = the keeper Lambda futures-oracle-update-v2 is failing. lambda-silent = it has not finished a run for 15 min. duration-high or throttled = it is slow or throttled. Check the /aws/lambda/futures-oracle-update-v2 logs and the 00-HashpriceOracle-${local.env_short} dashboard. Bitcoin taking long between blocks does not trigger this page (see hpo-oracle-warning-${local.env_short})."
+  alarm_description = "Hashprice oracle needs attention. The alarm under 'Triggering children' says what: behind-bitcoin = the relay trails the Bitcoin tip, so the keeper is not submitting blocks that exist (prices go stale and the venues reject them after ${var.alarm_thresholds.oracle_max_age_minutes} min). ${local.oracle_keeper_children_description} and the 00-HashpriceOracle-${local.env_short} dashboard. Bitcoin taking long between blocks does not trigger this page (see hpo-oracle-warning-${local.env_short})."
 
-  alarm_rule = join(" OR ", compact([
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_errors[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_log_errors[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_silent[0].alarm_name})",
-    var.monitoring.create_oracle_staleness_check ? "ALARM(${aws_cloudwatch_metric_alarm.oracle_behind_bitcoin[0].alarm_name})" : "",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_duration_high[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_throttled[0].alarm_name})",
-  ]))
+  alarm_rule = join(" OR ", [
+    for name in concat(
+      local.oracle_keeper_child_alarms,
+      var.monitoring.create_oracle_staleness_check ? aws_cloudwatch_metric_alarm.oracle_behind_bitcoin[*].alarm_name : [],
+    ) : "ALARM(${name})"
+  ])
 
   alarm_actions = local.composite_alarm_actions
   ok_actions    = local.composite_alarm_actions
@@ -105,6 +122,11 @@ resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
     aws_cloudwatch_metric_alarm.oracle_behind_bitcoin,
     aws_cloudwatch_metric_alarm.oracle_duration_high,
     aws_cloudwatch_metric_alarm.oracle_throttled,
+    aws_cloudwatch_metric_alarm.oracle_relay_down,
+    aws_cloudwatch_metric_alarm.oracle_relay_errors,
+    aws_cloudwatch_metric_alarm.oracle_relay_silent,
+    aws_cloudwatch_metric_alarm.oracle_relay_slow,
+    aws_cloudwatch_metric_alarm.oracle_relay_unmined,
   ]
 }
 

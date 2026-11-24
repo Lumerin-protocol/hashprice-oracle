@@ -6,7 +6,7 @@ import pino from "pino";
  */
 function stripAbiRecursive<T>(value: T): T {
   if (typeof value === "string") {
-    return limitStringLength(value, 500) as T;
+    return limitStringLength(redactUrls(value), 500) as T;
   }
   if (value === null || typeof value !== "object") {
     return value;
@@ -22,6 +22,11 @@ function stripAbiRecursive<T>(value: T): T {
     out[key] = stripAbiRecursive(obj[key]);
   }
   return out as T;
+}
+
+/** RPC URLs carry the API key in the path (Alchemy) or credentials before the host. */
+export function redactUrls(str: string): string {
+  return str.replace(/\b(wss?|https?):\/\/(?:[^\s/@"']+@)?([^\s/"']+)[^\s"']*/g, "$1://$2/<redacted>");
 }
 
 function limitStringLength(str: string, maxLength: number): string {
