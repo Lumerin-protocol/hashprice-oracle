@@ -111,7 +111,7 @@ export class Relay {
   constructor(config: Config, log: Logger, opts: RelayOptions = {}) {
     this.config = config;
     this.log = log;
-    this.btc = new BitcoinProvider(config.bitcoinRpcUrl, log);
+    this.btc = new BitcoinProvider(config.bitcoinRpcUrl);
     this.oracle = new OracleClient(config, log);
     this.sender = new TxSender({
       pc: this.oracle.pc,

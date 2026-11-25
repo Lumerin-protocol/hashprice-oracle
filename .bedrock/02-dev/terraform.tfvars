@@ -2,7 +2,7 @@
 # Shared Contract Addresses
 ########################################
 # Note: ethereum_rpc_url is defined in secret.auto.tfvars (contains API key)
-# Oracle Lambda / subgraph monitoring: DEV targets Base Sepolia.
+# Oracle relay / subgraph monitoring: DEV targets Base Sepolia.
 # Spot indexer stays on Arbitrum Sepolia — use spot_indexer_contracts + spot_eth_rpc_url (secret).
 wallets = {
   clone_factory_address   = "0x998135c509b64083cd27ed976c1bcda35ab7a40b"

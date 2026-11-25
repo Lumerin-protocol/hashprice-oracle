@@ -41,7 +41,7 @@ export class BitcoinRpc {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
     if (url.username) {
-      headers["Authorization"] = `Basic ${btoa(`${url.username}:${url.password}`)}`;
+      headers.Authorization = `Basic ${btoa(`${url.username}:${url.password}`)}`;
       url.username = "";
       url.password = "";
     }

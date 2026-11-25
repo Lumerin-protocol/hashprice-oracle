@@ -105,7 +105,7 @@ function parseArgs(argv: string[]): { count: number; from?: number } {
 }
 
 async function main() {
-  const rpcUrl = process.env["BITCOIN_RPC_URL"];
+  const rpcUrl = process.env.BITCOIN_RPC_URL;
   if (!rpcUrl) {
     console.error("BITCOIN_RPC_URL env var is required");
     process.exit(1);
