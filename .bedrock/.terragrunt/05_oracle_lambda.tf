@@ -112,10 +112,16 @@ resource "aws_lambda_function" "oracle_update" {
   )
 }
 
+locals {
+  # N64 stage 2 sets oracle_lambda.schedule_enabled = false once the relay service runs.
+  oracle_lambda_schedule_enabled = try(tobool(var.oracle_lambda.schedule_enabled), true)
+}
+
 resource "aws_cloudwatch_event_rule" "every_5_minutes" {
   count               = var.oracle_lambda.create ? 1 : 0
   name                = "oracle-update-schedule-v2-${substr(var.account_shortname, 8, 3)}"
   schedule_expression = "rate(${var.oracle_lambda.job_interval} minutes)"
+  state               = local.oracle_lambda_schedule_enabled ? "ENABLED" : "DISABLED"
 }
 
 resource "aws_cloudwatch_event_target" "lambda" {

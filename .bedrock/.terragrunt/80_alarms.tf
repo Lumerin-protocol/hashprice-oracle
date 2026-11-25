@@ -67,19 +67,77 @@ resource "aws_cloudwatch_metric_alarm" "oracle_lambda_errors" {
 }
 
 # Oracle price age. The oracle can only update when Bitcoin produces a block, so a
-# long gap between blocks ages it with nothing broken: this is the warning half
-# (hpo-oracle-warning), set at the age the venues and margin engine stop accepting.
-# A stuck relay pages through oracle_behind_bitcoin instead.
-resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
+# long gap between blocks ages it with nothing broken, but nothing liquidates once
+# the venues and margin engine reject the price (MAX_ORACLE_STALENESS). Three steps:
+# warn (hpo-oracle-warning), then page ahead of the freeze and at it
+# (hpo-oracle-freeze). A stuck relay pages through oracle_behind_bitcoin instead.
+# Missing data counts as old; the pages need two missed checks in a row.
+resource "aws_cloudwatch_metric_alarm" "oracle_age_warn" {
   count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider            = aws.use1
-  alarm_name          = "hpo-oracle-stale-${local.env_short}"
-  alarm_description   = "The hashprice oracle's last update is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so the venues and the margin engine reject the price (MAX_ORACLE_STALENESS). Usually Bitcoin taking long between blocks."
+  alarm_name          = "hpo-oracle-age-warn-${local.env_short}"
+  alarm_description   = "The hashprice oracle's last update is over ${var.alarm_thresholds.oracle_warn_age_minutes} minutes old. Usually Bitcoin taking long between blocks; the venues reject the price at ${var.alarm_thresholds.oracle_max_age_minutes} minutes."
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "oracle_data_age_minutes"
   namespace           = local.monitoring_namespace
   period              = local.oracle_staleness_check_period_seconds # Match Lambda check rate
+  statistic           = "Maximum"
+  threshold           = var.alarm_thresholds.oracle_warn_age_minutes
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    Environment = local.env_short
+  }
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Age Warning Alarm"
+    Severity = "Warning"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "oracle_age_page" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-age-page-${local.env_short}"
+  alarm_description   = "The hashprice oracle's last update is over ${var.alarm_thresholds.oracle_page_age_minutes} minutes old; the venues and the margin engine reject the price at ${var.alarm_thresholds.oracle_max_age_minutes} minutes and nothing liquidates until the next update."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  metric_name         = "oracle_data_age_minutes"
+  namespace           = local.monitoring_namespace
+  period              = local.oracle_staleness_check_period_seconds
+  statistic           = "Maximum"
+  threshold           = var.alarm_thresholds.oracle_page_age_minutes
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    Environment = local.env_short
+  }
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Age Page Alarm"
+    Severity = "Critical"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-stale-${local.env_short}"
+  alarm_description   = "The hashprice oracle's last update is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so the venues and the margin engine reject the price (MAX_ORACLE_STALENESS) and nothing liquidates."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  metric_name         = "oracle_data_age_minutes"
+  namespace           = local.monitoring_namespace
+  period              = local.oracle_staleness_check_period_seconds
   statistic           = "Maximum"
   threshold           = var.alarm_thresholds.oracle_max_age_minutes
   treat_missing_data  = "breaching"
@@ -93,7 +151,7 @@ resource "aws_cloudwatch_metric_alarm" "oracle_stale" {
 
   tags = merge(var.default_tags, var.foundation_tags, {
     Name     = "HPO Oracle Stale Alarm"
-    Severity = "Warning"
+    Severity = "Critical"
   })
 }
 
@@ -171,6 +229,133 @@ resource "aws_cloudwatch_metric_alarm" "oracle_lambda_silent" {
 
   tags = merge(var.default_tags, var.foundation_tags, {
     Name     = "HPO Oracle Lambda Silent Alarm"
+    Severity = "Critical"
+  })
+}
+
+################################################################################
+# ORACLE RELAY SERVICE (N64)
+# Created with the service; part of hpo-oracle-<env> only after stage 2
+# (local.oracle_relay_is_primary), so they have history before they can page.
+################################################################################
+
+resource "aws_cloudwatch_metric_alarm" "oracle_relay_down" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.create_oracle_relay) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-relay-down-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle relay service has no running task for ${var.monitoring_schedule.unhealthy_alarm_period_minutes} min"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = local.standard_alarm_evaluation_periods
+  metric_name         = "RunningTaskCount"
+  namespace           = "ECS/ContainerInsights"
+  period              = 300
+  statistic           = "Average"
+  threshold           = var.alarm_thresholds.ecs_min_running_tasks
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    ClusterName = "ecs-hashprice-oracle-${local.env_short}"
+    ServiceName = local.oracle_relay.svc_name
+  }
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Relay Down Alarm"
+    Severity = "Critical"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "oracle_relay_errors" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.create_oracle_relay) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-relay-errors-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle relay logged errors in two consecutive 5-minute periods"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "oracle_relay_errors"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Relay Errors Alarm"
+    Severity = "Critical"
+  })
+}
+
+# Heartbeat. The fallback poll ticks every minute even when nothing is due.
+resource "aws_cloudwatch_metric_alarm" "oracle_relay_silent" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.create_oracle_relay) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-relay-silent-${local.env_short}"
+  alarm_description   = "CRITICAL: Oracle relay has not completed a tick for 15 minutes"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "oracle_relay_ticks"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Relay Silent Alarm"
+    Severity = "Critical"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "oracle_relay_slow" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.create_oracle_relay) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-relay-slow-${local.env_short}"
+  alarm_description   = "CRITICAL: A Bitcoin block took over ${local.oracle_relay_max_seconds / 60} minutes from the relay seeing it to its inclusion on Base"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "oracle_relay_seconds"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = local.oracle_relay_max_seconds
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Relay Slow Alarm"
+    Severity = "Critical"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "oracle_relay_unmined" {
+  count               = (var.monitoring.create && var.monitoring.create_alarms && local.create_oracle_relay) ? 1 : 0
+  provider            = aws.use1
+  alarm_name          = "hpo-oracle-relay-unmined-${local.env_short}"
+  alarm_description   = "CRITICAL: A relay transaction has been unmined on Base for ${local.oracle_relay_max_unmined_seconds / 60} minutes or more"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "oracle_relay_unmined_seconds"
+  namespace           = local.monitoring_namespace
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = local.oracle_relay_max_unmined_seconds
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.component_alarm_actions
+  ok_actions    = local.component_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Relay Unmined Alarm"
     Severity = "Critical"
   })
 }

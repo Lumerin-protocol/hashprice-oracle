@@ -75,20 +75,37 @@ resource "aws_cloudwatch_composite_alarm" "spot_indexer_unhealthy" {
 # ALARM if the keeper is failing or silent, or the relay is behind the Bitcoin tip.
 # AWS's email carries this description and the triggering child's ARN, never the
 # child's own description, so this text has to say what each child means.
+# The keeper children are the Lambda's until N64 stage 2 turns its schedule off, then the
+# relay service's.
+locals {
+  oracle_keeper_child_alarms = local.oracle_relay_is_primary ? concat(
+    aws_cloudwatch_metric_alarm.oracle_relay_down[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_silent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_slow[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_relay_unmined[*].alarm_name,
+    ) : concat(
+    aws_cloudwatch_metric_alarm.oracle_lambda_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_lambda_log_errors[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_lambda_silent[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_duration_high[*].alarm_name,
+    aws_cloudwatch_metric_alarm.oracle_throttled[*].alarm_name,
+  )
+  oracle_keeper_children_description = local.oracle_relay_is_primary ? "relay-down = the relay service ${local.oracle_relay.svc_name} has no running task. relay-errors = it logged errors in two 5-minute periods running. relay-silent = it has not completed a tick for 15 min. relay-slow = a Bitcoin block took over ${local.oracle_relay_max_seconds / 60} min from the relay seeing it to its Base inclusion. relay-unmined = a relay tx has been unmined on Base for ${local.oracle_relay_max_unmined_seconds / 60} min (the relay keeps raising fees up to its cap). Check the ${local.oracle_relay_log_group} logs" : "lambda-failing or lambda-log-errors = the keeper Lambda futures-oracle-update-v2 is failing. lambda-silent = it has not finished a run for 15 min. duration-high or throttled = it is slow or throttled. Check the /aws/lambda/futures-oracle-update-v2 logs"
+}
+
 resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
-  count             = (var.monitoring.create && var.monitoring.create_alarms && var.oracle_lambda.create) ? 1 : 0
+  count             = (var.monitoring.create && var.monitoring.create_alarms && (var.oracle_lambda.create || local.create_oracle_relay)) ? 1 : 0
   provider          = aws.use1
   alarm_name        = "hpo-oracle-${local.env_short}"
-  alarm_description = "Hashprice oracle needs attention. The alarm under 'Triggering children' says what: behind-bitcoin = the relay trails the Bitcoin tip, so the keeper is not submitting blocks that exist (prices go stale and the venues reject them after ${var.alarm_thresholds.oracle_max_age_minutes} min). lambda-failing or lambda-log-errors = the keeper Lambda futures-oracle-update-v2 is failing. lambda-silent = it has not finished a run for 15 min. duration-high or throttled = it is slow or throttled. Check the /aws/lambda/futures-oracle-update-v2 logs and the 00-HashpriceOracle-${local.env_short} dashboard. Bitcoin taking long between blocks does not trigger this page (see hpo-oracle-warning-${local.env_short})."
+  alarm_description = "Hashprice oracle needs attention. The alarm under 'Triggering children' says what: behind-bitcoin = the relay trails the Bitcoin tip, so the keeper is not submitting blocks that exist (prices go stale and the venues reject them after ${var.alarm_thresholds.oracle_max_age_minutes} min). ${local.oracle_keeper_children_description} and the 00-HashpriceOracle-${local.env_short} dashboard. Bitcoin taking long between blocks does not trigger this page (see hpo-oracle-warning-${local.env_short})."
 
-  alarm_rule = join(" OR ", compact([
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_errors[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_log_errors[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_lambda_silent[0].alarm_name})",
-    var.monitoring.create_oracle_staleness_check ? "ALARM(${aws_cloudwatch_metric_alarm.oracle_behind_bitcoin[0].alarm_name})" : "",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_duration_high[0].alarm_name})",
-    "ALARM(${aws_cloudwatch_metric_alarm.oracle_throttled[0].alarm_name})",
-  ]))
+  alarm_rule = join(" OR ", [
+    for name in concat(
+      local.oracle_keeper_child_alarms,
+      var.monitoring.create_oracle_staleness_check ? aws_cloudwatch_metric_alarm.oracle_behind_bitcoin[*].alarm_name : [],
+    ) : "ALARM(${name})"
+  ])
 
   alarm_actions = local.composite_alarm_actions
   ok_actions    = local.composite_alarm_actions
@@ -105,18 +122,23 @@ resource "aws_cloudwatch_composite_alarm" "oracle_unhealthy" {
     aws_cloudwatch_metric_alarm.oracle_behind_bitcoin,
     aws_cloudwatch_metric_alarm.oracle_duration_high,
     aws_cloudwatch_metric_alarm.oracle_throttled,
+    aws_cloudwatch_metric_alarm.oracle_relay_down,
+    aws_cloudwatch_metric_alarm.oracle_relay_errors,
+    aws_cloudwatch_metric_alarm.oracle_relay_silent,
+    aws_cloudwatch_metric_alarm.oracle_relay_slow,
+    aws_cloudwatch_metric_alarm.oracle_relay_unmined,
   ]
 }
 
-# Oracle price too old for the venues (warning half of the oracle's warn/crit split).
-# Slack only: a long gap between Bitcoin blocks causes it and nobody can fix that.
+# Oracle price getting old (warning step of the oracle's price age).
+# Slack only: usually a long gap between Bitcoin blocks, which nobody can fix.
 resource "aws_cloudwatch_composite_alarm" "oracle_price_too_old" {
   count             = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
   provider          = aws.use1
   alarm_name        = "hpo-oracle-warning-${local.env_short}"
-  alarm_description = "The hashprice oracle price is over ${var.alarm_thresholds.oracle_max_age_minutes} minutes old, so both venues and the margin engine reject it (OracleStale) and trading and liquidations stop until its next update. If hpo-oracle-${local.env_short} and col-mar-spv-behind-bitcoin-${local.env_short} are OK, Bitcoin is just between blocks (a gap this long comes about once every three years) and this clears with the next block: nothing to fix. If either is in ALARM, follow that page."
+  alarm_description = "The hashprice oracle price is over ${var.alarm_thresholds.oracle_warn_age_minutes} minutes old. At ${var.alarm_thresholds.oracle_max_age_minutes} minutes both venues and the margin engine reject it (OracleStale) and trading and liquidations stop until its next update; hpo-oracle-freeze-${local.env_short} pages at ${var.alarm_thresholds.oracle_page_age_minutes}. If hpo-oracle-${local.env_short} and col-mar-spv-behind-bitcoin-${local.env_short} are OK, Bitcoin is just between blocks (past 60 minutes for about 1 block in 400) and this clears with the next block. If either is in ALARM, follow that page."
 
-  alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.oracle_stale[0].alarm_name})"
+  alarm_rule = "ALARM(${aws_cloudwatch_metric_alarm.oracle_age_warn[0].alarm_name})"
 
   alarm_actions = local.warning_composite_alarm_actions
   ok_actions    = local.warning_composite_alarm_actions
@@ -126,6 +148,33 @@ resource "aws_cloudwatch_composite_alarm" "oracle_price_too_old" {
     Severity = "Warning"
   })
 
-  depends_on = [aws_cloudwatch_metric_alarm.oracle_stale]
+  depends_on = [aws_cloudwatch_metric_alarm.oracle_age_warn]
+}
+
+# Oracle price close to or past the freeze: pages, because nothing liquidates while
+# the venues reject the price, so a move during the gap lands on the insurance fund.
+resource "aws_cloudwatch_composite_alarm" "oracle_freeze" {
+  count             = (var.monitoring.create && var.monitoring.create_alarms && var.monitoring.create_oracle_staleness_check) ? 1 : 0
+  provider          = aws.use1
+  alarm_name        = "hpo-oracle-freeze-${local.env_short}"
+  alarm_description = "The hashprice oracle price is about to freeze or has frozen. The alarm under 'Triggering children' says which: age-page = over ${var.alarm_thresholds.oracle_page_age_minutes} minutes old, the venues and the margin engine reject it at ${var.alarm_thresholds.oracle_max_age_minutes}; stale = past ${var.alarm_thresholds.oracle_max_age_minutes}, trading and liquidations have stopped until the next update. If hpo-oracle-${local.env_short} or col-mar-spv-behind-bitcoin-${local.env_short} is in ALARM, the relay is the cause: follow that page. If both are OK, Bitcoin is between blocks (past 90 minutes for about 1 block in 10,000): check the most levered accounts against the MM shock and the insurance fund, and be ready for the step the next block brings (a retarget block steps the index by the whole adjustment). Clears with the next block."
+
+  alarm_rule = join(" OR ", [
+    "ALARM(${aws_cloudwatch_metric_alarm.oracle_age_page[0].alarm_name})",
+    "ALARM(${aws_cloudwatch_metric_alarm.oracle_stale[0].alarm_name})",
+  ])
+
+  alarm_actions = local.composite_alarm_actions
+  ok_actions    = local.composite_alarm_actions
+
+  tags = merge(var.default_tags, var.foundation_tags, {
+    Name     = "HPO Oracle Freeze Composite"
+    Severity = "Critical"
+  })
+
+  depends_on = [
+    aws_cloudwatch_metric_alarm.oracle_age_page,
+    aws_cloudwatch_metric_alarm.oracle_stale,
+  ]
 }
 

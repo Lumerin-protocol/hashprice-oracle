@@ -77,6 +77,20 @@ variable "oracle_lambda" {
   description = "Oracle Lambda to create"
   type        = map(any)
 }
+variable "oracle_relay" {
+  description = "Oracle relay ECS service (N64), replacing the oracle Lambda. CI owns its image, env and desired count."
+  type = object({
+    create   = bool
+    task_cpu = number
+    task_ram = number
+  })
+  default = {
+    create   = false
+    task_cpu = 256
+    task_ram = 512
+  }
+}
+
 variable "oracle_lambda_secrets" {
   description = "Oracle Lambda secrets to create"
   type        = map(any)
@@ -180,6 +194,8 @@ variable "alarm_thresholds" {
     graph_sync_lag_threshold       = number
     graph_error_threshold          = number
     oracle_stale_threshold_minutes = number # Subgraph data age and lag window
+    oracle_warn_age_minutes        = number # Oracle price age that warns (Slack)
+    oracle_page_age_minutes        = number # Oracle price age that pages, ahead of the freeze
     oracle_max_age_minutes         = number # Oracle price age the venues and margin engine still accept (MAX_ORACLE_STALENESS)
     oracle_blocks_behind_threshold = number # Bitcoin blocks the relay may trail the tip before paging
   })
@@ -199,6 +215,8 @@ variable "alarm_thresholds" {
     graph_sync_lag_threshold       = 200
     graph_error_threshold          = 20
     oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
+    oracle_warn_age_minutes        = 60
+    oracle_page_age_minutes        = 90
     oracle_max_age_minutes         = 120
     oracle_blocks_behind_threshold = 2
   }

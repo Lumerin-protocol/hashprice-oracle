@@ -53,6 +53,15 @@ oracle_lambda = {
   chain_id     = "8453" # prd.env CHAIN_ID
   log_level    = "debug" # prd.env LOG_LEVEL
   job_interval = "5"
+  # N64 stage 2: false once svc-oracle-relay-lmn is running (stops the schedule,
+  # moves hpo-oracle-lmn to the relay alarms).
+  schedule_enabled = true
+}
+
+oracle_relay = {
+  create   = true
+  task_cpu = 256
+  task_ram = 512
 }
 
 ########################################
@@ -101,7 +110,9 @@ alarm_thresholds = {
   graph_sync_lag_threshold       = 50
   graph_error_threshold          = 5
   oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
-  oracle_max_age_minutes         = 120 # Venues and margin engine reject older prices (MAX_ORACLE_STALENESS); Slack warning
+  oracle_warn_age_minutes        = 60  # Slack warning
+  oracle_page_age_minutes        = 90  # Page, 30 minutes before the freeze
+  oracle_max_age_minutes         = 120 # Venues and margin engine reject older prices (MAX_ORACLE_STALENESS); critical page
   oracle_blocks_behind_threshold = 2  # Page when the relay trails the Bitcoin tip by this many blocks
 }
 
