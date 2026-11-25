@@ -12,7 +12,7 @@ locals {
 ################################################################################
 
 data "archive_file" "oracle_staleness" {
-  count       = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && var.oracle_lambda.create) ? 1 : 0
+  count       = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && local.create_oracle_relay) ? 1 : 0
   type        = "zip"
   source_file = "${path.module}/73_oracle_staleness.py"
   output_path = "${path.module}/73_oracle_staleness.zip"
@@ -23,7 +23,7 @@ data "archive_file" "oracle_staleness" {
 ################################################################################
 
 resource "aws_lambda_function" "oracle_staleness" {
-  count         = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && var.oracle_lambda.create) ? 1 : 0
+  count         = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && local.create_oracle_relay) ? 1 : 0
   provider      = aws.use1
   function_name = local.oracle_staleness_name
   description   = "Checks on-chain oracle data freshness and pushes age to CloudWatch"
@@ -67,7 +67,7 @@ resource "aws_lambda_function" "oracle_staleness" {
 ################################################################################
 
 resource "aws_cloudwatch_event_rule" "oracle_staleness" {
-  count               = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && var.oracle_lambda.create) ? 1 : 0
+  count               = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && local.create_oracle_relay) ? 1 : 0
   provider            = aws.use1
   name                = "${local.oracle_staleness_name}-schedule"
   description         = "Trigger Oracle staleness check every ${var.monitoring_schedule.oracle_staleness_rate_minutes} minutes"
@@ -84,7 +84,7 @@ resource "aws_cloudwatch_event_rule" "oracle_staleness" {
 }
 
 resource "aws_cloudwatch_event_target" "oracle_staleness" {
-  count     = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && var.oracle_lambda.create) ? 1 : 0
+  count     = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && local.create_oracle_relay) ? 1 : 0
   provider  = aws.use1
   rule      = aws_cloudwatch_event_rule.oracle_staleness[0].name
   target_id = "${local.oracle_staleness_name}-target"
@@ -92,7 +92,7 @@ resource "aws_cloudwatch_event_target" "oracle_staleness" {
 }
 
 resource "aws_lambda_permission" "oracle_staleness" {
-  count         = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && var.oracle_lambda.create) ? 1 : 0
+  count         = (var.monitoring.create && var.monitoring.create_oracle_staleness_check && local.create_oracle_relay) ? 1 : 0
   provider      = aws.use1
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"

@@ -41,7 +41,7 @@ export class BitcoinRpc {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
     if (url.username) {
-      headers["Authorization"] = `Basic ${btoa(`${url.username}:${url.password}`)}`;
+      headers.Authorization = `Basic ${btoa(`${url.username}:${url.password}`)}`;
       url.username = "";
       url.password = "";
     }
@@ -104,7 +104,7 @@ export interface RpcTransaction {
 
 /**
  * Synchronous SHA-256 injected by each runtime adapter.
- * Node/Lambda use `node:crypto`, CF Workers use a pure-JS implementation.
+ * The Node adapter uses `node:crypto`.
  */
 let _sha256: (data: Uint8Array) => Uint8Array;
 

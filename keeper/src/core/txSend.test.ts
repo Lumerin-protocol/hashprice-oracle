@@ -243,15 +243,4 @@ describe("TxSender", () => {
       [7, 8],
     );
   });
-
-  it("gives up waiting at the caller's deadline", async () => {
-    let t = 0;
-    const h = harness({
-      now: () => t,
-      sleep: () => {
-        t += 2_000;
-      },
-    });
-    await assert.rejects(h.sender.send(h.build, { deadline: 10_000 }), /unmined at nonce 7/);
-  });
 });

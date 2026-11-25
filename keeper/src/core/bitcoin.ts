@@ -1,4 +1,3 @@
-import type { Logger } from "pino";
 import { BitcoinRpc, buildMerkleProof, stripWitness } from "../lib.ts";
 
 export interface BlockData {
@@ -11,11 +10,9 @@ export interface BlockData {
 
 export class BitcoinProvider {
   private readonly rpc: BitcoinRpc;
-  private readonly log: Logger;
 
-  constructor(rpcUrl: string, log: Logger) {
+  constructor(rpcUrl: string) {
     this.rpc = new BitcoinRpc(rpcUrl);
-    this.log = log.child({ component: "bitcoin" });
   }
 
   async getTipHeight(): Promise<number> {

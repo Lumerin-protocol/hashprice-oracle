@@ -2,7 +2,7 @@
 # Shared Contract Addresses
 ########################################
 # Note: ethereum_rpc_url is defined in secret.auto.tfvars (contains API key)
-# Oracle Lambda / subgraph monitoring: DEV targets Base Sepolia.
+# Oracle relay / subgraph monitoring: DEV targets Base Sepolia.
 # Spot indexer stays on Arbitrum Sepolia — use spot_indexer_contracts + spot_eth_rpc_url (secret).
 wallets = {
   clone_factory_address   = "0x998135c509b64083cd27ed976c1bcda35ab7a40b"
@@ -42,18 +42,6 @@ spot_indexer = {
   task_ram        = 512
   ghcr_imagetag   = "latest-dev"
   friendly_name   = "indexer"
-}
-
-oracle_lambda = {
-  create       = true
-  protect      = false
-  svc_name     = "oracle-lambda"
-  chain_id     = "84532"
-  log_level    = "info"
-  job_interval = "5"
-  # N64 stage 2: false once svc-oracle-relay-dev is running (stops the schedule,
-  # moves hpo-oracle-dev to the relay alarms).
-  schedule_enabled = true
 }
 
 oracle_relay = {
@@ -96,9 +84,6 @@ alarm_thresholds = {
   ecs_cpu_threshold              = 90
   ecs_memory_threshold           = 90
   ecs_min_running_tasks          = 1
-  lambda_error_threshold         = 5
-  lambda_duration_threshold      = 55000
-  lambda_throttle_threshold      = 10
   alb_5xx_threshold              = 20
   alb_unhealthy_threshold        = 1
   alb_latency_threshold          = 15

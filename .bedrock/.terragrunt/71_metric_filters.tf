@@ -57,44 +57,6 @@ resource "aws_cloudwatch_log_metric_filter" "spot_server_starts" {
 }
 
 ################################################################################
-# ORACLE LAMBDA METRIC FILTERS (3)
-# JSON/Pino format
-################################################################################
-
-# 9. Oracle Lambda Errors - Pattern: "level":50 (ERROR level in pino)
-resource "aws_cloudwatch_log_metric_filter" "oracle_lambda_errors" {
-  count          = (var.monitoring.create && var.monitoring.create_metric_filters && var.oracle_lambda.create) ? 1 : 0
-  provider       = aws.use1
-  name           = "hpo-oracle-lambda-errors"
-  pattern        = "{ $.level = 50 }"
-  log_group_name = local.oracle_lambda_log_group
-
-  metric_transformation {
-    name      = "oracle_lambda_errors"
-    namespace = local.monitoring_namespace
-    value     = "1"
-    unit      = "Count"
-  }
-}
-
-# Successful keeper runs log "keeper run completed", including runs that
-# submit nothing because the oracle is already at the Bitcoin tip.
-resource "aws_cloudwatch_log_metric_filter" "oracle_job_completions" {
-  count          = (var.monitoring.create && var.monitoring.create_metric_filters && var.oracle_lambda.create) ? 1 : 0
-  provider       = aws.use1
-  name           = "hpo-oracle-job-completions"
-  pattern        = "\"keeper run completed\""
-  log_group_name = local.oracle_lambda_log_group
-
-  metric_transformation {
-    name      = "oracle_job_completions"
-    namespace = local.monitoring_namespace
-    value     = "1"
-    unit      = "Count"
-  }
-}
-
-################################################################################
 # ORACLE RELAY SERVICE METRIC FILTERS (N64)
 # keeper/src/adapters/node.ts and core/{keeper,txSend}.ts log an `event` field.
 ################################################################################

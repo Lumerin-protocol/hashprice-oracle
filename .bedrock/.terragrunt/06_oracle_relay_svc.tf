@@ -1,21 +1,14 @@
 ################################################################################
 # ORACLE RELAY - ECS SERVICE (N64)
 ################################################################################
-# Always-on replacement for the futures-oracle-update-v2 Lambda: runs
-# keeper/src/adapters/node.ts, woken by Alchemy's Bitcoin block subscription
-# with a 60 s fallback poll. No load balancer; /health backs the container
-# health check that deploy-keeper.yml sets.
+# Relays Bitcoin blocks to HashpriceBTC: runs keeper/src/adapters/node.ts, woken
+# by Alchemy's Bitcoin block subscription with a 60 s fallback poll. No load
+# balancer; /health backs the container health check that deploy-keeper.yml sets.
 #
 # Ownership split, as for svc-col-mar-keeper:
 #   * Terraform: security group, log group, service shell, stub task definition.
 #   * deploy-keeper.yml: image, public env (config/<env>.env), health check and
 #     desired_count (vars.ORACLE_RELAY_DESIRED_COUNT, default 1).
-#
-# Cutover in two stages, both senders on the same key meanwhile (the send path
-# re-reads state when the other one takes the nonce):
-#   1. oracle_relay.create = true; CI deploys the service next to the Lambda.
-#   2. oracle_lambda.schedule_enabled = false stops the Lambda's schedule and
-#      moves hpo-oracle-<env> from the Lambda alarms to the relay alarms.
 ################################################################################
 
 locals {
@@ -125,7 +118,8 @@ resource "aws_ecs_task_definition" "oracle_relay_use1" {
       cpu       = 0
       essential = true
 
-      # The Lambda's secret (hpo_secret_access lets bedrock-foundation-role read it).
+      # Named for the Lambda the service replaced (hpo_secret_access lets
+      # bedrock-foundation-role read it).
       secrets = [
         {
           name      = "PRIVATE_KEY"

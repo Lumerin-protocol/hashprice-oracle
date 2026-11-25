@@ -27,13 +27,9 @@ locals {
   )
 
   # Log group names (must match actual log group names)
-  spot_indexer_log_group  = "bedrock-hpo-spot-indexer-${local.env_short}"
-  oracle_lambda_log_group = "/aws/lambda/futures-oracle-update-v2"
-  oracle_relay_log_group  = "bedrock-hpo-oracle-relay-${local.env_short}"
+  spot_indexer_log_group = "bedrock-hpo-spot-indexer-${local.env_short}"
+  oracle_relay_log_group = "bedrock-hpo-oracle-relay-${local.env_short}"
 
-  # N64 stage 2: with the Lambda's schedule off, the relay service is the only sender
-  # and its alarms replace the Lambda's in hpo-oracle-<env>.
-  oracle_relay_is_primary = local.create_oracle_relay && !local.oracle_lambda_schedule_enabled
   # Relay alarm limits: first sight of a block to its Base inclusion, and a tx unmined this long.
   oracle_relay_max_seconds         = 300
   oracle_relay_max_unmined_seconds = 600
