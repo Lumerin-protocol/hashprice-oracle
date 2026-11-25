@@ -160,8 +160,8 @@ export interface TxSenderDeps {
 type Broadcast = { status: "sent"; fees: Fees } | { status: "nonce-consumed" } | { status: "capped" };
 
 /**
- * One long-lived sender for the relay key. No cancel transaction and no time limit unless the
- * caller passes a deadline (the Lambda adapter); the unmined-age alarm pages instead.
+ * One long-lived sender for the relay key. No cancel transaction and no time limit; the
+ * unmined-age alarm pages instead.
  */
 export class TxSender {
   private readonly deps: TxSenderDeps;
@@ -173,7 +173,7 @@ export class TxSender {
     this.log = deps.log.child({ component: "txSend" });
   }
 
-  async send<T extends TxRequest>(build: () => Promise<T>, opts: { deadline?: number } = {}): Promise<SendOutcome<T>> {
+  async send<T extends TxRequest>(build: () => Promise<T>): Promise<SendOutcome<T>> {
     const { pc, address, confirmations } = this.deps;
     const now = this.deps.now ?? Date.now;
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -228,9 +228,6 @@ export class TxSender {
 
     for (;;) {
       if (!checkNonce) {
-        if (opts.deadline !== undefined && now() > opts.deadline) {
-          throw new Error(`${tx.label} unmined at nonce ${nonce} at the deadline; next run continues`);
-        }
         await sleep(pollMs);
         const head = await pc.getBlockNumber();
         if (head === lastBlock) continue;

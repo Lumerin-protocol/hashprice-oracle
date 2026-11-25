@@ -103,7 +103,7 @@ Deploy with `scripts/deploy-hashprice-glide-usd.ts` (`HASHPRICE_USD_ADDRESS`).
 
 ## Keeper
 
-The keeper monitors the on-chain oracle height against the Bitcoin tip and submits missing blocks as a batch. It is runtime-agnostic and ships adapters for Node.js, AWS Lambda, and Cloudflare Workers. See [`keeper/README.md`](keeper/README.md) for setup and configuration.
+The keeper monitors the on-chain oracle height against the Bitcoin tip and submits missing blocks as a batch. It runs as the always-on ECS service `svc-oracle-relay-<env>`. See [`keeper/README.md`](keeper/README.md) for setup and configuration.
 
 ## Quick Start
 

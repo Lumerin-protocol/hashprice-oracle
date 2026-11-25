@@ -86,40 +86,6 @@ resource "aws_iam_role" "github_actions_hashprice_oracle" {
 }
 
 ################################################################################
-# LAMBDA UPDATE POLICY (for deploying Oracle Update Lambda via GitHub Actions)
-################################################################################
-resource "aws_iam_role_policy" "github_lambda_update_oracle" {
-  count = var.oracle_lambda.create ? 1 : 0
-  name  = "lambda-update-futures-oracle"
-  role  = aws_iam_role.github_actions_hashprice_oracle[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "UpdateFuturesOracleLambdaFunction"
-        Effect = "Allow"
-        Action = [
-          "lambda:UpdateFunctionCode",
-          "lambda:GetFunction",
-          "lambda:GetFunctionConfiguration",
-          "lambda:PublishVersion",
-          "lambda:InvokeFunction" # Allow testing the Lambda function
-        ]
-        Resource = aws_lambda_function.oracle_update[count.index].arn
-      },
-      {
-        Sid    = "UpdateFuturesOracleLambdaEnvironment"
-        Effect = "Allow"
-        Action = [
-          "lambda:UpdateFunctionConfiguration"
-        ]
-        Resource = aws_lambda_function.oracle_update[count.index].arn
-      }
-    ]
-  })
-}
-################################################################################
 # ECS UPDATE POLICY - Oracle relay service (deploy-keeper.yml, N64)
 ################################################################################
 resource "aws_iam_role_policy" "github_ecs_update_oracle_relay" {

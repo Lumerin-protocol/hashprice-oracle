@@ -17,22 +17,21 @@ src/
 │   └── txSend.ts       # Fees, gas, replacement and error handling for relay txs
 └── adapters/
     ├── btcBlocks.ts    # Alchemy Bitcoin WebSocket new-block subscription
-    ├── node.ts         # Always-on service: block-triggered ticks, /health
-    └── lambda.ts       # AWS Lambda handler (single invocation)
+    └── node.ts         # Always-on service: block-triggered ticks, /health
 ```
 
 All business logic lives in `src/core/` and depends only on `fetch()`, `viem`, and an injected SHA-256 function. The adapters wire up runtime-specific concerns (crypto, logging transport, entry point).
 
 ### Service mode
 
-`node.ts` runs the relay as the ECS service `svc-oracle-relay-<env>`, which replaces the `futures-oracle-update-v2` Lambda:
+`node.ts` runs the relay as the ECS service `svc-oracle-relay-<env>`:
 
 - A tick runs at startup, on every new Bitcoin block from the WebSocket subscription, and on a fallback poll (`KEEPER_POLL_INTERVAL_MS`). Ticks never overlap. Without `BITCOIN_WS_URL` (or an Alchemy `BITCOIN_RPC_URL` to derive it from), the service only polls. The subscription reconnects with backoff and warns after 2 minutes down.
 - While a tx is pending, the relay checks it on every Base block. After 10 unmined Base blocks it rebuilds to the current Bitcoin tip and replaces the tx at the same nonce with higher fees, up to a 1 gwei tip and 0.002 ETH per tx.
 - `GET /health` on `HEALTH_PORT` returns 503 when no tick has completed for 3 minutes; the ECS health check then replaces the task.
 - Logs are pino JSON with an `event` field (`tick`, `tick_error`, `relayed`, `tx_unmined`, `fee_bump`) that the CloudWatch metric filters in `.bedrock/.terragrunt/71_metric_filters.tf` read.
 
-`deploy-keeper.yml` builds `ghcr.io/lumerin-protocol/hashprice-oracle-keeper` and deploys it with the env from `config/<env>.env`. `PRIVATE_KEY`, `ETHEREUM_RPC_URL` and `BITCOIN_RPC_URL` come from the Lambda's secret `oracle-lambda-secrets-v3-<env>`.
+`deploy-keeper.yml` builds `ghcr.io/lumerin-protocol/hashprice-oracle-keeper` and deploys it with the env from `config/<env>.env`. `PRIVATE_KEY`, `ETHEREUM_RPC_URL` and `BITCOIN_RPC_URL` come from the secret `oracle-lambda-secrets-v3-<env>`, named for the Lambda the service replaced.
 
 ## Setup
 
@@ -58,15 +57,6 @@ pnpm start        # production
 docker build -t hashprice-keeper .
 docker run -d --name keeper --env-file .env -p 8080:8080 hashprice-keeper
 curl localhost:8080/health
-```
-
-### AWS Lambda
-
-```bash
-pnpm build:lambda
-# deploy dist/lambda/handler.zip
-# configure env vars in Lambda console
-# trigger via EventBridge Scheduler (every 1 min)
 ```
 
 ## Configuration

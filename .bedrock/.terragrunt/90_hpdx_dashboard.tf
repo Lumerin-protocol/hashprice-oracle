@@ -89,7 +89,7 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
           metrics = [
             ["wallet-monitor", "eth_balance", "WalletName", "MarketMaker", { label = "Maker ETH", stat = "Average", color = "#1f77b4" }],
             ["wallet-monitor", "eth_balance", "WalletName", "OracleUpdater", { label = "Updater ETH", stat = "Average", color = "#17becf" }],
-            [local.monitoring_namespace, "oracle_job_completions", { label = "Oracle runs", stat = "Sum", color = "#2ca02c" }],
+            [local.monitoring_namespace, "oracle_relay_ticks", { label = "Oracle ticks", stat = "Sum", color = "#2ca02c" }],
             ["ColMarFuturesMM", "TickCount", { label = "MM ticks", stat = "Sum", color = "#98df8a" }],
             [local.hpdx_futures_ns, "subgraph_entity_present", "Subgraph", "futures", "Environment", local.env_short, { label = "Futures book", stat = "Minimum" }],
             [local.hpdx_perps_ns, "subgraph_entity_present", "Subgraph", "perps", "Environment", local.env_short, { label = "Perps book", stat = "Minimum" }],
@@ -99,6 +99,7 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
             ["ColMarVault", "UncoveredLoss", { label = "Uncovered loss", stat = "Maximum", color = "#ff7f0e" }],
             ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", local.hpdx_mm_cluster, "ServiceName", local.hpdx_mm_service, { label = "MM tasks", stat = "Minimum" }],
             ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", local.hpdx_mm_cluster, "ServiceName", local.hpdx_keeper_service, { label = "Keeper tasks", stat = "Minimum" }],
+            ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "ecs-hashprice-oracle-${local.env_short}", "ServiceName", local.oracle_relay.svc_name, { label = "Relay tasks", stat = "Minimum" }],
             ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", local.hpdx_mcp_cluster, "ServiceName", local.hpdx_mcp_service, { label = "MCP tasks", stat = "Minimum" }],
           ]
         }
@@ -148,17 +149,16 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
         width  = 12
         height = 6
         properties = {
-          title  = "Oracle runs and errors"
+          title  = "Oracle relay ticks and errors"
           view   = "timeSeries"
           region = var.default_region
           period = var.monitoring.dashboard_period
           stat   = "Sum"
           yAxis  = { left = { min = 0, label = "Count" } }
           metrics = [
-            [local.monitoring_namespace, "oracle_job_completions", { label = "Completions", color = "#2ca02c" }],
-            [local.monitoring_namespace, "oracle_lambda_errors", { label = "Log errors", color = "#d62728" }],
-            ["AWS/Lambda", "Errors", "FunctionName", "futures-oracle-update-v2", { label = "Lambda errors", color = "#ff7f0e" }],
-            ["AWS/Lambda", "Throttles", "FunctionName", "futures-oracle-update-v2", { label = "Throttles", color = "#9467bd" }],
+            [local.monitoring_namespace, "oracle_relay_ticks", { label = "Ticks", color = "#2ca02c" }],
+            [local.monitoring_namespace, "oracle_relay_errors", { label = "Errors", color = "#d62728" }],
+            [local.monitoring_namespace, "oracle_relay_fee_bumps", { label = "Fee bumps", color = "#ff7f0e" }],
           ]
         }
       },
@@ -169,14 +169,15 @@ resource "aws_cloudwatch_dashboard" "hpdx" {
         width  = 12
         height = 6
         properties = {
-          title  = "Oracle lambda duration"
+          title  = "Oracle relay latency"
           view   = "timeSeries"
           region = var.default_region
           period = var.monitoring.dashboard_period
-          stat   = "Average"
-          yAxis  = { left = { min = 0, label = "ms" } }
+          stat   = "Maximum"
+          yAxis  = { left = { min = 0, label = "Seconds" } }
           metrics = [
-            ["AWS/Lambda", "Duration", "FunctionName", "futures-oracle-update-v2", { label = "Duration", color = "#1f77b4" }],
+            [local.monitoring_namespace, "oracle_relay_seconds", { label = "Seen to Base inclusion", color = "#1f77b4" }],
+            [local.monitoring_namespace, "oracle_relay_unmined_seconds", { label = "Oldest unmined tx", color = "#d62728" }],
           ]
         }
       },

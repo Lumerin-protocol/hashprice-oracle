@@ -65,9 +65,7 @@ Do **not** attach SNS to every metric alarm (noise / double-page). Exception: va
   to Slack when the price is over 60 minutes old, which a slow Bitcoin block alone causes;
   `hpo-oracle-freeze-<env>` pages at 90 minutes and again at 120, when the venues reject the price
   and nothing liquidates. The collateral-margin monitor covers the BTC/USD input the same way.
-  The keeper children of `hpo-oracle-<env>` are the Lambda's (`hpo-oracle-lambda-*`, duration,
-  throttled) while `oracle_lambda.schedule_enabled` is true, then the relay service's
-  (`hpo-oracle-relay-down/errors/silent/slow/unmined`, from the log metric filters in
-  `71_metric_filters.tf`). The relay alarms exist from the moment the service does, so they have
-  history before they join the composite.
+  The keeper children of `hpo-oracle-<env>` are the relay service's
+  `hpo-oracle-relay-down/errors/silent/slow/unmined`, from the log metric filters in
+  `71_metric_filters.tf`.
 - Topic names: `.bedrock/02-dev/terraform.tfvars`, `.bedrock/04-lmn/terraform.tfvars` → `monitoring {}`

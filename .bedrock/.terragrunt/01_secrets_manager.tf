@@ -5,7 +5,7 @@
 
 # IAM policy to allow ECS task execution role to read secrets
 resource "aws_iam_policy" "hpo_secret_access" {
-  count       = (var.spot_indexer.create || var.oracle_lambda.create || var.oracle_relay.create) ? 1 : 0
+  count       = (var.spot_indexer.create || var.oracle_relay.create) ? 1 : 0
   provider    = aws.use1
   name        = "hpo-secret-access-${substr(var.account_shortname, 8, 3)}"
   description = "Allow ECS tasks and Lambdas to read Hashprice Oracle secrets from Secrets Manager"
@@ -21,7 +21,7 @@ resource "aws_iam_policy" "hpo_secret_access" {
         ]
         Resource = compact([
           var.spot_indexer.create ? aws_secretsmanager_secret.spot_indexer.arn : "",
-          var.oracle_lambda.create || var.oracle_relay.create ? aws_secretsmanager_secret.oracle_lambda.arn : "",
+          var.oracle_relay.create ? aws_secretsmanager_secret.oracle_lambda.arn : "",
         ])
       }
     ]
@@ -39,7 +39,7 @@ resource "aws_iam_policy" "hpo_secret_access" {
 
 # Attach the policy to the bedrock foundation role
 resource "aws_iam_role_policy_attachment" "hpo_secret_access" {
-  count      = (var.spot_indexer.create || var.oracle_lambda.create || var.oracle_relay.create) ? 1 : 0
+  count      = (var.spot_indexer.create || var.oracle_relay.create) ? 1 : 0
   provider   = aws.use1
   role       = "bedrock-foundation-role"
   policy_arn = aws_iam_policy.hpo_secret_access[0].arn
@@ -69,7 +69,7 @@ resource "aws_secretsmanager_secret_version" "spot_indexer" {
 }
 
 ################################################################################
-# ORACLE LAMBDA SECRETS
+# ORACLE RELAY SECRETS (named for the Lambda the relay service replaced)
 ################################################################################
 resource "aws_secretsmanager_secret" "oracle_lambda" {
   name        = "oracle-lambda-secrets-v3-${substr(var.account_shortname, 8, 3)}"
@@ -80,7 +80,7 @@ resource "aws_secretsmanager_secret" "oracle_lambda" {
 }
 
 resource "aws_secretsmanager_secret_version" "oracle_lambda" {
-  count = var.oracle_lambda.create ? 1 : 0
+  count = var.oracle_relay.create ? 1 : 0
   # lifecycle {
   #   ignore_changes = [secret_string]
   # }
