@@ -187,6 +187,8 @@ variable "alarm_thresholds" {
     graph_sync_lag_threshold       = number
     graph_error_threshold          = number
     oracle_stale_threshold_minutes = number # Subgraph data age and lag window
+    oracle_warn_age_minutes        = number # Oracle price age that warns (Slack)
+    oracle_page_age_minutes        = number # Oracle price age that pages, ahead of the freeze
     oracle_max_age_minutes         = number # Oracle price age the venues and margin engine still accept (MAX_ORACLE_STALENESS)
     oracle_blocks_behind_threshold = number # Bitcoin blocks the relay may trail the tip before paging
   })
@@ -203,6 +205,8 @@ variable "alarm_thresholds" {
     graph_sync_lag_threshold       = 200
     graph_error_threshold          = 20
     oracle_stale_threshold_minutes = 30 # Subgraph data age and lag window
+    oracle_warn_age_minutes        = 60
+    oracle_page_age_minutes        = 90
     oracle_max_age_minutes         = 120
     oracle_blocks_behind_threshold = 2
   }
