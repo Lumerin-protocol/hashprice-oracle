@@ -3,6 +3,8 @@ import type { Logger } from "pino";
 const MIN_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 export const DOWN_WARN_MS = 120_000;
+/** A socket can hang without ever closing; give up on it if the subscription isn't confirmed. */
+export const SUBSCRIBE_TIMEOUT_MS = 30_000;
 
 /**
  * Alchemy's Bitcoin WebSocket (`subscribeNewBlock`). Each event is only a wake-up: the relay
@@ -20,6 +22,7 @@ export function subscribeBitcoinBlocks(
   let backoffMs = MIN_BACKOFF_MS;
   let downSince: number | undefined = Date.now();
   let reconnectTimer: NodeJS.Timeout | undefined;
+  let subscribeTimer: NodeJS.Timeout | undefined;
 
   const scheduleReconnect = () => {
     if (closed || reconnectTimer) return;
@@ -30,9 +33,27 @@ export function subscribeBitcoinBlocks(
     backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
   };
 
+  // Detach first so a late close event from this socket is ignored.
+  const abandon = (socket: WebSocket) => {
+    clearTimeout(subscribeTimer);
+    subscribeTimer = undefined;
+    ws = undefined;
+    downSince ??= Date.now();
+    socket.close();
+    scheduleReconnect();
+  };
+
   const connect = () => {
     const socket = new WebSocket(url);
     ws = socket;
+    subscribeTimer = setTimeout(() => {
+      if (closed || ws !== socket) return;
+      wsLog.warn(
+        { timeoutMs: SUBSCRIBE_TIMEOUT_MS, retryInMs: backoffMs },
+        "Bitcoin block subscription not confirmed; reconnecting",
+      );
+      abandon(socket);
+    }, SUBSCRIBE_TIMEOUT_MS);
     socket.onopen = () => {
       socket.send(JSON.stringify({ id: "1", method: "subscribeNewBlock", params: {} }));
     };
@@ -44,6 +65,8 @@ export function subscribeBitcoinBlocks(
         return;
       }
       if (data.subscribed === true) {
+        clearTimeout(subscribeTimer);
+        subscribeTimer = undefined;
         const downSec = downSince === undefined ? 0 : Math.round((Date.now() - downSince) / 1000);
         wsLog.info({ event: "btc_ws_up", downSec }, "subscribed to Bitcoin blocks");
         downSince = undefined;
@@ -52,7 +75,7 @@ export function subscribeBitcoinBlocks(
       }
       if (data.error) {
         wsLog.warn({ message: data.error.message }, "Bitcoin block subscription error; reconnecting");
-        socket.close();
+        abandon(socket);
         return;
       }
       if (typeof data.height === "number") {
@@ -64,6 +87,8 @@ export function subscribeBitcoinBlocks(
     socket.onerror = () => {};
     socket.onclose = (event) => {
       if (closed || ws !== socket) return;
+      clearTimeout(subscribeTimer);
+      subscribeTimer = undefined;
       downSince ??= Date.now();
       wsLog.warn({ code: event.code, retryInMs: backoffMs }, "Bitcoin block subscription closed");
       scheduleReconnect();
@@ -87,6 +112,7 @@ export function subscribeBitcoinBlocks(
       closed = true;
       clearInterval(downCheck);
       clearTimeout(reconnectTimer);
+      clearTimeout(subscribeTimer);
       ws?.close();
     },
   };
